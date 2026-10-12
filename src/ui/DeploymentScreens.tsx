@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Check, CircleCheck, Download, LoaderCircle, TriangleAlert, Wrench } from 'lucide-react'
+import { ArrowDownToLine, Check, CircleCheck, Download, LoaderCircle, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import type { DeploymentPhase } from '../core/deployment'
 import { statusCard } from '../core/statusCard'
 import { Screen } from './Window'
@@ -86,9 +86,20 @@ export function MainScreen() {
   return <Screen title="Your game" sub="Your graphics, kept in place.">
     <StatusCard />
     <ProfileSelector />
+    <EnabledRow />
     {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <FlowError />
   </Screen>
+}
+
+/** The master switch: Disabled leaves the deployment's files in place but inactive. */
+function EnabledRow() {
+  const [{ activity, busy, recoveryRequired }, core] = useCore()
+  if (activity.kind !== 'deployment') return null
+  return <label className="card option-row enabled-row">
+    <input type="checkbox" role="switch" checked={activity.enabled} disabled={busy || recoveryRequired} onChange={(e) => void core.setEnabled(e.target.checked)} />
+    <span><strong>Enabled</strong><small>{activity.enabled ? 'Lucent is active in game.' : 'Files stay in place, but the game runs as if vanilla.'}</small></span>
+  </label>
 }
 
 const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back' } as const
@@ -118,6 +129,10 @@ function StatusCard() {
         <button className="btn is-ghost" disabled={state.busy} onClick={() => void core.skipUpdate()}>Skip</button>
         <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.update()}><Download size={14} />Update</button>
       </footer></div>
+  </div>
+  if (card.kind === 'disabled') return <div className="card health-card is-disabled">
+    <Snowflake size={20} />
+    <div className="health-body"><h2>Disabled</h2><p>Lucent’s files are in place but inactive. The game runs as if vanilla.</p></div>
   </div>
   return <div className="card health-card is-healthy">
     <CircleCheck size={20} />

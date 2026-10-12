@@ -20,6 +20,16 @@ it('shows healthy when nothing else applies', () => {
   expect(statusCard(deployment({}))).toEqual({ kind: 'healthy' })
 })
 
+it('shows Disabled with no action when the deployment is off', () => {
+  expect(statusCard(deployment({ enabled: false }))).toEqual({ kind: 'disabled' })
+})
+
+it('shows drift and an update ahead of Disabled', () => {
+  const update = { version: '2026.11.02', changelog: ['Sharper Neural Rendering.'], downloadSize: 12 }
+  expect(statusCard(deployment({ enabled: false, drift }))).toEqual({ kind: 'drift', files: 2, patch: '2026.10.20.0000.0000' })
+  expect(statusCard(deployment({ enabled: false, update }))).toEqual({ kind: 'update', ...update })
+})
+
 it('shows deploying as busy, and no card before a deployment exists', () => {
   expect(statusCard({ activity: { kind: 'deploying', progress: 0.25 }, deploymentProgress: null } as unknown as State)).toEqual({ kind: 'busy', operation: 'deploy', progress: 0.25 })
   expect(statusCard({ activity: { kind: 'review' }, deploymentProgress: null } as unknown as State)).toBeNull()

@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, type Channel } from './updates'
@@ -76,6 +76,8 @@ export interface Core {
   backToProfile(): void
   deploy(): Promise<void>
   finish(): void
+  /** Switches the deployment between Enabled and Disabled, renaming its entry files through the journal. */
+  setEnabled(enabled: boolean): Promise<void>
   /** Re-applies the deployment so that no drift remains, then checks its health again. */
   repair(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
@@ -240,6 +242,20 @@ export function createCore(platform: Platform): Core {
       } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
       finally {
         await refreshHealthAfter()
+        set({ busy: false })
+      }
+    },
+    async setEnabled(enabled) {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      set({ busy: true, error: null })
+      try {
+        await refreshHealth(state.deployment)
+        const deployment = await setDeploymentEnabled(platform, state.deployment.gameFolder, enabled)
+        set({ deployment })
+      } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
+      finally {
+        await refreshHealthAfter()
+        if (state.activity.kind === 'deployment' && state.deployment) set({ activity: { ...state.activity, enabled: state.deployment.enabled } })
         set({ busy: false })
       }
     },

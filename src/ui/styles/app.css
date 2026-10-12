@@ -501,6 +501,9 @@
 .profile-row input { flex: none; }
 .profile-selector:disabled .profile-row { cursor: default; opacity: 0.45; }
 .health-card + .profile-selector { margin-top: var(--space-5); }
+.enabled-row { margin-top: var(--space-5); cursor: pointer; }
+.profile-selector + .enabled-row { margin-top: var(--space-4); }
+.health-card.is-disabled > svg { color: var(--ink-3); }
 
 /* ---------- ⋯ menu and confirmation ---------- */
 .menu-wrap { position: relative; display: flex; }

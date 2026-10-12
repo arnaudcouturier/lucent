@@ -1,7 +1,7 @@
 import { assertGamePath, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
+import { disabledName, fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { readIni } from './ini'
@@ -593,5 +593,51 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
       throw new DeploymentError(error, true, recoveryError)
     }
     throw error
+  }
+}
+
+/**
+ * Renames the recipe's entry files aside (Disabled) or back (Enabled) through the journal, so the game runs as if
+ * vanilla while the deployment stays in place. The record's `enabled` and its file stamps follow the renames, so the
+ * health check expects the new state and Repair, update and profile changes keep it. A failure or interruption
+ * undoes only this toggle.
+ */
+export async function setDeploymentEnabled(platform: Platform, gameFolder: string, enabled: boolean): Promise<DeploymentRecord> {
+  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before changing whether Lucent is Enabled.')
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing whether Lucent is Enabled.')
+  if (record.enabled === enabled) return record
+  const paths = await dataPaths(platform, gameFolder)
+  const renames = record.recipe.entryFiles.map((entry) => enabled
+    ? { from: disabledName(entry.path), to: entry.path }
+    : { from: entry.path, to: disabledName(entry.path) })
+  const steps: PlanStep[] = renames.map((rename) => ({ kind: 'rename', ...rename }))
+  // `record` journals the toggle while it applies; `changed` replaces it once every entry file has moved.
+  const changed = structuredClone(record)
+  record.status = 'applying'
+  record.changeStart = record.journal.length
+  record.createdDirectories ??= []
+  record.changeDirectoryStart = record.createdDirectories.length
+  const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await save()
+  try {
+    await applySteps({ platform, record, save, report: () => {}, owned: new Set(Object.keys(record.files).map(fileKey)), during: 'the Enabled change' }, steps)
+    for (const { from, to } of renames) {
+      const deployedPath = Object.keys(changed.files).find((p) => fileKey(p) === fileKey(from))
+      if (!deployedPath) throw new Error(`The deployment does not own its entry file: ${from}`)
+      // A rename keeps the file's stamp, so the recorded stamp moves verbatim: a drifted entry stays drift.
+      changed.files[to] = changed.files[deployedPath]
+      delete changed.files[deployedPath]
+    }
+    changed.enabled = enabled
+    changed.journal = record.journal
+    changed.createdDirectories = record.createdDirectories
+    await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
+    return changed
+  } catch (error) {
+    try { await undoDeployment(platform, record) } catch (recoveryError) {
+      throw new DeploymentError(error, true, recoveryError)
+    }
+    throw new DeploymentError(error, false)
   }
 }

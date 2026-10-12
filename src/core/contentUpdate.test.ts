@@ -3,7 +3,7 @@ import { createCore } from './core'
 import { createFakePlatform, type FakePlatform, type Machine } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { NEXT_CONTENT, NEXT_MANIFEST, OPTISCALER_HASH, OPTISCALER_NEXT_HASH, nextFixtureUrl } from '../platform/contentFixture'
-import { dataPaths, readDeployment } from './deployment'
+import { dataPaths } from './deployment'
 import { MANIFEST_URL } from './manifest'
 import { PlatformError } from './platform'
 import { statusCard } from './statusCard'
@@ -31,16 +31,6 @@ async function reopen(platform: FakePlatform) {
   return core
 }
 
-/** Disables the deployment as the Enabled switch does: the entry file renamed aside, and the record saying so. */
-async function disable(platform: FakePlatform) {
-  const record = (await readDeployment(platform, ROOT))!
-  record.enabled = false
-  await platform.renameFile(`${GAME}\\winmm.dll`, `${GAME}\\winmm.dll.disabled`)
-  record.files['winmm.dll.disabled'] = { ...record.files['winmm.dll'], ...await platform.stat(`${GAME}\\winmm.dll.disabled`) }
-  delete record.files['winmm.dll']
-  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
-}
-
 it('announces a newer Stable version with its changelog and the size of the files not yet cached', async () => {
   const { platform, m } = await deployed()
   publishNext(m)
@@ -52,7 +42,7 @@ it('announces a newer Stable version with its changelog and the size of the file
 it('updates by downloading only the changed file, removing the dropped one, and keeping Disabled and the profile', async () => {
   const { platform, core: first, m } = await deployed()
   await first.selectProfile('balanced')
-  await disable(platform)
+  await first.setEnabled(false)
   publishNext(m)
   const core = await reopen(platform)
   const downloads = platform.downloads.length
@@ -66,7 +56,7 @@ it('updates by downloading only the changed file, removing the dropped one, and 
   expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Passes = 1/)
   expect(core.getState()).toMatchObject({ selectedProfile: 'balanced', deployment: { contentVersion: '2026.11.02', enabled: false, profile: 'balanced' } })
   expect(core.getState().activity).toMatchObject({ kind: 'deployment', enabled: false, drift: null, update: null })
-  expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
+  expect(statusCard(core.getState())).toEqual({ kind: 'disabled' })
   // The previous version's files stay cached for a rollback.
   expect(await platform.readText(`${(await dataPaths(platform, ROOT)).cache}\\${OPTISCALER_HASH}`)).toBe('OptiScaler')
   expect((await reopen(platform)).getState().activity).toMatchObject({ kind: 'deployment', enabled: false, drift: null, update: null })

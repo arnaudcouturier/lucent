@@ -195,6 +195,11 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'disabled', label: 'Main · Disabled', async setup() {
+    const core = await workflow('healthy')()
+    await core.setEnabled(false)
+    return core
+  } },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
