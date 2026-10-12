@@ -14,6 +14,19 @@ describe('The shared manifest schema', () => {
     expect(parsed.tiers.at(-1)).toMatchObject({ id: 'other', gpuMatch: 'any' })
   })
 
+  it('reads the existing-setup signatures for every kind', () => {
+    const parsed = parseManifest(JSON.stringify(manifest))
+
+    expect(parsed.existingSetups.map((s) => s.id)).toEqual(['gshade', 'gposingway', 'reshade', 'optiscaler', 'dlss-swap'])
+    expect(parsed.existingSetups.find((s) => s.id === 'reshade')).toMatchObject({ files: expect.arrayContaining(['dxgi.dll', 'ReShade.ini']) })
+  })
+
+  it('reads a manifest written before existing-setup signatures as having none', () => {
+    const { existingSetups: _, ...older } = manifest
+
+    expect(parseManifest(JSON.stringify(older)).existingSetups).toEqual([])
+  })
+
   it('requires an app update for a newer schema before interpreting its tiers', () => {
     try {
       parseManifest('{"schemaVersion":3,"tiers":"a future format"}')
@@ -40,6 +53,11 @@ describe('The shared manifest schema', () => {
     ['invalid PCI vendor id', JSON.stringify({ ...manifest, tiers: [{ ...manifest.tiers[0], gpuMatch: [{ vendorId: -1, deviceNamePatterns: ['RTX'] }] }, ...manifest.tiers.slice(1)] })],
     ['no name patterns', JSON.stringify({ ...manifest, tiers: [{ ...manifest.tiers[0], gpuMatch: [{ vendorId: 4318, deviceNamePatterns: [] }] }, ...manifest.tiers.slice(1)] })],
     ['invalid regex', JSON.stringify({ ...manifest, tiers: [{ ...manifest.tiers[0], gpuMatch: [{ vendorId: 4318, deviceNamePatterns: ['['] }] }, ...manifest.tiers.slice(1)] })],
+    ['existing setup without markers', JSON.stringify({ ...manifest, existingSetups: [{ ...manifest.existingSetups[0], markers: [] }] })],
+    ['duplicate existing setup ids', JSON.stringify({ ...manifest, existingSetups: [manifest.existingSetups[0], manifest.existingSetups[0]] })],
+    ['existing-setup pattern escaping the game folder', JSON.stringify({ ...manifest, existingSetups: [{ ...manifest.existingSetups[0], files: ['../*.dll'] }] })],
+    ['existing-setup pattern ending in a folder wildcard', JSON.stringify({ ...manifest, existingSetups: [{ ...manifest.existingSetups[0], presets: ['gshade-presets/**'] }] })],
+    ['existing-setup pattern with a partial folder wildcard', JSON.stringify({ ...manifest, existingSetups: [{ ...manifest.existingSetups[0], kept: ['shaders**/*.fx'] }] })],
   ])('rejects an invalid manifest: %s', (_, text) => {
     expect(() => parseManifest(text)).toThrow(ManifestError)
     try {

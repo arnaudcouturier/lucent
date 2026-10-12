@@ -42,5 +42,50 @@
       "neuralRendering": false,
       "requiresReShade": true
     }
+  ],
+  "existingSetups": [
+    {
+      "id": "gshade",
+      "label": "GShade leftovers",
+      "markers": ["GShade.ini", "GShade64.dll", "gshade-presets/**/*", "gshade-shaders/**/*"],
+      "files": ["GShade.ini", "GShade.log", "GShade64.dll", "dxgi.dll", "d3d11.dll", "gshade-presets/**/*", "gshade-addons/**/*"],
+      "presets": ["gshade-presets/**/*.ini"],
+      "kept": ["gshade-shaders/**/*"]
+    },
+    {
+      "id": "gposingway",
+      "label": "GPosingway",
+      "markers": ["reshade-presets/GPosingway/**/*"],
+      "files": [],
+      "presets": ["reshade-presets/GPosingway/**/*.ini"],
+      "kept": []
+    },
+    {
+      "id": "reshade",
+      "label": "ReShade",
+      "markers": ["ReShade.ini", "ReShade64.dll", "ReShade.log"],
+      "files": ["ReShade.ini", "ReShade.log", "ReShade64.dll", "ReShadePreset.ini", "dxgi.dll", "d3d11.dll", "*.addon", "*.addon64"],
+      "presets": ["ReShadePreset.ini", "reshade-presets/**/*.ini"],
+      "kept": ["reshade-shaders/**/*"]
+    },
+    {
+      "id": "optiscaler",
+      "label": "Another OptiScaler",
+      "markers": ["OptiScaler.ini", "OptiScaler.log", "OptiScaler.dll"],
+      "files": [
+        "OptiScaler.ini", "OptiScaler.log", "OptiScaler.dll", "OptiScaler/**/*", "winmm.dll", "dxgi.dll", "version.dll", "nvngx.dll",
+        "nvngx_dlssnr.dll", "nvngx.dll_dlssnr.dll", "libxess.dll", "amd_fidelityfx_dx12.dll", "amd_fidelityfx_vk.dll", "setup_windows.bat", "remove_optiscaler.bat"
+      ],
+      "presets": [],
+      "kept": []
+    },
+    {
+      "id": "dlss-swap",
+      "label": "Swapped DLSS files",
+      "markers": ["nvngx_dlss*.dll.dlsss", "nvngx_dlss*.dll.bak", "nvngx_dlss*.dll.backup"],
+      "files": [],
+      "presets": [],
+      "kept": ["nvngx_dlss*.dll", "nvngx_dlss*.dll.dlsss", "nvngx_dlss*.dll.bak", "nvngx_dlss*.dll.backup"]
+    }
   ]
 }

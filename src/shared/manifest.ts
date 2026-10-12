@@ -24,6 +24,23 @@ export interface Manifest {
   schemaVersion: number
   tiers: Tier[]
   versions: ContentVersion[]
+  existingSetups: ExistingSetupSignature[]
+}
+
+/**
+ * Mod files Lucent did not deploy. Every list holds game-folder patterns: `*` matches within one folder
+ * and `**` matches any number of folders. A setup is found when any marker matches a file.
+ */
+export interface ExistingSetupSignature {
+  id: string
+  label: string
+  markers: string[]
+  /** Backed up and removed by the deployment. */
+  files: string[]
+  /** Copied into Lucent's preset folder as user files. */
+  presets: string[]
+  /** Left in place, such as its shaders, unless the deployment ships a file at the same path. */
+  kept: string[]
 }
 
 export interface ContentFile { sha256: string; size: number; release: string }
@@ -156,7 +173,33 @@ export function validateManifest(value: unknown): Manifest {
   if (m.schemaVersion === 2 && !Array.isArray(m.versions)) invalid('The manifest needs content versions (an empty list is allowed before publishing).')
   const versions = array(m.versions ?? [], 'Content versions').map((v) => contentVersion(v, tiers))
   unique(versions.map((v) => v.id), 'Content version ids')
-  return { schemaVersion: m.schemaVersion, tiers, versions }
+  const existingSetups = array(m.existingSetups ?? [], 'Existing setups').map(existingSetup)
+  unique(existingSetups.map((s) => s.id), 'Existing setup ids')
+  return { schemaVersion: m.schemaVersion, tiers, versions, existingSetups }
+}
+
+/** Checks a pattern as a game path, with `**` standing for whole folders and `*` for part of a name. */
+export function assertGamePattern(pattern: string): void {
+  const parts = pattern.replace(/\\/g, '/').split('/')
+  if (parts.at(-1) === '**' || parts.some((p) => p.includes('**') && p !== '**')) throw new ManifestError('invalid', `Unsafe game-folder pattern: ${pattern}`)
+  assertGamePath(parts.map((p) => p === '**' ? 'x' : p.replace(/\*/g, 'x')).join('/'))
+}
+
+function patterns(value: unknown, field: string): string[] {
+  return array(value, field).map((v) => {
+    const pattern = nonemptyString(v, field)
+    assertGamePattern(pattern)
+    return pattern
+  })
+}
+function existingSetup(value: unknown): ExistingSetupSignature {
+  const s = object(value, 'Existing setup')
+  const markers = patterns(s.markers, 'Existing setup markers')
+  if (!markers.length) invalid('An existing setup needs markers.')
+  return {
+    id: nonemptyString(s.id, 'Existing setup id'), label: singleLine(s.label, 'Existing setup label'), markers,
+    files: patterns(s.files, 'Existing setup files'), presets: patterns(s.presets, 'Existing setup presets'), kept: patterns(s.kept, 'Existing setup kept files'),
+  }
 }
 
 function array(value: unknown, field: string): unknown[] {

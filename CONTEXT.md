@@ -67,7 +67,7 @@ The ordered steps that turn a vanilla game folder into a deployment for one tier
 _Avoid_: script, install plan
 
 **Step**:
-One declarative operation in a recipe: copy, rename, set an ini key, or delete.
+One declarative operation in a recipe: copy, rename, set an ini key, or delete. A deployment over an existing setup also carries its presets over: a copy that becomes a user file once the deployment completes.
 _Avoid_: action, command, op
 
 **User change**:
@@ -124,7 +124,7 @@ The state of a deployment whose files are present but inactive, so the game runs
 _Avoid_: vanilla mode, paused, off
 
 **Uninstall**:
-Undoing a deployment from its journal, leaving a vanilla game folder.
+Undoing a deployment from its journal, leaving a vanilla game folder. An existing setup comes back as it was; its carried-over presets stay as user files.
 _Avoid_: remove, clean up
 
 **Recovery**:

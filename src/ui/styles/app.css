@@ -350,6 +350,28 @@
 .row-action {
   height: 28px;
 }
+.row-details {
+  grid-column: 2;
+  font-size: var(--text-label);
+  color: var(--ink-3);
+}
+.row-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.row-details summary:hover {
+  color: var(--ink-2);
+}
+.row-details > span {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+}
+.row-details ul {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
 .row-state {
   display: grid;
   place-items: center;

@@ -4,7 +4,7 @@
 future publish tool share `src/shared/manifest.ts`: `parseManifest` validates JSON text and
 `validateManifest` validates an object before publishing. The module has no UI or Platform dependency.
 
-Schema version **2** contains `schemaVersion`, `tiers` and `versions`. The app still reads v1 tier-only
+Schema version **2** contains `schemaVersion`, `tiers`, `versions` and `existingSetups`. The app still reads v1 tier-only
 manifests. A newer schema version produces an app-update message before its
 contents are interpreted. Invalid manifests and fetch failures leave the graphics card visible
 without assigning a tier.
@@ -15,6 +15,16 @@ PCI `vendorId` and `deviceNamePatterns`, a nonempty list of case-insensitive reg
 Both the vendor and at least one pattern must match. NVIDIA is 4318 (`0x10de`), AMD is 4098
 (`0x1002`), Intel is 32902 (`0x8086`). The last tier must use `"gpuMatch": "any"`; earlier tiers
 must supply rules. Tier IDs are unique. Patterns are checked at validation time.
+
+`existingSetups` lists the signatures of mod files Lucent didn't deploy: GShade leftovers, ReShade,
+GPosingway, another OptiScaler and swapped DLSS files. Each has a unique `id`, a `label`, and four
+lists of game-folder patterns: `markers` (any match means the setup is there; at least one),
+`files` (backed up and removed), `presets` (carried over) and `kept` (left in place, such as its
+shaders or a swapped DLSS DLL the game still needs). In a
+pattern, `*` matches within one name and `**` matches any number of folders; a pattern can't end in
+`**`. Signatures match in manifest order and each file belongs to the first setup that claims it.
+A manifest without the list has no signatures. The GPosingway and swapped-DLSS signatures are
+best guesses until checked against real installs.
 
 Scan discards software adapters and chooses the adapter with the most dedicated video memory,
 excluding shared system memory. Windows enumeration uses DXGI. XIVLauncher presence is determined
@@ -99,8 +109,21 @@ original files to back up and final added files, excluding temporary files creat
 the recipe. Downloads are deduplicated by hash; a cache entry counts only after its size and hash
 have been checked. Required-ReShade tiers force that choice on.
 
-An existing file without journal ownership blocks deployment. Existing-setup recognition and its
-explicit backup exception belong to #12; a recipe alone cannot claim a player's files.
+An existing file without journal ownership blocks deployment; a recipe alone cannot claim a player's
+files. An existing setup is the one exception. Scan lists each one with its files and presets, and
+the plan takes it over before the recipe runs:
+
+- presets outside `reshade-presets\`, or at a path the content writes, are copied there first under
+  a free name (`<name> (previous).ini` when taken), keeping the folders below their top-level
+  one; presets already there stay put;
+- then journaled delete steps back up and remove the setup's files, and its kept files and presets
+  where the content writes, so its configs are replaced whole and a colliding shader survives only
+  in the backup. A taken-over log counts as generated, so Uninstall removes the mods' new log
+  before restoring the old one.
+
+Review counts those files as backed up. Uninstall restores them; the carried-over copies are user
+files from then on, which Repair, profile changes and Uninstall never touch. A failed deployment
+removes them along with everything else.
 
 Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, `backups\<sha256>`, and
 `deployments\<hash of normalized game-folder path>\record.json`. A record stores the game folder,
@@ -134,7 +157,7 @@ plus a completion byte. Undoing that deployment flips bytes in place instead of 
 record, so a data disk that fills up cannot stop recovery. A completed deployment, or the next
 attempt, drops and deletes those checkpoints; later journal entries are undone through the record.
 
-The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
+The gallery includes `existing-setup`, `review`, `review-existing-setup`, `review-no-reshade`, `review-radeon`, `review-user-file`,
 `review-failed`, `scan-recovered`, `scan-recovery-blocked`, `profile`, each `install-<phase>`, `done`,
 `done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift`, `repairing`, `update`, `updating` and `uninstalled`.
 
@@ -214,4 +237,5 @@ the files the cache lacks are downloaded, and all of them are verified before th
 Owned configs are backed up and replaced by the new version's copy (the three-way merge replaces this
 in #14). Like a repair, the update journals from `changeStart`, and the directories it creates from
 `changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
-follows. The previous version's files stay in the cache.
+follows. The previous version's files stay in the cache. An update never takes over an existing setup: one that
+appeared since the deployment and is in the way blocks the update, which asks the player to move it aside.

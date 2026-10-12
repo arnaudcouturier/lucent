@@ -38,6 +38,7 @@ export function ReviewScreen() {
       <span><strong>Include ReShade</strong><small>{required ? 'Required for your tier.' : 'Shaders and presets, ready when you want them.'}</small></span>
       {required && <span className="option-required">Included</span>}
     </label>
+    {!!plan.existingSetups.length && <p className="screen-note">Files backed up include your existing setup: {new Intl.ListFormat('en').format(plan.existingSetups.map((s) => s.label))}. Uninstall brings it back.</p>}
     <p className="screen-note">{plan.includeReShade ? 'All presets are included. You choose a look in game; none is active by default.' : 'ReShade, shaders and presets will be left out.'}</p>
     {!!plan.blockedPaths.length && <p className="callout" role="alert"><TriangleAlert size={14} /><span>These user files would be replaced: {plan.blockedPaths.join(', ')}. Move them aside before installing, then run Scan again.</span></p>}
     <FlowError />
