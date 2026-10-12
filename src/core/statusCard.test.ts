@@ -3,7 +3,7 @@ import type { Activity, State } from './core'
 import { statusCard } from './statusCard'
 
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>>): State =>
-  ({ activity: { kind: 'deployment', enabled: true, drift: null, updateAvailable: false, operation: null, ...patch }, deploymentProgress: null }) as State
+  ({ activity: { kind: 'deployment', enabled: true, drift: null, update: null, operation: null, ...patch }, deploymentProgress: null }) as State
 
 const drift = { files: ['winmm.dll', 'ReShade64.dll'], patch: '2026.10.20.0000.0000' }
 

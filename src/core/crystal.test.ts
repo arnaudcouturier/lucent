@@ -4,6 +4,8 @@ import { crystalState } from './crystal'
 import { createFakePlatform } from '../platform/fake'
 import { MACHINES } from '../platform/fixtures'
 
+const AN_UPDATE = { version: '2026.11.02', changelog: ['Sharper Neural Rendering.'], downloadSize: 12 }
+
 describe('The crystal reflects the core state', () => {
   const stateFor = (activity: Activity) => ({ ...createCore(createFakePlatform()).getState(), activity })
 
@@ -31,27 +33,27 @@ describe('The crystal reflects the core state', () => {
 
   it('lights up on Done and for a healthy deployment', () => {
     expect(crystalState(stateFor({ kind: 'done' }))).toEqual({ mode: 'lit', fill: 1 })
-    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: null, updateAvailable: false, operation: null })))
+    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: null, update: null, operation: null })))
       .toEqual({ mode: 'lit', fill: 1 })
   })
 
   it('announces an available update with a pulse ring', () => {
-    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: null, updateAvailable: true, operation: null })))
+    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: null, update: AN_UPDATE, operation: null })))
       .toEqual({ mode: 'update', fill: 1 })
   })
 
   it('shows drift ahead of an update announcement', () => {
-    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: { files: ['winmm.dll'], patch: null }, updateAvailable: true, operation: null })))
+    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: { files: ['winmm.dll'], patch: null }, update: AN_UPDATE, operation: null })))
       .toEqual({ mode: 'drift', fill: 1 })
   })
 
   it.each(['repair', 'update', 'rollback'] as const)('spins fast during %s even when drift and an update remain', (operation) => {
-    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: { files: ['winmm.dll'], patch: null }, updateAvailable: true, operation })))
+    expect(crystalState(stateFor({ kind: 'deployment', enabled: true, drift: { files: ['winmm.dll'], patch: null }, update: AN_UPDATE, operation })))
       .toEqual({ mode: 'busy', fill: 1 })
   })
 
   it.each([null, 'repair', 'update', 'rollback'] as const)('stays frozen steel when Disabled, including during %s', (operation) => {
-    expect(crystalState(stateFor({ kind: 'deployment', enabled: false, drift: { files: ['winmm.dll'], patch: null }, updateAvailable: true, operation })))
+    expect(crystalState(stateFor({ kind: 'deployment', enabled: false, drift: { files: ['winmm.dll'], patch: null }, update: AN_UPDATE, operation })))
       .toEqual({ mode: 'disabled', fill: 0 })
   })
 })

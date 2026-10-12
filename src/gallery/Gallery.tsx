@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createCore, type Activity, type Core } from '../core/core'
 import { crystalState } from '../core/crystal'
 import { createFakePlatform, type Machine } from '../platform/fake'
-import { MACHINES, graphicsCard, manifestHost, machine, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
@@ -13,6 +13,7 @@ import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deploym
 import { PlatformError } from '../core/platform'
 import './gallery.css'
 
+const AN_UPDATE = { version: '2026.11.02', changelog: ['OptiScaler 2 with sharper Neural Rendering.', 'Drops the example shader.'], downloadSize: 160 * 1024 ** 2 }
 const LONG_LIBRARY = 'E:\\Games\\Libraries\\Steam Library (fast NVMe drive)'
 
 const scanned = (m: Machine) => async () => {
@@ -32,7 +33,7 @@ const crystalPreview = (key: string, label: string, activity: Activity, descript
   key: `crystal-${key}`, label: `Crystal · ${label}`, setup: scanned(MACHINES.steam), preview: { activity, description },
 })
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>> = {}): Activity => ({
-  kind: 'deployment', enabled: true, drift: null, updateAvailable: false, operation: null, ...patch,
+  kind: 'deployment', enabled: true, drift: null, update: null, operation: null, ...patch,
 })
 
 const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, includeReShade = true) => async () => {
@@ -108,6 +109,26 @@ const patched = (stage: 'drift' | 'repairing') => async () => {
   return reopened
 }
 
+/** The next content version is published after a deployment, optionally holding the update midway. */
+const updateAvailable = (stage: 'update' | 'updating') => async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  const reopened = createCore(platform)
+  await reopened.scan()
+  if (stage === 'updating') await new Promise<void>((resolve) => {
+    const unsubscribe = reopened.subscribe(() => {
+      if (reopened.getState().deploymentProgress?.phase === 'applying') { platform.hold(); unsubscribe(); resolve() }
+    })
+    void reopened.update()
+  })
+  return reopened
+}
+
 const STATES: GalleryState[] = [
   {
     key: 'scanning',
@@ -174,6 +195,8 @@ const STATES: GalleryState[] = [
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
+  { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
+  { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
   { key: 'uninstalled', label: 'Scan · after uninstall', async setup() {
     const core = await workflow('healthy')()
     await core.uninstall()
@@ -185,9 +208,9 @@ const STATES: GalleryState[] = [
   crystalPreview('fill', 'Deploying', { kind: 'deploying', progress: 0.5 }, 'Light fills the cluster from its base as deployment advances.'),
   crystalPreview('done', 'Done', { kind: 'done' }, 'The lit state after deployment completes.'),
   crystalPreview('lit', 'Healthy', deployment(), 'A lit spire with a slow spin, precessing rings and a gentle float.'),
-  crystalPreview('update', 'Update available', deployment({ updateAvailable: true }), 'A pulse ring announces an available update.'),
+  crystalPreview('update', 'Update available', deployment({ update: AN_UPDATE }), 'A pulse ring announces an available update.'),
   crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and rings move faster during repair.'),
-  crystalPreview('busy-update', 'Update running', deployment({ updateAvailable: true, operation: 'update' }), 'The same fast spin during an update.'),
+  crystalPreview('busy-update', 'Update running', deployment({ update: AN_UPDATE, operation: 'update' }), 'The same fast spin during an update.'),
   crystalPreview('rollback', 'Rollback running', deployment({ operation: 'rollback' }), 'The same fast spin during rollback.'),
   crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], patch: null } }), 'Dark facets, a small ring stalled in place and a falling shard.'),
   crystalPreview('disabled', 'Disabled', deployment({ enabled: false }), 'Frozen steel rings and unlit glass.'),

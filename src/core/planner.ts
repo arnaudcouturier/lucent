@@ -2,6 +2,8 @@ import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE,
 import type { FileStat } from './platform'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+/** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
+export const disabledName = (path: string) => `${path}.disabled`
 export interface DeploymentScan {
   files: Record<string, FileStat>
   ownedFiles: string[]
@@ -23,8 +25,12 @@ export interface Plan {
   downloadSize: number
 }
 
-/** Pure planning: all facts about the folder and verified cache are supplied by Scan. */
-export function planDeployment(content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan, profile: ProfileId | null = null): Plan {
+/**
+ * Pure planning: all facts about the folder and verified cache are supplied by Scan.
+ * Planned from a current deployment (its files are `scan.ownedFiles`), the steps also delete the owned files the content no
+ * longer deploys, and a Disabled deployment gets its entry files renamed aside.
+ */
+export function planDeployment(content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan, profile: ProfileId | null = null, enabled = true): Plan {
   const recipe = content.tiers[tier.id]
   if (!recipe) throw new Error('No content is available for this tier yet.')
   includeReShade ||= tier.requiresReShade
@@ -35,6 +41,7 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   if (recipe.performanceProfiles?.length && !selected) throw new Error('Choose a performance profile for this tier.')
   // The profile applies after the recipe but stays out of the saved recipe: the record names it on its own.
   const steps: Step[] = [...recipeSteps, ...(selected?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s }))]
+  if (!enabled) steps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
   const initial = new Set(Object.keys(scan.files).map(fileKey))
   const owned = new Set(scan.ownedFiles.map(fileKey))
   const present = new Map([...initial].map((p) => [p, null as string | null]))
@@ -71,13 +78,21 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
       present.delete(fileKey(step.path))
     }
   }
+  // Owned files this content doesn't deploy are removed, through the journal like every other step.
+  const dropped = scan.ownedFiles.filter((p) => present.has(fileKey(p)) && !touched.has(fileKey(p)))
+  for (const path of dropped) {
+    steps.push({ kind: 'delete', path })
+    modify(path)
+    present.delete(fileKey(path))
+  }
   const paths = (items: TierRecipe['entryFiles']) => items.filter(included).map((p) => ({ ...p }))
   const filteredRecipe = { ...recipe, recipe: recipeSteps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles),
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
   }
-  for (const p of [...filteredRecipe.entryFiles, ...filteredRecipe.ownedConfigs, ...filteredRecipe.shippedPresets]) {
-    assertGamePath(p.path)
-    if (!touched.has(fileKey(p.path)) || !present.has(fileKey(p.path))) throw new Error(`Recipe does not deploy its declared file: ${p.path}`)
+  const entryPaths = filteredRecipe.entryFiles.map((p) => enabled ? p.path : disabledName(p.path))
+  for (const path of [...entryPaths, ...filteredRecipe.ownedConfigs.map((p) => p.path), ...filteredRecipe.shippedPresets.map((p) => p.path)]) {
+    assertGamePath(path)
+    if (!touched.has(fileKey(path)) || !present.has(fileKey(path))) throw new Error(`Recipe does not deploy its declared file: ${path}`)
   }
   if (!filteredRecipe.entryFiles.length) throw new Error('The recipe has no active entry file.')
   const hashes = new Set(steps.filter((s) => s.kind === 'copy').map((s) => s.file))

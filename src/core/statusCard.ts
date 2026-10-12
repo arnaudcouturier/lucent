@@ -1,9 +1,10 @@
-import type { Activity, State } from './core'
+import type { Activity, ContentUpdate, State } from './core'
 
 /** The one state the main screen's status card shows. Later states slot into `statusCard`'s priority order. */
 export type StatusCard =
   | { kind: 'busy'; operation: 'deploy' | NonNullable<Extract<Activity, { kind: 'deployment' }>['operation']>; progress: number }
   | { kind: 'drift'; files: number; patch: string | null }
+  | ({ kind: 'update' } & ContentUpdate)
   | { kind: 'healthy' }
 
 /** Follows the spec's priority table: the first match wins. Null outside a deployment. */
@@ -13,5 +14,6 @@ export function statusCard(state: Readonly<State>): StatusCard | null {
   if (activity.kind !== 'deployment') return null
   if (activity.operation) return { kind: 'busy', operation: activity.operation, progress: state.deploymentProgress?.progress ?? 0 }
   if (activity.drift) return { kind: 'drift', files: activity.drift.files.length, patch: activity.drift.patch }
+  if (activity.update) return { kind: 'update', ...activity.update }
   return { kind: 'healthy' }
 }

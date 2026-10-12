@@ -1,4 +1,4 @@
-import { Check, CircleCheck, Download, LoaderCircle, TriangleAlert, Wrench } from 'lucide-react'
+import { ArrowDownToLine, Check, CircleCheck, Download, LoaderCircle, TriangleAlert, Wrench } from 'lucide-react'
 import type { DeploymentPhase } from '../core/deployment'
 import { statusCard } from '../core/statusCard'
 import { Screen } from './Window'
@@ -107,6 +107,16 @@ function StatusCard() {
     <div className="health-body"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
       <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
     <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
+  </div>
+  if (card.kind === 'update') return <div className="card health-card is-update" role="status">
+    <ArrowDownToLine size={20} />
+    <div className="health-body"><h2>Content {card.version} is available</h2>
+      <ul className="changelog">{card.changelog.map((line) => <li key={line}>{line}</li>)}</ul>
+      <p className="update-size">{card.downloadSize ? `${sizeLabel(card.downloadSize)} to download` : 'Nothing to download'}. Your profile and Enabled stay as they are.</p>
+      <footer className="update-actions">
+        <button className="btn is-ghost" disabled={state.busy} onClick={() => void core.skipUpdate()}>Skip</button>
+        <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.update()}><Download size={14} />Update</button>
+      </footer></div>
   </div>
   return <div className="card health-card is-healthy">
     <CircleCheck size={20} />

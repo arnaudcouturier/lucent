@@ -136,7 +136,7 @@ attempt, drops and deletes those checkpoints; later journal entries are undone t
 
 The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
 `review-failed`, `scan-recovered`, `scan-recovery-blocked`, `profile`, each `install-<phase>`, `done`,
-`done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift`, `repairing` and `uninstalled`.
+`done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift`, `repairing`, `update`, `updating` and `uninstalled`.
 
 ## Health check and Repair
 
@@ -193,3 +193,25 @@ recovers only that change, retaining the earlier deployment and profile. Lucent 
 change while XIV runs. NVIDIA fixtures have illustrative profiles; Radeon and Other fixtures
 demonstrate tiers without profiles. Real per-tier settings remain deferred until tested content is
 published.
+
+## Content updates
+
+On open, after the health check, Lucent announces the newest content version on the channel (Stable
+until the Beta channel ticket) that is newer than the deployed one, isn't skipped, has a recipe for the
+deployed tier and doesn't need a newer app. `announcedContent` in `src/core/updates.ts` is that pure
+function. There is no background check. The status card shows the version's changelog lines and the
+size of the files the update needs that aren't cached yet, with Skip and Update; nothing downloads
+until the player clicks Update.
+
+Skip saves the version in `%LOCALAPPDATA%\Lucent\settings.json` (`skippedContent`) and stops
+announcing it. A newer version is still announced. A missing or damaged settings file reads as no skips.
+
+Update is planned from the deployment as it stands: `planDeployment` gets the deployment's files as
+`ownedFiles`, so the recipe may overwrite them, and appends a journaled `delete` for each owned file the
+new version no longer deploys. A Disabled deployment keeps its entry files renamed aside to
+`<entry>.disabled` through journaled renames, and the record's performance profile is reapplied. Only
+the files the cache lacks are downloaded, and all of them are verified before the game folder changes.
+Owned configs are backed up and replaced by the new version's copy (the three-way merge replaces this
+in #14). Like a repair, the update journals from `changeStart`, and the directories it creates from
+`changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
+follows. The previous version's files stay in the cache.

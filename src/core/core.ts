@@ -5,10 +5,20 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, uninstallDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
+import { announcedContent, needsNewerApp, type Channel } from './updates'
+import { readSettings, writeSettings } from './settings'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
+
+/** A content version the status card announces. Nothing downloads until the player clicks Update. */
+export interface ContentUpdate {
+  version: string
+  changelog: string[]
+  /** The size of the files the update needs that aren't cached yet. */
+  downloadSize: number
+}
 
 export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
 
@@ -21,7 +31,8 @@ export type Activity =
       enabled: boolean
       /** Null when the last health check found the deployment healthy. */
       drift: Drift | null
-      updateAvailable: boolean
+      /** The content version to announce, or null when there's none. */
+      update: ContentUpdate | null
       operation: 'repair' | 'update' | 'rollback' | null
     }
 
@@ -63,9 +74,17 @@ export interface Core {
   finish(): void
   /** Re-applies the deployment so that no drift remains, then checks its health again. */
   repair(): Promise<void>
+  /** Moves the deployment to the announced content version, then checks its health again. */
+  update(): Promise<void>
+  /** Stops announcing the announced content version. */
+  skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
   uninstall(): Promise<void>
 }
+
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
+/** Channel switching arrives with the Beta channel. */
+const CHANNEL: Channel = 'stable'
 
 export function createCore(platform: Platform): Core {
   let state: State = {
@@ -96,11 +115,25 @@ export function createCore(platform: Platform): Core {
     if (record?.status === 'applying') { await undoDeployment(platform, record); record = null }
     if (record?.status === 'complete') {
       const drift = await checkHealth(platform, record, folder.version)
-      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift) })
+      // A version that can't be planned is never announced; it must not keep the deployment from opening.
+      const update = await announceUpdate(record).catch(() => null)
+      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift, update) })
     }
   }
-  const deploymentActivity = (record: DeploymentRecord, drift: Drift | null): Activity =>
-    ({ kind: 'deployment', enabled: record.enabled, drift, updateAvailable: false, operation: null })
+  const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
+    ({ kind: 'deployment', enabled: record.enabled, drift, update, operation: null })
+  /** Checked on open and after an update or a skip; there is no background service. */
+  const announceUpdate = async (record: DeploymentRecord): Promise<ContentUpdate | null> => {
+    if (state.manifest.status !== 'ready') return null
+    const { manifest } = state.manifest
+    const { skippedContent } = await readSettings(platform)
+    const content = announcedContent(manifest, { channel: CHANNEL, tier: record.tier, current: record.contentVersion, skipped: skippedContent, appVersion: APP_VERSION })
+    const tier = manifest.tiers.find((t) => t.id === record.tier)
+    if (!content || !tier) return null
+    const scan = await scanDeployment(platform, record.gameFolder, content, record)
+    const plan = planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled)
+    return { version: content.id, changelog: content.changelog, downloadSize: plan.downloadSize }
+  }
   /** The health check right after a deployment, shown once the player leaves Done. */
   let deployedDrift: Drift | null = null
   /** Runs the health check before and after every command that writes to the game folder. */
@@ -118,6 +151,13 @@ export function createCore(platform: Platform): Core {
       if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full) }
     } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
+  const refreshAnnouncement = async () => {
+    if (state.activity.kind !== 'deployment' || !state.deployment) return
+    try {
+      const update = await announceUpdate(state.deployment)
+      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update } })
+    } catch { /* The card keeps the last announcement; Update explains any failure. */ }
+  }
   const newestContentForTier = (): ContentVersion | undefined => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) return undefined
     const tier = state.graphics.tier
@@ -127,10 +167,7 @@ export function createCore(platform: Platform): Core {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Finish Scan before continuing.')
     const content = newestContentForTier()
     if (!content) throw new Error('No content is published for this tier yet.')
-    const app = (typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0').split('.').map(Number)
-    const minimum = content.minAppVersion.split('.').map(Number)
-    const firstDifference = minimum.findIndex((n, i) => n !== app[i])
-    if (firstDifference >= 0 && minimum[firstDifference] > app[firstDifference]) throw new Error('Update Lucent before installing this content version.')
+    if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before installing this content version.')
     return content
   }
   const prepareProfiles = (content: ContentVersion) => {
@@ -223,6 +260,40 @@ export function createCore(platform: Platform): Core {
         set({ busy: false, deploymentProgress: null })
       }
     },
+    async update() {
+      const { activity, deployment, manifest } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !activity.update || !deployment || manifest.status !== 'ready') return
+      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'update' } })
+      try {
+        await refreshHealth(deployment)
+        const content = manifest.manifest.versions.find((v) => v.id === activity.update!.version)
+        const tier = manifest.manifest.tiers.find((t) => t.id === deployment.tier)
+        if (!content || !tier) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
+        const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.source, (progress) => set({ deploymentProgress: progress }))
+        set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null })
+      } catch (error) {
+        set(error instanceof DeploymentError
+          ? { error: error.message, recoveryRequired: error.recoveryRequired }
+          : { error: `${failureReason(error)} The game folder has not been changed.` })
+      }
+      finally {
+        await refreshHealthAfter(true)
+        await refreshAnnouncement()
+        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null } })
+        set({ busy: false, deploymentProgress: null })
+      }
+    },
+    async skipUpdate() {
+      const { activity } = state
+      if (state.busy || activity.kind !== 'deployment' || !activity.update) return
+      set({ busy: true, error: null })
+      try {
+        const settings = await readSettings(platform)
+        await writeSettings(platform, { ...settings, skippedContent: [...new Set([...settings.skippedContent, activity.update.version])] })
+        await refreshAnnouncement()
+      } catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false }) }
+    },
     async review(includeReShade = state.includeReShade) {
       if (state.busy || state.deployment || state.recoveryRequired) return
       set({ busy: true, error: null })
@@ -263,7 +334,7 @@ export function createCore(platform: Platform): Core {
       set({ busy: false })
     },
     finish() {
-      if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift) })
+      if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift, null) })
     },
     async uninstall() {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return

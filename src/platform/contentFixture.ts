@@ -64,3 +64,20 @@ export const PROFILE_MANIFEST: Manifest = {
   }],
 }
 export const fixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.10.12/${hash}`
+export const OPTISCALER_NEXT_HASH = '67519f2e14ad9d1f4715625d6bcc73a76bb785c816396d530495dee3ad1e7613'
+const PROFILE_CONTENT = PROFILE_MANIFEST.versions[0]
+/** The next content version: a new OptiScaler build, and the example shader dropped. */
+export const NEXT_CONTENT: ContentVersion = {
+  ...PROFILE_CONTENT, id: '2026.11.02', changelog: ['OptiScaler 2 with sharper Neural Rendering.', 'Drops the example shader.'],
+  files: [
+    ...PROFILE_CONTENT.files.filter((f) => f.sha256 !== OPTISCALER_HASH && f.sha256 !== SHADER_HASH),
+    { sha256: OPTISCALER_NEXT_HASH, size: 12, release: 'content-2026.11.02' },
+  ],
+  tiers: Object.fromEntries(Object.entries(PROFILE_CONTENT.tiers).map(([id, r]) => [id, {
+    ...r,
+    recipe: r.recipe.filter((s) => !(s.kind === 'copy' && s.file === SHADER_HASH))
+      .map((s) => s.kind === 'copy' && s.file === OPTISCALER_HASH ? { ...s, file: OPTISCALER_NEXT_HASH } : s),
+  }])),
+}
+export const NEXT_MANIFEST: Manifest = { ...PROFILE_MANIFEST, versions: [PROFILE_CONTENT, NEXT_CONTENT] }
+export const nextFixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.11.02/${hash}`

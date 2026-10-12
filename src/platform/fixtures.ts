@@ -3,7 +3,7 @@
 import { DEFAULT_ENV, type Machine } from './fake'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
-import { PROFILE_ASSETS, PROFILE_MANIFEST, fixtureUrl } from './contentFixture'
+import { NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, fixtureUrl, nextFixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -82,6 +82,11 @@ export function manifestHost(value: unknown = manifest): Machine {
 /** The browser and gallery can complete the flow using inert fixture assets. */
 export function fixtureContentHost(): Machine {
   return { remoteText: { [MANIFEST_URL]: JSON.stringify(PROFILE_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
+}
+
+/** The release host after the next content version is published: its manifest and its one new asset. */
+export function nextContentHost(): Machine {
+  return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(NEXT_MANIFEST), [nextFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
 }
 
 export function graphicsCard(name = 'NVIDIA GeForce RTX 4090', vendorId = 0x10de): Machine {
