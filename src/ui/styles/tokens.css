@@ -1,0 +1,90 @@
+/* Ember: Lucent's design language, defined once. Every other stylesheet uses these tokens only.
+   Dark only, no OS light/dark switching. Reference: variant D on branch prototype/lucent-look. */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --canvas: #141519; /* right pane */
+  --rail: #0d0e11; /* left rail */
+  --surface: #1a1b20; /* cards */
+  --field: #212329; /* buttons, inputs */
+  --hover: #1e1f25;
+  --hover-2: #272930;
+  --line: #24262c; /* dividers inside cards */
+  --line-strong: #31343c; /* unchecked controls */
+
+  /* Ink */
+  --ink: #f4f4f5;
+  --ink-2: #a0a0a6; /* secondary */
+  --ink-3: #6e7078; /* labels and meta */
+
+  /* The only accent: primary action, selection, progress, focus ring, healthy */
+  --accent: #f47521;
+  --accent-hover: #ff8638;
+  --accent-press: #dd6512;
+  --accent-tint: rgba(244, 117, 33, 0.13);
+  --accent-wash: rgba(244, 117, 33, 0.055); /* a selected row */
+  --accent-glow: 244, 117, 33; /* rgb triplet for the rail's glow */
+  --on-accent: #0b0b0c; /* white on orange fails contrast */
+
+  /* Caution means drift or Experimental, nothing else */
+  --caution: #fab818;
+  --caution-tint: rgba(250, 184, 24, 0.1);
+  --caution-ink: #f5d27e; /* text on the caution tint */
+
+  --danger: #ff6a5f; /* Uninstall */
+
+  /* Window chrome */
+  --caption-hover: rgba(255, 255, 255, 0.06);
+  --close-hover: #c42b1c;
+  --close-hover-ink: #fff;
+  --desktop: #05070c; /* behind the window, in a browser only */
+
+  /* The mark */
+  --mark-edge: rgba(255, 255, 255, 0.55);
+
+  /* Edges are 1px light rings, not borders */
+  --ring-card: 0 0 0 1px rgba(255, 255, 255, 0.065), 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --ring-button: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ring-overlay: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 32px rgba(0, 0, 0, 0.5);
+  --ring-primary: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(244, 117, 33, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  /* Type: Geist for the UI, Geist Mono for paths, versions, numbers and keycaps */
+  --sans: 'Geist Variable', system-ui, sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --text-title: 600 20px/1.25 var(--sans); /* screen titles */
+  --text-status: 600 14px/1.4 var(--sans); /* status titles */
+  --text-body: 400 13px/1.5 var(--sans);
+  --text-secondary: 12.5px;
+  --text-label: 12px;
+  --text-label-sm: 11.5px;
+  --text-chip: 500 11px/1 var(--sans);
+  --text-figure: 500 22px/1.2 var(--mono); /* review figures */
+
+  /* Spacing: a 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --pane-padding: var(--space-8);
+  --row-padding: 11px var(--space-4); /* list rows */
+
+  /* Radius */
+  --r-chip: 6px;
+  --r-control: 8px;
+  --r-card: 10px;
+  --r-window: 8px; /* what Windows 11 imposes */
+
+  /* Layout */
+  --window-width: 880px;
+  --window-height: 580px;
+  --rail-width: 248px;
+  --titlebar-height: 40px;
+
+  /* Motion: the UI is quick and quiet */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration: 180ms;
+}

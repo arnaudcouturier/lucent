@@ -1,0 +1,82 @@
+// Machine layouts for the fake Platform: game folders and the launchers that point at them.
+// Shared by the core's tests, the state gallery and the app running in a browser.
+import { DEFAULT_ENV, type Machine } from './fake'
+
+export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
+export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
+export const SQUARE_ENIX_UNINSTALL_KEY =
+  'SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{2B41E132-07DF-4925-A3D3-F2D1765CCDFE}'
+
+/** Merges machine parts; later parts win on conflicts. */
+export function machine(...parts: Machine[]): Machine {
+  const out: Required<Machine> = { files: {}, registry: {}, env: {} }
+  for (const p of parts) {
+    Object.assign(out.files, p.files)
+    for (const [key, values] of Object.entries(p.registry ?? {})) out.registry[key] = { ...out.registry[key], ...values }
+    Object.assign(out.env, p.env)
+  }
+  return out
+}
+
+/** An untouched game folder: the DX11 executable and its version file under `game\`. */
+export function vanillaGame(root: string, version = '2026.09.30.0000.0000'): Machine {
+  return {
+    files: {
+      [`${root}\\boot\\ffxivboot.exe`]: 'MZ',
+      [`${root}\\game\\ffxiv_dx11.exe`]: 'MZ',
+      [`${root}\\game\\ffxivgame.ver`]: version,
+    },
+  }
+}
+
+/** XIVLauncher's config, pointing at `gamePath`. */
+export function xivLauncher(gamePath: string, env = DEFAULT_ENV): Machine {
+  return {
+    files: {
+      [`${env.AppData}\\XIVLauncher\\launcherConfigV3.json`]: JSON.stringify({ GamePath: gamePath, AddonList: '[]' }, null, 2),
+    },
+  }
+}
+
+const vdfPath = (p: string) => p.replace(/\\/g, '\\\\')
+
+/**
+ * Steam installed at `steamPath` with the given libraries. `game` is the library that holds XIV (app 39210),
+ * installed under `installDir`. Steam's own folder is always library 0, as Steam writes it.
+ */
+export function steam(opts: { steamPath?: string; libraries?: string[]; game?: string; installDir?: string } = {}): Machine {
+  const steamPath = opts.steamPath ?? STEAM_DEFAULT
+  const libraries = [steamPath, ...(opts.libraries ?? []).filter((l) => l !== steamPath)]
+  const blocks = libraries
+    .map((lib, i) => `\t"${i}"\n\t{\n\t\t"path"\t\t"${vdfPath(lib)}"\n\t\t"label"\t\t""\n\t\t"apps"\n\t\t{\n\t\t}\n\t}`)
+    .join('\n')
+  const files: Record<string, string> = {
+    [`${steamPath}\\steam.exe`]: 'MZ',
+    [`${steamPath}\\steamapps\\libraryfolders.vdf`]: `"libraryfolders"\n{\n${blocks}\n}\n`,
+  }
+  if (opts.game) {
+    const dir = opts.installDir ?? 'FINAL FANTASY XIV Online'
+    files[`${opts.game}\\steamapps\\appmanifest_39210.acf`] =
+      `"AppState"\n{\n\t"appid"\t\t"39210"\n\t"name"\t\t"FINAL FANTASY XIV Online"\n\t"installdir"\t\t"${dir}"\n}\n`
+  }
+  // Steam writes its path lower-cased with forward slashes.
+  return { files, registry: { 'HKCU\\Software\\Valve\\Steam': { SteamPath: steamPath.replace(/\\/g, '/').toLowerCase() } } }
+}
+
+export const steamGameFolder = (library: string, installDir = 'FINAL FANTASY XIV Online') =>
+  `${library}\\steamapps\\common\\${installDir}`
+
+/** The Square Enix launcher's uninstall entry, pointing at `installLocation`. */
+export function squareEnixLauncher(installLocation: string): Machine {
+  return { registry: { [`HKLM\\${SQUARE_ENIX_UNINSTALL_KEY}`]: { InstallLocation: installLocation, DisplayName: 'FINAL FANTASY XIV ONLINE' } } }
+}
+
+/** Named machines for the browser and the state gallery. */
+export const MACHINES = {
+  steam: machine(steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
+  xivlauncher: machine(xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
+  squareenix: machine(squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
+  none: machine(),
+} satisfies Record<string, Machine>
+
+export type MachineName = keyof typeof MACHINES

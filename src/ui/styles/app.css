@@ -1,0 +1,353 @@
+/* Lucent's components. Values come from tokens.css; nothing here defines a colour of its own. */
+
+/* ---------- Window ---------- */
+.window {
+  width: var(--window-width);
+  height: var(--window-height);
+  display: grid;
+  grid-template-columns: var(--rail-width) 1fr;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+/* ---------- Rail ---------- */
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-3) 14px;
+  background: var(--rail);
+  box-shadow: inset -1px 0 0 var(--line);
+}
+.brand {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.brand-mark {
+  width: 11px;
+  height: 15px;
+}
+/* The only painted backdrop: the mark's light falling on the rail. */
+.stage {
+  position: relative;
+  height: 224px;
+  margin: 0 calc(-1 * var(--space-3)) 6px;
+  display: grid;
+  place-items: center;
+}
+.stage::before {
+  content: '';
+  position: absolute;
+  inset: -40px 0 -20px;
+  background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.16), rgba(var(--accent-glow), 0.04) 60%, transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.stage-mark {
+  position: relative;
+  width: 64px;
+  height: 88px;
+  filter: drop-shadow(0 0 18px rgba(var(--accent-glow), 0.35));
+}
+
+.steps {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+}
+.steps li {
+  position: relative;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: var(--space-2);
+  border-radius: var(--r-control);
+  color: var(--ink-3);
+  font-weight: 500;
+  transition:
+    color var(--duration) var(--ease),
+    background var(--duration) var(--ease);
+}
+.steps li::before {
+  content: '';
+  position: absolute;
+  left: 15.5px;
+  top: 24px;
+  width: 1px;
+  height: 16px;
+  background: var(--line-strong);
+}
+.steps li:last-child::before {
+  display: none;
+}
+.step-dot {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--rail);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.steps li.is-done {
+  color: var(--ink-2);
+}
+.steps li.is-done .step-dot {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.steps li.is-now {
+  color: var(--ink);
+  background: var(--hover);
+}
+.steps li.is-now .step-dot {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.steps li.is-now .step-dot::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.rail-foot {
+  margin-top: auto;
+  padding: 0 var(--space-2);
+  font-size: var(--text-label-sm);
+  color: var(--ink-3);
+}
+
+/* ---------- Pane ---------- */
+.pane {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.titlebar {
+  flex: none;
+  height: var(--titlebar-height);
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+.caption {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  transition: background var(--duration) var(--ease);
+}
+.caption:hover {
+  background: var(--caption-hover);
+  color: var(--ink);
+}
+.caption-close:hover {
+  background: var(--close-hover);
+  color: var(--close-hover-ink);
+}
+.caption:focus-visible {
+  outline-offset: -2px;
+}
+
+.screen {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--pane-padding);
+  animation: screen-in var(--duration) var(--ease);
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.screen-head {
+  margin-bottom: var(--space-5);
+}
+.screen-head h1 {
+  margin: 0;
+  font: var(--text-title);
+  letter-spacing: -0.02em;
+}
+.screen-head p {
+  max-width: 470px;
+  margin: var(--space-1) 0 0;
+  color: var(--ink-2);
+}
+
+.card {
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--ring-card);
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  height: 30px;
+  padding: 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-control);
+  background: var(--field);
+  box-shadow: var(--ring-button);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--duration) var(--ease),
+    color var(--duration) var(--ease);
+}
+.btn:hover {
+  background: var(--hover-2);
+}
+.btn.is-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--ring-primary);
+}
+.btn.is-primary:hover {
+  background: var(--accent-hover);
+}
+.btn.is-primary:active {
+  background: var(--accent-press);
+}
+.btn.is-ghost {
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-2);
+}
+.btn.is-ghost:hover {
+  background: var(--hover-2);
+  color: var(--ink);
+}
+
+/* ---------- List rows ---------- */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: grid;
+  grid-template-columns: 15px 1fr auto 16px;
+  gap: 14px;
+  align-items: center;
+  padding: var(--row-padding);
+}
+.row + .row {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.row-icon {
+  align-self: start;
+  margin-top: 2px;
+  color: var(--ink-2);
+}
+.row-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  column-gap: var(--space-3);
+  row-gap: 1px;
+}
+.row-label {
+  color: var(--ink-2);
+}
+.row-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.row-path {
+  overflow: visible;
+  white-space: normal;
+  font-weight: 400;
+  font-size: var(--text-label);
+  line-height: 19.5px;
+}
+.row-meta {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  color: var(--ink-3);
+}
+.row-action {
+  height: 28px;
+}
+.row-state {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.row.is-warn .row-icon,
+.row.is-warn .row-value,
+.row.is-warn .row-state {
+  color: var(--caution);
+}
+.row.is-pending .row-icon {
+  color: var(--ink-3);
+}
+
+.callout {
+  margin: var(--space-3) 0 0;
+  padding: 10px var(--space-3);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: var(--r-control);
+  background: var(--caution-tint);
+  color: var(--caution-ink);
+  font-size: var(--text-secondary);
+}
+.callout svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--caution);
+}
+
+.skeleton {
+  display: inline-block;
+  width: 150px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--field), var(--hover-2), var(--field));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+.spin {
+  color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}

@@ -1,0 +1,61 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font: var(--text-body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  letter-spacing: -0.01em;
+}
+.nowrap {
+  white-space: nowrap;
+}
+/* Paths can be selected and copied. */
+.path {
+  user-select: text;
+}
+
+/* In a browser (dev mode), show the window as it sits on the desktop. */
+html.is-browser body {
+  background: var(--desktop);
+}
+html.is-browser #root {
+  display: grid;
+  place-items: center;
+}
+html.is-browser .window {
+  border-radius: var(--r-window);
+  box-shadow: var(--ring-overlay);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
