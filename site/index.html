@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141519" />
+    <meta name="description" content="Lucent manages DLSS 5, ReShade, shaders and presets for XIV. Download the portable Windows app, learn about SmartScreen and meet the upstream authors." />
+    <title>Lucent · Graphics for XIV</title>
+    <link rel="icon" type="image/svg+xml" href="../src-tauri/icons/mark.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="layout">
+      <header class="rail">
+        <a class="brand" href="#" aria-label="Lucent home">
+          <img src="../src-tauri/icons/mark.svg" alt="" width="36" height="36" />
+          Lucent
+        </a>
+        <nav aria-label="Page sections">
+          <a href="#download">Download <span aria-hidden="true">↗</span></a>
+          <a href="#smartscreen">Before you open it</a>
+          <a href="#credits">Credits</a>
+        </nav>
+        <div class="crystal-stage" aria-hidden="true">
+          <img class="crystal" src="./crystal.svg" alt="" width="320" height="400" />
+        </div>
+        <div class="rail-foot">
+          <span>Made for XIV.</span>
+          <a href="https://github.com/arnaudcouturier/lucent">Built in the open <span aria-hidden="true">↗</span></a>
+        </div>
+      </header>
+
+      <main id="main" tabindex="-1">
+        <section class="hero" id="download" aria-labelledby="hero-title">
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> YOUR XIV, IN A NEW LIGHT</p>
+          <h1 id="hero-title">A brighter game.<br /><span>A simpler setup.</span></h1>
+          <p class="intro">DLSS 5, ReShade, shaders and presets for XIV.<br class="desktop-break" /> Brought together in one Windows app.</p>
+          <p class="hero-detail">Lucent finds your game folder and helps you apply the right graphics stack for your GPU. Keep it working after game patches, switch performance profiles and return to vanilla when you choose.</p>
+          <a class="download-button" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe" aria-describedby="download-requirements">
+            <!-- Lucide Download; licence in public/licenses/Lucide.txt. -->
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /></svg>
+            Download for Windows
+            <span aria-hidden="true">↗</span>
+          </a>
+          <p class="download-meta" id="download-requirements">Windows 10 22H2 / 11 · x64 · Portable .exe</p>
+          <p class="trust-line">Open source <span aria-hidden="true">·</span> No telemetry</p>
+          <a class="before-link" href="#smartscreen">First time? Read about the Windows warning <span aria-hidden="true">↓</span></a>
+        </section>
+
+        <section class="guide section" id="smartscreen" aria-labelledby="smartscreen-title">
+          <div class="section-heading">
+            <span class="section-number" aria-hidden="true">01</span>
+            <div>
+              <p class="eyebrow">BEFORE YOU OPEN IT</p>
+              <h2 id="smartscreen-title">Windows may pause the first launch.</h2>
+            </div>
+          </div>
+          <p>Microsoft Defender SmartScreen checks the reputation of downloaded apps. A new app or a new build may not have enough download history yet, even when it is signed. You may see an <strong>“unrecognized app”</strong> warning.</p>
+
+          <figure class="warning-example">
+            <figcaption>What to look for · simplified illustration</figcaption>
+            <div class="warning-window">
+              <!-- Lucide ShieldAlert; licence in public/licenses/Lucide.txt. -->
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>
+              <div>
+                <p class="warning-title">Windows protected your PC</p>
+                <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting.</p>
+                <span class="example-link">More info</span>
+                <div class="example-buttons" aria-hidden="true"><span>Run anyway</span><span>Don’t run</span></div>
+              </div>
+            </div>
+          </figure>
+
+          <ol class="launch-steps">
+            <li><span class="step-number" aria-hidden="true">1</span><div><h3>Check where it came from.</h3><p>Use the download above. It comes from <a href="https://github.com/arnaudcouturier/lucent/releases">Lucent’s GitHub releases</a>, and the file is named <code>Lucent.exe</code>. Continue only if you trust the file and its source.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">2</span><div><h3>Select “More info”, then “Run anyway”.</h3><p>In the “unrecognized app” warning, <strong>More info</strong> reveals the app details and the <strong>Run anyway</strong> button. Choose it to open Lucent.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">3</span><div><h3>Keep your protection on.</h3><p>You don’t need to turn off SmartScreen or Defender, or add an antivirus exclusion. If Windows identifies a threat, or there is no “Run anyway” option, stop and <a href="https://github.com/arnaudcouturier/lucent/issues">report the warning</a>.</p></div></li>
+          </ol>
+          <a class="text-link" href="https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/">How SmartScreen works, from Microsoft <span aria-hidden="true">↗</span></a>
+        </section>
+
+        <section class="section credits" id="credits" aria-labelledby="credits-title">
+          <div class="section-heading">
+            <span class="section-number" aria-hidden="true">02</span>
+            <div>
+              <p class="eyebrow">CREDITS</p>
+              <h2 id="credits-title">The people behind the pixels.</h2>
+            </div>
+          </div>
+          <p>Lucent brings together work from these upstream authors. Their components retain their own licences; upstream licence files belong alongside the deployed files.</p>
+          <!-- Keep this upstream list aligned with the app's Credits and docs/decisions.md. -->
+          <dl class="credits-list">
+            <div><dt>OptiScaler forks</dt><dd><a href="https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV">SirenBrink</a>, <a href="https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG">y4my4my4m</a>, <a href="https://github.com/Dagherbou/OptiScaler_DLSSNR">Dagherbou</a></dd></div>
+            <div><dt>Compatibility runtime</dt><dd>ShortFuse / <a href="https://github.com/clshortfuse/renodx">RenoDX</a></dd></div>
+            <div><dt>ReShade</dt><dd><a href="https://reshade.me/">crosire</a></dd></div>
+            <div><dt>iMMERSE &amp; qUINT</dt><dd><a href="https://github.com/martymcmodding/iMMERSE">Marty McFly</a> · <a href="https://github.com/martymcmodding/qUINT">qUINT</a></dd></div>
+            <div><dt>SweetFX</dt><dd><a href="https://github.com/CeeJayDK/SweetFX">CeeJay.dk &amp; contributors</a></dd></div>
+            <div><dt>Alive presets</dt><dd><a href="https://www.nexusmods.com/finalfantasy14/mods/156">Wafflezs</a></dd></div>
+            <div><dt>ipsuShade</dt><dd><a href="https://github.com/ipsusu/ipsuShade">ipsusu</a></dd></div>
+          </dl>
+          <p class="design-credits">UI type: <a href="https://github.com/vercel/geist-font">Geist &amp; Geist Mono</a> (<a href="./licenses/Geist.txt">SIL OFL 1.1</a>; <a href="./licenses/Geist-Mono.txt">Mono licence</a>). Icons: <a href="https://lucide.dev/">Lucide</a> (<a href="./licenses/Lucide.txt">ISC / MIT</a>). Lucent’s crystal artwork is original.</p>
+        </section>
+
+        <footer class="footer">
+          <span>Lucent · An independent project for XIV.</span>
+          <a href="https://github.com/arnaudcouturier/lucent">Source on GitHub <span aria-hidden="true">↗</span></a>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
