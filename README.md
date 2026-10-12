@@ -24,3 +24,11 @@ npm run test:rust      # the Rust primitives on a real temp folder (cargo test)
 npm run typecheck
 npx tauri build --no-bundle   # the portable exe, in src-tauri/target/release
 ```
+
+## Release
+
+Push an `app-vX.Y.Z` tag for Stable or `app-vX.Y.Z-beta.N` for Beta. GitHub Actions runs
+the TypeScript and Rust tests, builds the portable Windows x64 app, and publishes `Lucent.exe`.
+Stable releases are marked Latest; Beta releases are pre-releases. The
+[release checklist](docs/release-checklist.md) covers version preparation, the RTX 4090 manual
+checks, Microsoft false-positive submissions, and enabling SignPath after approval.
