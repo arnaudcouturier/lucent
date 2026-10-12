@@ -1,6 +1,7 @@
 // Scan: shows the game folder Lucent found and lets the player change it, or pick it when none was found.
-import { Check, Cpu, Folder, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { Archive, Check, Cpu, Folder, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { GAME_EXECUTABLE, type GameFolderSource } from '../core/gameFolder'
+import type { ExistingSetup } from '../core/existingSetup'
 import { Path } from './Path'
 import { useCore } from './useCore'
 import { Screen } from './Window'
@@ -22,6 +23,7 @@ export function ScanScreen() {
         <GameFolderRow />
         <XivLauncherRow />
         <GraphicsFeaturesRow />
+        {state.existingSetups.map((setup) => <ExistingSetupRow key={setup.id} setup={setup} />)}
       </ul>
       <ManifestNotice /></>}
       {state.rejectedFolder && (
@@ -36,6 +38,30 @@ export function ScanScreen() {
       <FlowError />
       {!state.recoveryRequired && <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.continueSetup()}>Continue</button></footer>}
     </Screen>
+  )
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** Says what Lucent found and that it will be backed up and replaced; the paths are one click away. */
+function ExistingSetupRow({ setup }: { setup: ExistingSetup }) {
+  const presets = setup.presets.length ? ` · ${count(setup.presets.length, 'preset', 'presets')} carried over` : ''
+  return (
+    <li className="row is-warn">
+      <Archive size={15} strokeWidth={1.75} className="row-icon" />
+      <div className="row-main">
+        <span className="row-label">Existing setup</span>
+        <span className="row-value">{setup.label}</span>
+        <span className="row-meta">{setup.files.length ? `${count(setup.files.length, 'file', 'files')} will be backed up and replaced` : 'Stays in place unless Lucent ships the same files'}{presets}</span>
+        {!!(setup.files.length + setup.presets.length) && <details className="row-details">
+          <summary>Show files</summary>
+          {!!setup.files.length && <><span>Backed up and replaced</span><ul>{setup.files.map((f) => <li key={f}><Path path={f} /></li>)}</ul></>}
+          {!!setup.presets.length && <><span>Presets carried over</span><ul>{setup.presets.map((f) => <li key={f}><Path path={f} /></li>)}</ul></>}
+        </details>}
+      </div>
+      <span />
+      <span className="row-state"><TriangleAlert size={14} strokeWidth={1.75} aria-label="Will be replaced" /></span>
+    </li>
   )
 }
 

@@ -1,13 +1,14 @@
-import { assertGamePath, type ContentVersion, type ProfileId, type Step, type Tier } from '../shared/manifest'
+import { assertGamePath, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { fileKey, planDeployment, type DeploymentScan, type Plan } from './planner'
+import { fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
+import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { readIni } from './ini'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
-  step: Step
+  step: PlanStep
   before: Record<string, string | null>
   after: Record<string, string | null>
   /** Saved after an intent has been undone, before proceeding to any earlier intent. */
@@ -156,7 +157,7 @@ export async function recoverDeployments(platform: Platform): Promise<Deployment
   return recovered
 }
 
-export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null): Promise<DeploymentScan> {
+export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {
   const root = joinPath(gameFolder, 'game')
   const files: DeploymentScan['files'] = Object.create(null)
   for (const relative of await platform.listFiles(root)) {
@@ -170,7 +171,8 @@ export async function scanDeployment(platform: Platform, gameFolder: string, con
     const stat = await maybeStat(platform, path)
     if (stat?.kind === 'file' && stat.size === file.size && await platform.hashFile(path) === file.sha256) cachedFiles.push(file.sha256)
   }
-  return { files, cachedFiles, ownedFiles: record?.status === 'complete' ? Object.keys(record.files) : [] }
+  const ownedFiles = record?.status === 'complete' ? Object.keys(record.files) : []
+  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, Object.keys(files), ownedFiles) }
 }
 
 export function releaseAsset(file: ContentVersion['files'][number]): string {
@@ -201,7 +203,9 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   for (let i = record.journal.length - 1; i >= start; i--) {
     const entry = record.journal[i]
     if (entry.undone) continue
-    for (const [relative, before] of Object.entries(entry.before).reverse()) {
+    // A carried-over preset is a user file once the deployment is complete; only a failed deployment takes it back.
+    const keep = record.uninstalling && entry.step.kind === 'carry'
+    for (const [relative, before] of keep ? [] : Object.entries(entry.before).reverse()) {
       const target = await platform.resolveGamePath(root, relative)
       const stat = await maybeStat(platform, target)
       const current = stat ? await platform.hashFile(target) : null
@@ -231,18 +235,20 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
 
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
 export async function deployContent(
-  platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, includeReShade: boolean, profile: ProfileId | null,
+  platform: Platform, gameFolder: string, content: ContentVersion, signatures: ExistingSetupSignature[], tier: Tier, includeReShade: boolean, profile: ProfileId | null,
   graphics: GpuAdapter, source: ContentSource, report: (progress: DeploymentProgress) => void,
 ): Promise<DeploymentRecord> {
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
   const previous = await readDeployment(platform, gameFolder)
   if (previous && previous.status !== 'rolled-back') throw new Error('This game folder already has a deployment. Reopen Lucent to inspect it.')
-  const scan = await scanDeployment(platform, gameFolder, content, null)
+  const scan = await scanDeployment(platform, gameFolder, content, null, signatures)
   const plan = planDeployment(content, tier, includeReShade, scan, profile)
   if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before installing.`)
   const paths = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
   const present = new Set(Object.keys(scan.files).map(fileKey))
+  // An existing setup's log is backed up like its other files, so the one the mods write later is Lucent's to remove.
+  const takenOver = new Set(plan.takenOver.map(fileKey))
   for (let i = 0; i < plan.files.length; i++) {
     const file = plan.files[i]
     const path = joinPath(paths.cache, file.sha256)
@@ -257,10 +263,11 @@ export async function deployContent(
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
     includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [],
-    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
+    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
-  const owned = new Set<string>()
+  // An existing setup's files are the only files Lucent takes over without having written them.
+  const owned = new Set(plan.takenOver.map(fileKey))
   // Reserve every undo checkpoint before the first game write. Updating one byte
   // needs no new file allocation even if a later journal write fills Lucent's disk.
   await platform.writeText(checkpointsPath(paths.record, record.undoCheckpoints!.id), '0'.repeat(record.undoCheckpoints!.size))
@@ -269,7 +276,7 @@ export async function deployContent(
   try {
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i]
-      const relatives = step.kind === 'copy' ? [step.to] : step.kind === 'rename' ? [step.from, step.to] : [step.kind === 'ini_set' ? step.file : step.path]
+      const relatives = step.kind === 'copy' || step.kind === 'carry' ? [step.to] : step.kind === 'rename' ? [step.from, step.to] : [step.kind === 'ini_set' ? step.file : step.path]
       const before: JournalEntry['before'] = Object.create(null)
       report({ phase: 'backing-up', progress: 0.4 + i / plan.steps.length * 0.4, file: relatives[0] })
       for (const relative of relatives) {
@@ -297,6 +304,7 @@ export async function deployContent(
         configText = config.toString()
       }
       const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }
+        : step.kind === 'carry' ? { [step.to]: await platform.hashFile(await platform.resolveGamePath(root, step.from)) }
         : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
         : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) } : { [step.path]: null }
       if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
@@ -305,7 +313,8 @@ export async function deployContent(
       report({ phase: 'applying', progress: 0.4 + (i + 0.5) / plan.steps.length * 0.4, file: relatives[0] })
       if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during installation. Close it before retrying.')
       // Resolve again after the durable journal write, immediately before the mutation.
-      if (step.kind === 'copy') await platform.copyFile(joinPath(paths.cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
+      if (step.kind === 'carry') await platform.copyFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), false, parentPath(gameFolder))
+      else if (step.kind === 'copy') await platform.copyFile(joinPath(paths.cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
       else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
       else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
       else await platform.removeFile(await platform.resolveGamePath(root, step.path))

@@ -37,6 +37,45 @@ export function vanillaGame(root: string, version = '2026.09.30.0000.0000'): Mac
   }
 }
 
+/** Mod files another tool left in `game\`, one layout per kind of existing setup. Some collide with the test content's paths. */
+export const EXISTING_SETUPS = {
+  gshade: {
+    'GShade.ini': '[GENERAL]\nPresetPath=.\\gshade-presets\\Custom\\Sunset.ini\n',
+    'dxgi.dll': 'GShade',
+    'gshade-presets\\Custom\\Sunset.ini': '[Sunset]\nBloom=1\n',
+    'gshade-presets\\Example.ini': '[Their example]\n',
+    'gshade-shaders\\Shaders\\Bloom.fx': 'GShade bloom',
+  },
+  reshade: {
+    'ReShade.ini': '[GENERAL]\nPresetPath=.\\reshade-presets\\Mine.ini\n',
+    'dxgi.dll': 'ReShade 6.3',
+    'ReShadePreset.ini': '[Root preset]\n',
+    'reshade-presets\\Mine.ini': '[Mine]\n',
+    'reshade-presets\\Example.ini': '[My example edits]\n',
+    'reshade-shaders\\Shaders\\Example.fx': 'Their example shader',
+    'reshade-shaders\\Shaders\\Other.fx': 'Other shader',
+  },
+  gposingway: {
+    'reshade-presets\\GPosingway\\Portrait.ini': '[Portrait]\n',
+    'reshade-shaders\\Shaders\\GPosingway.fx': 'GPosingway shader',
+  },
+  optiscaler: {
+    'OptiScaler.ini': '[Upscalers]\nDx11Upscaler=fsr22\n',
+    'OptiScaler.log': 'old log',
+    'winmm.dll': 'Older OptiScaler',
+    'nvngx.dll': 'Spoofer',
+  },
+  'dlss-swap': {
+    'nvngx_dlss.dll': 'DLSS 310.4',
+    'nvngx_dlss.dll.dlsss': 'DLSS 3.7',
+  },
+} satisfies Record<string, Record<string, string>>
+export type ExistingSetupFixture = keyof typeof EXISTING_SETUPS
+
+export function existingSetup(root: string, kind: ExistingSetupFixture): Machine {
+  return { files: Object.fromEntries(Object.entries(EXISTING_SETUPS[kind]).map(([path, text]) => [`${root}\\game\\${path}`, text])) }
+}
+
 /** XIVLauncher's config, pointing at `gamePath`. */
 export function xivLauncher(gamePath: string, env = DEFAULT_ENV): Machine {
   return {
@@ -98,6 +137,7 @@ export const MACHINES = {
   steam: machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
   xivlauncher: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
   squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
+  existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
 } satisfies Record<string, Machine>
 

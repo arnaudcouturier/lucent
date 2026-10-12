@@ -8,6 +8,8 @@ import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
 import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, uninstallDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
+import { detectExistingSetups, type ExistingSetup } from './existingSetup'
+import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
 
 export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
@@ -34,6 +36,8 @@ export interface State {
   manifest: ManifestState
   xivLauncher: XivLauncherState
   plan: Plan | null
+  /** Mod files Lucent didn't deploy, found by Scan in a folder without a deployment. */
+  existingSetups: ExistingSetup[]
   deployment: DeploymentRecord | null
   deploymentProgress: DeploymentProgress | null
   includeReShade: boolean
@@ -71,7 +75,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, deployment: null, deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
+    plan: null, existingSetups: [], deployment: null, deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -91,9 +95,12 @@ export function createCore(platform: Platform): Core {
       throw error
     }
   }
+  const signatures = () => state.manifest.status === 'ready' ? state.manifest.manifest.existingSetups : []
   const restoreDeployment = async (folder: GameFolder) => {
     let record = await readDeployment(platform, folder.path)
     if (record?.status === 'applying') { await undoDeployment(platform, record); record = null }
+    const files = record?.status === 'complete' ? [] : await platform.listFiles(joinPath(folder.path, 'game'))
+    set({ existingSetups: detectExistingSetups(signatures(), files) })
     if (record?.status === 'complete') {
       const drift = await checkHealth(platform, record, folder.version)
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift) })
@@ -147,7 +154,7 @@ export function createCore(platform: Platform): Core {
     },
     async scan() {
       if (state.busy) return
-      set({ busy: true, error: null, plan: null, deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       try {
         await recover()
         const [found, graphics, manifest, xivLauncher] = await Promise.all([
@@ -171,7 +178,7 @@ export function createCore(platform: Platform): Core {
         const picked = await platform.pickFolder({ title: 'Choose the game folder' })
         if (picked === null) return
         const folder = await checkPickedFolder(platform, picked)
-        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, plan: null } : { rejectedFolder: picked })
+        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, plan: null, existingSetups: [] } : { rejectedFolder: picked })
         if (folder) await restoreDeployment(folder)
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
@@ -230,7 +237,7 @@ export function createCore(platform: Platform): Core {
         const content = contentForTier()
         prepareProfiles(content)
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Choose the game folder before continuing.')
-        const scan = await scanDeployment(platform, state.gameFolder.path, content, null)
+        const scan = await scanDeployment(platform, state.gameFolder.path, content, null, signatures())
         const plan = planDeployment(content, state.graphics.tier, includeReShade, scan, state.selectedProfile)
         set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
       } catch (error) { set({ error: message(error) }) }
@@ -245,7 +252,7 @@ export function createCore(platform: Platform): Core {
         await recover()
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
-        const record = await deployContent(platform, state.gameFolder.path, content, state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source,
+        const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source,
           (progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))
         const hotkeys = []
         if (record.recipe.overlay) hotkeys.push({ key: 'Insert', description: record.recipe.overlay === 'neural-rendering' ? 'OptiScaler · Neural Rendering and upscaling' : 'OptiScaler · FSR upscaling and frame generation' })
@@ -277,7 +284,7 @@ export function createCore(platform: Platform): Core {
         set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, plan: null, activity: { kind: 'scan' } } : {}) })
         return
       }
-      set({ busy: false, deployment: null, hotkeys: [], notice: 'Lucent is uninstalled. Your game folder is as it was before.' })
+      set({ busy: false, deployment: null, existingSetups: [], hotkeys: [], notice: 'Lucent is uninstalled. Your game folder is as it was before.' })
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })
