@@ -42,6 +42,10 @@ The download button uses `https://github.com/arnaudcouturier/lucent/releases/lat
 
 ## Release
 
+Publish tested content with `npm run publish:content -- <publish.json> --dry-run`, then run the
+same command without `--dry-run`. The [publishing guide](docs/publishing.md) describes inputs,
+validation, 7-Zip, hash reuse and recovery. Content releases keep the app's Latest link intact.
+
 Push an `app-vX.Y.Z` tag for Stable or `app-vX.Y.Z-beta.N` for Beta. GitHub Actions runs
 the TypeScript and Rust tests, builds the portable Windows x64 app, and publishes `Lucent.exe`.
 Stable releases are marked Latest; Beta releases are pre-releases. The

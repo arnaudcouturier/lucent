@@ -1,0 +1,20 @@
+{
+  "id": "2026.10.12",
+  "channel": "stable",
+  "minAppVersion": "0.1.0",
+  "changelog": ["Tested fixture content."],
+  "components": [{ "name": "ReShade fixture", "upstream": "Lucent", "licence": "MIT", "source": "https://github.com/arnaudcouturier/lucent" }],
+  "knownUserShaders": ["Paid.fx"],
+  "tiers": {
+    "other": {
+      "sources": [{ "folder": "files", "component": "ReShade fixture" }],
+      "entryFiles": [{ "path": "dxgi.dll" }],
+      "ownedConfigs": [{ "path": "ReShade.ini" }],
+      "shippedPresets": [{ "path": "reshade-presets/Example.ini" }],
+      "generatedFiles": [{ "path": "ReShade.log" }],
+      "overlay": null,
+      "performanceProfiles": [],
+      "resetKeys": [{ "file": "ReShade.ini", "section": "GENERAL", "key": "PresetPath" }]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "2026.10.12", "channel": "stable", "minAppVersion": "0.1.0", "changelog": [],
+  "components": [{ "name": "Shaders", "upstream": "Lucent", "licence": "MIT", "source": "https://github.com/arnaudcouturier/lucent" }],
+  "knownUserShaders": ["Paid.fx"],
+  "tiers": {
+    "other": {
+      "sources": [{ "folder": "../valid/files", "component": "Shaders" }, { "folder": "different", "component": "Shaders" }],
+      "entryFiles": [{ "path": "dxgi.dll" }], "ownedConfigs": [], "shippedPresets": [{ "path": "reshade-presets/Example.ini" }], "generatedFiles": [], "overlay": null
+    }
+  }
+}

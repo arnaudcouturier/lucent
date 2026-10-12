@@ -1,0 +1,12 @@
+{
+  "id": "2026.10.12", "channel": "stable", "minAppVersion": "0.1.0", "changelog": [],
+  "components": [{ "name": "ReShade", "upstream": "Lucent", "licence": "MIT", "source": "https://github.com/arnaudcouturier/lucent" }],
+  "knownUserShaders": [],
+  "tiers": {
+    "other": {
+      "sources": [{ "folder": "../valid/files", "component": "ReShade" }],
+      "recipe": [{ "kind": "copy", "file": "dxgi.dll", "to": "../ffxiv_dx11.exe" }],
+      "entryFiles": [{ "path": "dxgi.dll" }], "ownedConfigs": [], "shippedPresets": [], "generatedFiles": [], "overlay": null
+    }
+  }
+}

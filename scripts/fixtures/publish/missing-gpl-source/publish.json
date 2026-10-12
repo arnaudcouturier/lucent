@@ -1,0 +1,11 @@
+{
+  "id": "2026.10.12", "channel": "stable", "minAppVersion": "0.1.0", "changelog": [],
+  "components": [{ "name": "OptiScaler", "upstream": "SirenBrink", "licence": "GPL-3.0", "source": "https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV" }],
+  "knownUserShaders": [],
+  "tiers": {
+    "rtx-30-40": {
+      "sources": [{ "folder": "files", "component": "OptiScaler" }],
+      "entryFiles": [{ "path": "winmm.dll" }], "ownedConfigs": [], "shippedPresets": [], "generatedFiles": [], "overlay": "neural-rendering"
+    }
+  }
+}

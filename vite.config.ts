@@ -10,5 +10,5 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: { target: 'chrome120', outDir: 'dist' },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'] },
 })

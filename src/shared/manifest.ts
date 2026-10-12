@@ -29,6 +29,14 @@ export interface Manifest {
 export interface ContentFile { sha256: string; size: number; release: string }
 export interface Component { name: string; upstream: string; licence: string; source: string }
 export interface ConditionalPath { path: string; when?: 'reshade' }
+export interface IniKey { file: string; section: string; key: string }
+export interface IniSetting extends IniKey { value: string }
+export interface PerformanceProfile {
+  id: 'fidelity' | 'balanced' | 'performance'
+  label: string
+  description: string
+  settings: IniSetting[]
+}
 export type Step = (
   | { kind: 'copy'; file: string; to: string }
   | { kind: 'rename'; from: string; to: string }
@@ -41,6 +49,8 @@ export interface TierRecipe {
   shippedPresets: ConditionalPath[]
   generatedFiles: ConditionalPath[]
   overlay: 'neural-rendering' | 'upscaling' | null
+  performanceProfiles?: PerformanceProfile[]
+  resetKeys?: IniKey[]
 }
 export interface ContentVersion {
   id: string
@@ -173,6 +183,24 @@ function hash(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) invalid('Files need a lowercase SHA-256.')
   return value
 }
+function iniKey(value: unknown): IniKey {
+  const k = object(value, 'INI key')
+  if (typeof k.section !== 'string' || /[\r\n\[\]]/.test(k.section)) invalid('Invalid INI section.')
+  const key = nonemptyString(k.key, 'INI key')
+  if (/[\r\n=]/.test(key)) invalid('Invalid INI key.')
+  return { file: gamePath(k.file), section: k.section, key }
+}
+function profile(value: unknown): PerformanceProfile {
+  const p = object(value, 'Performance profile')
+  if (p.id !== 'fidelity' && p.id !== 'balanced' && p.id !== 'performance') invalid('Unknown performance profile.')
+  const settings = array(p.settings, 'Profile settings').map((value): IniSetting => {
+    const s = object(value, 'Profile setting')
+    if (typeof s.value !== 'string' || /[\r\n]/.test(s.value)) invalid('INI values must be single-line strings.')
+    return { ...iniKey(s), value: s.value }
+  })
+  unique(settings.map((s) => JSON.stringify([s.file.replace(/\\/g, '/').toLowerCase(), s.section.toLowerCase(), s.key.toLowerCase()])), 'Profile keys')
+  return { id: p.id, label: nonemptyString(p.label, 'Profile label'), description: nonemptyString(p.description, 'Profile description'), settings }
+}
 function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
   const v = object(value, 'Content version')
   const id = nonemptyString(v.id, 'Content version id')
@@ -214,6 +242,11 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     if (!recipe.length) invalid('A tier recipe must contain steps.')
     if (r.overlay !== null && r.overlay !== 'neural-rendering' && r.overlay !== 'upscaling') invalid('Unknown overlay hint.')
     recipes[id] = { recipe, entryFiles: paths(r.entryFiles, 'Entry files'), ownedConfigs: paths(r.ownedConfigs, 'Owned configs'), shippedPresets: paths(r.shippedPresets, 'Shipped presets'), generatedFiles: paths(r.generatedFiles, 'Generated files'), overlay: r.overlay }
+    if (r.performanceProfiles !== undefined) {
+      recipes[id].performanceProfiles = array(r.performanceProfiles, 'Performance profiles').map(profile)
+      unique(recipes[id].performanceProfiles!.map((p) => p.id), 'Performance profile ids')
+    }
+    if (r.resetKeys !== undefined) recipes[id].resetKeys = array(r.resetKeys, 'Reset keys').map(iniKey)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
   }
   return { id, channel: v.channel, minAppVersion, changelog, components, files, tiers: recipes }
