@@ -4,7 +4,7 @@ import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './
 import { disabledName, fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
-import { readIni } from './ini'
+import { mergeIni, readIni } from './ini'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -351,7 +351,8 @@ async function applySteps({ platform, record, save, report, owned, during }: Exe
     const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }
       : step.kind === 'carry' ? { [step.to]: await platform.hashFile(await platform.resolveGamePath(root, step.from)) }
       : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
-      : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) } : { [step.path]: null }
+      : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) }
+      : step.kind === 'write' ? { [step.path]: await hashText(step.text) } : { [step.path]: null }
     if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
     record.journal.push({ step, before, after })
     await save()
@@ -362,6 +363,7 @@ async function applySteps({ platform, record, save, report, owned, during }: Exe
     else if (step.kind === 'copy') await platform.copyFile(joinPath(cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
     else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
     else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
+    else if (step.kind === 'write') await platform.writeText(await platform.resolveGamePath(root, step.path), step.text, parentPath(gameFolder))
     else await platform.removeFile(await platform.resolveGamePath(root, step.path))
     for (const relative of relatives) owned.add(fileKey(relative))
   }
@@ -392,10 +394,73 @@ async function readOwnedConfigs(platform: Platform, gameFolder: string, plan: Pl
 }
 
 /**
+ * What the new version ships for each owned config: the cached file it copies there, with every
+ * `ini_set` for that file (the recipe's, then the selected profile's) applied in plan order.
+ * Only config files are read as text; other assets are tracked by hash through renames.
+ */
+async function incomingConfigTexts(platform: Platform, cache: string, plan: Plan, record: DeploymentRecord): Promise<Map<string, string>> {
+  type Entry = { hash?: string; text?: string }
+  const virtual = new Map<string, Entry>()
+  const configKeys = new Set(plan.recipe.ownedConfigs.map((c) => fileKey(c.path)))
+  const baseText = (path: string) => {
+    const key = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(path))
+    return key === undefined ? undefined : record.ownedConfigs[key]
+  }
+  for (const step of plan.steps) {
+    if (step.kind === 'copy') virtual.set(fileKey(step.to), { hash: step.file })
+    else if (step.kind === 'rename') {
+      const entry = virtual.get(fileKey(step.from))
+      if (entry) { virtual.set(fileKey(step.to), entry); virtual.delete(fileKey(step.from)) }
+    } else if (step.kind === 'delete') virtual.delete(fileKey(step.path))
+    else if (step.kind === 'ini_set' && configKeys.has(fileKey(step.file))) {
+      const key = fileKey(step.file)
+      let entry = virtual.get(key)
+      if (!entry) {
+        const base = baseText(step.file)
+        if (base === undefined) continue
+        entry = { text: base }
+        virtual.set(key, entry)
+      }
+      if (entry.text === undefined) entry.text = await platform.readText(joinPath(cache, entry.hash!))
+      const config = readIni(entry.text)
+      config.set(step.section, step.key, step.value)
+      entry.text = config.toString()
+      delete entry.hash
+    }
+  }
+  const result = new Map<string, string>()
+  for (const config of plan.recipe.ownedConfigs) {
+    const entry = virtual.get(fileKey(config.path))
+    if (!entry) continue
+    result.set(fileKey(config.path), entry.text ?? await platform.readText(joinPath(cache, entry.hash!)))
+  }
+  return result
+}
+
+/** `reshade-presets/Example.ini` -> `reshade-presets/Example (my edits).ini`, numbered while taken. */
+function myEditsPath(presetPath: string, taken: Set<string>): string {
+  const parts = presetPath.replace(/\\/g, '/').split('/')
+  const name = parts.at(-1)!
+  const dot = name.lastIndexOf('.')
+  const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  const folder = parts.slice(0, -1).join('/')
+  const candidate = (suffix: string) => folder ? `${folder}/${stem} (${suffix})${extension}` : `${stem} (${suffix})${extension}`
+  let path = candidate('my edits')
+  for (let n = 2; taken.has(fileKey(path)); n++) path = candidate(`my edits ${n}`)
+  return path
+}
+
+/** The game-folder path a step writes, or null for steps that only remove a file or carry one over. */
+function writtenPath(step: PlanStep): string | null {
+  return step.kind === 'copy' || step.kind === 'rename' ? step.to : step.kind === 'ini_set' ? step.file : step.kind === 'write' ? step.path : null
+}
+
+/**
  * Moves a complete deployment to another content version, planned from the deployment as it stands: downloads only the
  * files the cache lacks, applies the recipe, and deletes the files the version no longer deploys, all through the journal.
- * Owned configs are backed up and replaced by the version's own. Enabled or Disabled, and the performance profile, are kept.
- * A failure or interruption undoes only the update.
+ * Owned configs are merged key by key (see `mergeIni`) and backed up first; an edited shipped preset is kept when
+ * Lucent's version is unchanged, or saved as "(my edits)" when it changed too. Enabled or Disabled, and the
+ * performance profile, are kept. A failure or interruption undoes only the update.
  */
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
@@ -419,14 +484,98 @@ export async function updateDeployment(
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   await save()
   try {
-    await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)), during: 'the update' }, plan.steps)
+    const root = joinPath(gameFolder, 'game')
+    const incomingTexts = await incomingConfigTexts(platform, paths.cache, plan, record)
+    const resetKeys = plan.recipe.resetKeys ?? []
+    // Merge each owned config Lucent wrote before and that is still on disk, following the new layout.
+    const mergedTexts = new Map<string, string>()
+    for (const config of plan.recipe.ownedConfigs) {
+      const key = fileKey(config.path)
+      const incomingText = incomingTexts.get(key)
+      const basePath = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === key)
+      if (incomingText === undefined || basePath === undefined) continue
+      const diskPath = await platform.resolveGamePath(root, config.path)
+      if ((await maybeStat(platform, diskPath))?.kind !== 'file') continue
+      const diskText = await platform.readText(diskPath)
+      if (diskText.includes('\0')) continue
+      mergedTexts.set(key, mergeIni(record.ownedConfigs[basePath], diskText, incomingText, resetKeys.filter((k) => fileKey(k.file) === key)))
+    }
+    let steps: PlanStep[] = []
+    const emittedMerged = new Set<string>()
+    for (const step of plan.steps) {
+      const target = writtenPath(step)
+      const mergedKey = target && mergedTexts.has(fileKey(target)) ? fileKey(target) : null
+      if (mergedKey) {
+        if (!emittedMerged.has(mergedKey)) {
+          steps.push({ kind: 'write', path: plan.recipe.ownedConfigs.find((c) => fileKey(c.path) === mergedKey)!.path, text: mergedTexts.get(mergedKey)! })
+          emittedMerged.add(mergedKey)
+        }
+        continue
+      }
+      steps.push(step)
+    }
+    for (const [key, text] of mergedTexts) {
+      if (!emittedMerged.has(key)) steps.push({ kind: 'write', path: plan.recipe.ownedConfigs.find((c) => fileKey(c.path) === key)!.path, text })
+    }
+    let expectedFiles = plan.expectedFiles.map((f) => mergedTexts.has(fileKey(f.path)) ? { path: f.path, sha256: null } : f)
+    // Shipped presets: keep an edited one Lucent did not change; preserve one it changed too as "(my edits)".
+    const keptPresets: { path: string; sha256: string }[] = []
+    const preservedPresets = new Map<string, PlanStep>()
+    const taken = new Set([...Object.keys(scan.files).map(fileKey), ...plan.expectedFiles.map((f) => fileKey(f.path))])
+    for (const preset of plan.recipe.shippedPresets) {
+      const key = fileKey(preset.path)
+      const stampedPath = Object.keys(record.files).find((p) => fileKey(p) === key)
+      if (!stampedPath || !record.recipe.shippedPresets.some((p) => fileKey(p.path) === key)) continue
+      const baseHash = record.files[stampedPath].sha256
+      const diskPath = await platform.resolveGamePath(root, preset.path)
+      if ((await maybeStat(platform, diskPath))?.kind !== 'file') continue
+      const diskHash = await platform.hashFile(diskPath)
+      if (diskHash === baseHash) continue
+      const copyStep = plan.steps.find((s) => s.kind === 'copy' && fileKey(s.to) === key)
+      const incomingHash = copyStep?.kind === 'copy' ? copyStep.file : plan.expectedFiles.find((f) => fileKey(f.path) === key)?.sha256 ?? null
+      if (!incomingHash) continue
+      if (incomingHash === baseHash) keptPresets.push({ path: preset.path, sha256: incomingHash })
+      else if (diskHash !== incomingHash) {
+        const destination = myEditsPath(preset.path, taken)
+        taken.add(fileKey(destination))
+        preservedPresets.set(key, { kind: 'carry', from: preset.path, to: destination })
+      }
+    }
+    if (keptPresets.length) {
+      const kept = new Set(keptPresets.map((p) => fileKey(p.path)))
+      const stagingSources = new Set(steps.filter((s) => s.kind === 'rename' && kept.has(fileKey(s.to))).map((s) => fileKey((s as Extract<PlanStep, { kind: 'rename' }>).from)))
+      steps = steps.filter((step) => {
+        const target = writtenPath(step)
+        return !(target && (kept.has(fileKey(target)) || stagingSources.has(fileKey(target))))
+      })
+      expectedFiles = expectedFiles.filter((f) => !kept.has(fileKey(f.path)))
+    }
+    if (preservedPresets.size) {
+      const withPreserved: PlanStep[] = []
+      for (const step of steps) {
+        const target = writtenPath(step)
+        if (target && preservedPresets.has(fileKey(target))) {
+          withPreserved.push(preservedPresets.get(fileKey(target))!)
+          preservedPresets.delete(fileKey(target))
+        }
+        withPreserved.push(step)
+      }
+      steps = withPreserved
+    }
+    await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)), during: 'the update' }, steps)
+    const files = await stampFiles(platform, record, expectedFiles, report)
+    for (const kept of keptPresets) {
+      const path = await platform.resolveGamePath(root, kept.path)
+      files[kept.path] = { ...await platform.stat(path), sha256: kept.sha256 }
+    }
+    const ownedConfigs: Record<string, string> = {}
+    for (const config of plan.recipe.ownedConfigs) ownedConfigs[config.path] = incomingTexts.get(fileKey(config.path)) ?? await platform.readText(await platform.resolveGamePath(root, config.path))
     const generated = record.generatedFiles ?? []
     const present = new Set(Object.keys(scan.files).map(fileKey))
     Object.assign(updated, {
       contentVersion: content.id, includeReShade: plan.includeReShade, profile: plan.profile, recipe: plan.recipe,
       journal: record.journal, createdDirectories: record.createdDirectories,
-      files: await stampFiles(platform, record, plan.expectedFiles, report),
-      ownedConfigs: await readOwnedConfigs(platform, gameFolder, plan),
+      files, ownedConfigs,
       generatedFiles: [...generated, ...plan.recipe.generatedFiles.map((p) => p.path)
         .filter((p) => !present.has(fileKey(p)) && !generated.some((g) => fileKey(g) === fileKey(p)))],
     } satisfies Partial<DeploymentRecord>)

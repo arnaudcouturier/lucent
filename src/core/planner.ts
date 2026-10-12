@@ -14,7 +14,7 @@ export interface DeploymentScan {
 /** Where carried-over presets go. ReShade lists this folder in its preset picker. */
 export const PRESET_FOLDER = 'reshade-presets'
 /** A carry copies an existing setup's preset into Lucent's preset folder, where it stays as a user file. */
-export type PlanStep = Step | { kind: 'carry'; from: string; to: string }
+export type PlanStep = Step | { kind: 'carry'; from: string; to: string } | { kind: 'write'; path: string; text: string }
 export interface Plan {
   contentVersion: string
   tier: string

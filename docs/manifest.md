@@ -234,8 +234,11 @@ Update is planned from the deployment as it stands: `planDeployment` gets the de
 new version no longer deploys. A Disabled deployment keeps its entry files renamed aside to
 `<entry>.disabled` through journaled renames, and the record's performance profile is reapplied. Only
 the files the cache lacks are downloaded, and all of them are verified before the game folder changes.
-Owned configs are backed up and replaced by the new version's copy (the three-way merge replaces this
-in #14). Like a repair, the update journals from `changeStart`, and the directories it creates from
+Owned configs are backed up first and merged key by key with the new version's copy: Lucent's
+last-written copy is the base, what's on disk is the second side, and what the new version ships
+(including its reset keys for that tier) is the third, so a user change survives unless the new
+version changed or reset the same key. An edited shipped preset is kept when Lucent's hash for it is
+unchanged, or saved as `<name> (my edits)` beside it when Lucent's changed too. Like a repair, the update journals from `changeStart`, and the directories it creates from
 `changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
 follows. The previous version's files stay in the cache. An update never takes over an existing setup: one that
 appeared since the deployment and is in the way blocks the update, which asks the player to move it aside.

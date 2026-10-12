@@ -82,7 +82,23 @@ it('announces a version newer than the skipped one', async () => {
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'update', version: '2026.12.01', changelog: ['A later fix.'], downloadSize: 12 })
 })
 
-it('backs up an owned config the player changed, then replaces it with the new version’s', async () => {
+it('keeps the selected ReShade preset and keybinds through an update, backing up the pre-update file first', async () => {
+  const { platform, m } = await deployed()
+  const edited = '[GENERAL]\nPresetPath=reshade-presets/Example.ini\n[INPUT]\nKeyOverlay=36,0,0,0\nKeyScreenshot=44,0,0,0\n'
+  await platform.writeText(`${GAME}\\ReShade.ini`, edited)
+  publishNext(m)
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  const merged = await platform.readText(`${GAME}\\ReShade.ini`)
+  expect(merged).toContain('PresetPath=reshade-presets/Example.ini')
+  expect(merged).toContain('KeyOverlay=36,0,0,0')
+  expect(merged).toContain('KeyScreenshot=44,0,0,0')
+  expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${await sha256(edited)}`)).toBe(edited)
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+})
+
+it('backs up the pre-update config first, then merges it with the new version’s', async () => {
   const { platform, m } = await deployed()
   const edited = '[GENERAL]\nPresetPath=reshade-presets/Example.ini\n'
   await platform.writeText(`${GAME}\\ReShade.ini`, edited)
@@ -90,7 +106,8 @@ it('backs up an owned config the player changed, then replaces it with the new v
   const core = await reopen(platform)
   await core.update()
   expect(core.getState().error).toBeNull()
-  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=\n')
+  // The new version did not change PresetPath, so the player's selection survives (see #14).
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=reshade-presets/Example.ini\n')
   expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${await sha256(edited)}`)).toBe(edited)
 })
 
