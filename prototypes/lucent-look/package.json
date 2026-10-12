@@ -1,0 +1,32 @@
+{
+  "name": "lucent-look-prototype",
+  "private": true,
+  "version": "0.0.0",
+  "description": "PROTOTYPE (throwaway): three visual takes on Lucent's direction B. Not production code.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/martian-mono": "^5.3.0",
+    "@fontsource-variable/unbounded": "^5.3.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "lucide-react": "^1.55.0",
+    "motion": "^14.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^5",
+    "vite": "^8.3.4"
+  }
+}

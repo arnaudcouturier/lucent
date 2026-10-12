@@ -1,0 +1,129 @@
+/* PROTOTYPE scaffolding: simulated Windows desktop + switcher bar. Not part of any variant. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: #05070c;
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.desktop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-bottom: 64px;
+  overflow: hidden;
+}
+/* Original abstract wallpapers, so Mica / glass have something to sample. */
+.desktop-art {
+  position: absolute;
+  inset: -10%;
+  z-index: 0;
+}
+.wall-bloom .desktop-art {
+  background:
+    radial-gradient(40% 50% at 30% 40%, #2b4fd8 0%, transparent 70%),
+    radial-gradient(35% 45% at 70% 60%, #7a3cc8 0%, transparent 70%),
+    radial-gradient(30% 40% at 55% 25%, #1aa3d9 0%, transparent 70%),
+    radial-gradient(60% 60% at 50% 100%, #0d1b4a 0%, transparent 80%),
+    #070b1d;
+}
+.wall-dusk .desktop-art {
+  background:
+    radial-gradient(40% 50% at 25% 35%, #ff7a3d 0%, transparent 70%),
+    radial-gradient(40% 50% at 75% 65%, #c2307a 0%, transparent 70%),
+    radial-gradient(30% 40% at 60% 20%, #ffc36b 0%, transparent 70%),
+    #2a0f24;
+}
+.wall-light .desktop-art {
+  background:
+    radial-gradient(40% 50% at 30% 40%, #a9c6ff 0%, transparent 70%),
+    radial-gradient(35% 45% at 70% 60%, #d8c4ff 0%, transparent 70%),
+    radial-gradient(40% 40% at 55% 20%, #bfeaff 0%, transparent 70%),
+    #eef2fb;
+}
+
+.stage {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  transform-origin: center center;
+}
+
+/* The bar: light, system font, chunky, so it never reads as part of a variant. */
+.proto-bar {
+  position: fixed;
+  z-index: 100;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f4f4f2;
+  color: #111;
+  font: 500 12px/1 system-ui, 'Segoe UI', sans-serif;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+.proto-bar button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: #111;
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.proto-variant {
+  min-width: 76px;
+  text-align: center;
+  font-size: 13px;
+}
+.proto-variant b {
+  display: inline-block;
+  padding: 3px 6px;
+  margin-right: 4px;
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+}
+.proto-sep {
+  width: 1px;
+  height: 20px;
+  background: #ccc;
+}
+.proto-bar label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #555;
+}
+.proto-bar select {
+  font: inherit;
+  color: #111;
+  padding: 4px 4px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+.proto-check input {
+  margin: 0;
+}
