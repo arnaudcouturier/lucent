@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, uninstallDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
@@ -63,6 +63,8 @@ export interface Core {
   finish(): void
   /** Re-applies the deployment so that no drift remains, then checks its health again. */
   repair(): Promise<void>
+  /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
+  uninstall(): Promise<void>
 }
 
 export function createCore(platform: Platform): Core {
@@ -80,8 +82,10 @@ export function createCore(platform: Platform): Core {
   const message = (error: unknown) => error instanceof Error ? error.message : String(error)
   const recover = async () => {
     try {
-      const folders = await recoverDeployments(platform)
-      set({ recoveryRequired: false, ...(folders.length ? { notice: 'Lucent found an unfinished deployment and restored the game folder to how it was before. You can try again.' } : {}) })
+      const recovered = await recoverDeployments(platform)
+      const notice = recovered.some((r) => r.uninstalling) ? 'Lucent finished uninstalling. Your game folder is as it was before.'
+        : recovered.length ? 'Lucent found an unfinished deployment and restored the game folder to how it was before. You can try again.' : null
+      set({ recoveryRequired: false, ...(notice ? { notice } : {}) })
     } catch (error) {
       set({ recoveryRequired: true, error: `Recovery could not finish. ${failureReason(error)} Try recovery again once the problem is resolved.` })
       throw error
@@ -260,6 +264,23 @@ export function createCore(platform: Platform): Core {
     },
     finish() {
       if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift) })
+    },
+    async uninstall() {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      const folder = state.gameFolder
+      set({ busy: true, error: null, notice: null })
+      try {
+        await uninstallDeployment(platform, state.deployment.gameFolder)
+      } catch (error) {
+        const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
+        // A half-undone deployment is no longer the one the main screen describes.
+        set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, plan: null, activity: { kind: 'scan' } } : {}) })
+        return
+      }
+      set({ busy: false, deployment: null, hotkeys: [], notice: 'Lucent is uninstalled. Your game folder is as it was before.' })
+      await core.scan()
+      // Scan may not find a folder the player picked; stay with the one just uninstalled.
+      if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })
     },
   }
   return core

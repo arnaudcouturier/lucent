@@ -174,6 +174,11 @@ const STATES: GalleryState[] = [
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
+  { key: 'uninstalled', label: 'Scan · after uninstall', async setup() {
+    const core = await workflow('healthy')()
+    await core.uninstall()
+    return core
+  } },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),

@@ -136,7 +136,7 @@ attempt, drops and deletes those checkpoints; later journal entries are undone t
 
 The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
 `review-failed`, `scan-recovered`, `scan-recovery-blocked`, `profile`, each `install-<phase>`, `done`,
-`done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift` and `repairing`.
+`done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift`, `repairing` and `uninstalled`.
 
 ## Health check and Repair
 
@@ -154,6 +154,17 @@ deployed files from the cache, downloading only the missing assets of the deploy
 version, and owned configs as their last-written copy. Like a profile change, it journals each
 write with a verified backup from `changeStart`, so a failure or interruption undoes only the
 repair. Disabled entry files come back under their disabled names. A full health check follows.
+
+## Uninstall
+
+Uninstall, from the ⋯ menu after a confirmation, undoes a complete deployment from its journal and
+removes the tier's `generatedFiles` that were absent before the deployment, leaving the folder
+vanilla, then returns to the first-run Scan with the same game folder.
+It marks the record unfinished and `uninstalling` before the first change, so an interrupted
+uninstall is finished by recovery at the next start; until then, the main screen gives way to Scan. Unlike recovery, it removes a file Lucent added
+even after a mod rewrote it, such as a `ReShade.ini` saved from the overlay. An original that changed
+since the deployment, such as one a game patch replaced, stays as it is. User files, and the
+directories that hold them, always stay. Lucent refuses to uninstall while XIV runs.
 
 ## Performance profiles
 
