@@ -1,6 +1,6 @@
 mod platform;
 
-use platform::{FileStat, PlatformError};
+use platform::{FileStat, GpuAdapter, LocalContent, PlatformError};
 use std::path::PathBuf;
 
 // Async so the primitives run off the main thread and never stall the window.
@@ -24,6 +24,21 @@ async fn platform_env_folder(folder: String) -> Result<String, PlatformError> {
     platform::env_folder(&folder)
 }
 
+#[tauri::command]
+async fn platform_gpu_adapters() -> Result<Vec<GpuAdapter>, PlatformError> {
+    platform::gpu_adapters()
+}
+
+#[tauri::command]
+async fn platform_fetch_text(url: String) -> Result<String, PlatformError> {
+    platform::fetch_text(&url).await
+}
+
+#[tauri::command]
+async fn platform_dev_content() -> Result<Option<LocalContent>, PlatformError> {
+    platform::dev_content()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -31,7 +46,10 @@ pub fn run() {
             platform_read_text,
             platform_stat,
             platform_read_registry,
-            platform_env_folder
+            platform_env_folder,
+            platform_gpu_adapters,
+            platform_fetch_text,
+            platform_dev_content
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");

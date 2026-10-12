@@ -4,8 +4,12 @@ import { crystalState } from '../core/crystal'
 import { Crystal } from './crystal/Crystal'
 import { useCore } from './useCore'
 import { dragWindow } from './shell'
+import type { TierStatus } from '../shared/manifest'
 
 const FIRST_RUN_STEPS = ['Scan', 'Performance profile', 'Review', 'Install', 'Done']
+const TIER_STATUS_LABEL: Record<TierStatus, string> = {
+  stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified',
+}
 
 export function Mark({ className }: { className?: string }) {
   return (
@@ -37,7 +41,28 @@ export function Rail() {
           </li>
         ))}
       </ol>
+      <GraphicsFacts />
       <div className="rail-foot">Lucent {__APP_VERSION__}</div>
     </aside>
+  )
+}
+
+function GraphicsFacts() {
+  const [{ graphics }] = useCore()
+  return (
+    <dl className="rail-facts" aria-live="polite">
+      <dt>Graphics card</dt>
+      <dd className="rail-gpu-name" title={graphics.status === 'found' ? graphics.adapter.name : undefined}>
+        {graphics.status === 'found' ? graphics.adapter.name : graphics.status === 'not-found' ? 'Not found' : graphics.status === 'unavailable' ? 'Could not scan' : 'Looking…'}
+      </dd>
+      {graphics.status === 'found' && (
+        <dd className="rail-tier">
+          {graphics.tier ? <>
+            <span>{graphics.tier.label}</span>
+            <span className={`tier-badge is-${graphics.tier.status}`}>{TIER_STATUS_LABEL[graphics.tier.status]}</span>
+          </> : <span className="rail-tier-unavailable">Tier unavailable</span>}
+        </dd>
+      )}
+    </dl>
   )
 }

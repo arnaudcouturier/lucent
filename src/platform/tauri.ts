@@ -1,7 +1,7 @@
 // The real Platform port: each method is one Rust primitive (src-tauri/src/platform.rs).
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import { PlatformError, type FileStat, type Platform, type PlatformErrorKind } from '../core/platform'
+import { PlatformError, type FileStat, type GpuAdapter, type LocalContent, type Platform, type PlatformErrorKind } from '../core/platform'
 
 interface RawError {
   kind: PlatformErrorKind
@@ -24,6 +24,9 @@ export function createTauriPlatform(): Platform {
     stat: (path) => call<FileStat>('platform_stat', { path }),
     readRegistry: (hive, key, value) => call<string>('platform_read_registry', { hive, key, value }),
     envFolder: (folder) => call<string>('platform_env_folder', { folder }),
+    getGpuAdapters: () => call<GpuAdapter[]>('platform_gpu_adapters', {}),
+    fetchText: (url) => call<string>('platform_fetch_text', { url }),
+    getDevContent: () => call<LocalContent | null>('platform_dev_content', {}),
     async pickFolder({ title }) {
       const picked = await open({ directory: true, multiple: false, title })
       return typeof picked === 'string' ? picked : null

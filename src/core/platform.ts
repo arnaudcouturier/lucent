@@ -35,6 +35,20 @@ export type RegistryHive = 'HKCU' | 'HKLM'
 /** Well-known folders, as Windows resolves them for the current user. */
 export type EnvFolder = 'AppData' | 'LocalAppData' | 'ProgramFiles' | 'ProgramFilesX86'
 
+export interface GpuAdapter {
+  name: string
+  vendorId: number
+  /** Dedicated video memory in bytes, excluding shared system memory. */
+  dedicatedMemory: number
+  software: boolean
+}
+
+/** Available only in dev builds; local release files live under filesDirectory. */
+export interface LocalContent {
+  manifestPath: string
+  filesDirectory: string
+}
+
 export interface Platform {
   /** Reads a UTF-8 text file. */
   readText(path: string): Promise<string>
@@ -44,4 +58,8 @@ export interface Platform {
   envFolder(folder: EnvFolder): Promise<string>
   /** Asks the player to pick a folder. Resolves to null if they cancel. */
   pickFolder(options: { title: string }): Promise<string | null>
+  getGpuAdapters(): Promise<GpuAdapter[]>
+  /** Fetches UTF-8 text; HTTP errors are port failures, never document contents. */
+  fetchText(url: string): Promise<string>
+  getDevContent(): Promise<LocalContent | null>
 }

@@ -1,6 +1,8 @@
 // Machine layouts for the fake Platform: game folders and the launchers that point at them.
 // Shared by the core's tests, the state gallery and the app running in a browser.
 import { DEFAULT_ENV, type Machine } from './fake'
+import manifest from '../../manifest.json'
+import { MANIFEST_URL } from '../core/manifest'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -9,11 +11,14 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, registry: {}, env: {} }
+  const out: Required<Machine> = { files: {}, registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     for (const [key, values] of Object.entries(p.registry ?? {})) out.registry[key] = { ...out.registry[key], ...values }
     Object.assign(out.env, p.env)
+    if (p.gpus) out.gpus = p.gpus
+    Object.assign(out.remoteText, p.remoteText)
+    if (p.devContent !== undefined) out.devContent = p.devContent
   }
   return out
 }
@@ -66,6 +71,15 @@ export function steam(opts: { steamPath?: string; libraries?: string[]; game?: s
 export const steamGameFolder = (library: string, installDir = 'FINAL FANTASY XIV Online') =>
   `${library}\\steamapps\\common\\${installDir}`
 
+/** The fake release host serves the same tier definitions as the publisher. */
+export function manifestHost(value: unknown = manifest): Machine {
+  return { remoteText: { [MANIFEST_URL]: JSON.stringify(value) } }
+}
+
+export function graphicsCard(name = 'NVIDIA GeForce RTX 4090', vendorId = 0x10de): Machine {
+  return { gpus: [{ name, vendorId, dedicatedMemory: 24 * 1024 ** 3, software: false }] }
+}
+
 /** The Square Enix launcher's uninstall entry, pointing at `installLocation`. */
 export function squareEnixLauncher(installLocation: string): Machine {
   return { registry: { [`HKLM\\${SQUARE_ENIX_UNINSTALL_KEY}`]: { InstallLocation: installLocation, DisplayName: 'FINAL FANTASY XIV ONLINE' } } }
@@ -73,10 +87,10 @@ export function squareEnixLauncher(installLocation: string): Machine {
 
 /** Named machines for the browser and the state gallery. */
 export const MACHINES = {
-  steam: machine(steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
-  xivlauncher: machine(xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
-  squareenix: machine(squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
-  none: machine(),
+  steam: machine(manifestHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
+  xivlauncher: machine(manifestHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
+  squareenix: machine(manifestHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
+  none: machine(manifestHost(), graphicsCard()),
 } satisfies Record<string, Machine>
 
 export type MachineName = keyof typeof MACHINES

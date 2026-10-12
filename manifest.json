@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "tiers": [
+    {
+      "id": "rtx-50",
+      "label": "RTX 50",
+      "status": "community-verified",
+      "gpuMatch": [{ "vendorId": 4318, "deviceNamePatterns": ["\\bRTX\\s+50[0-9]{2}\\b"] }],
+      "neuralRendering": true,
+      "requiresReShade": false
+    },
+    {
+      "id": "rtx-30-40",
+      "label": "RTX 30/40",
+      "status": "stable",
+      "gpuMatch": [{ "vendorId": 4318, "deviceNamePatterns": ["\\bRTX\\s+[34]0[0-9]{2}\\b"] }],
+      "neuralRendering": true,
+      "requiresReShade": false
+    },
+    {
+      "id": "rtx-20",
+      "label": "RTX 20",
+      "status": "experimental",
+      "gpuMatch": [{ "vendorId": 4318, "deviceNamePatterns": ["\\bRTX\\s+20[0-9]{2}\\b"] }],
+      "neuralRendering": true,
+      "requiresReShade": false
+    },
+    {
+      "id": "radeon",
+      "label": "Radeon",
+      "status": "experimental",
+      "gpuMatch": [{ "vendorId": 4098, "deviceNamePatterns": ["\\bRadeon\\b"] }],
+      "neuralRendering": false,
+      "requiresReShade": true
+    },
+    {
+      "id": "other",
+      "label": "Other",
+      "status": "stable",
+      "gpuMatch": "any",
+      "neuralRendering": false,
+      "requiresReShade": true
+    }
+  ]
+}

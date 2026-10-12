@@ -1,7 +1,7 @@
 // In-memory fake of the Platform port, with Windows semantics:
 // paths are case-insensitive and accept either slash, and a folder exists when a file lives under it.
 // Used by the core's tests, the state gallery and the app running in a browser.
-import { PlatformError, type EnvFolder, type FileStat, type Platform, type RegistryHive } from '../core/platform'
+import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type LocalContent, type Platform, type RegistryHive } from '../core/platform'
 
 /** A machine to fake: its files, registry and well-known folders. */
 export interface Machine {
@@ -9,6 +9,9 @@ export interface Machine {
   /** Full key path (hive included, e.g. `HKLM\SOFTWARE\...`) → its string values. */
   registry?: Record<string, Record<string, string>>
   env?: Partial<Record<EnvFolder, string>>
+  gpus?: GpuAdapter[]
+  remoteText?: Record<string, string>
+  devContent?: LocalContent | null
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
@@ -78,6 +81,20 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     async pickFolder() {
       await gate
       return picks.length ? picks.shift()! : null
+    },
+    async getGpuAdapters() {
+      await gate
+      return (machine.gpus ?? []).map((gpu) => ({ ...gpu }))
+    },
+    async fetchText(url) {
+      await gate
+      const text = machine.remoteText?.[url]
+      if (text === undefined) throw new PlatformError('network', `Could not fetch ${url}`)
+      return text
+    },
+    async getDevContent() {
+      await gate
+      return machine.devContent ? { ...machine.devContent } : null
     },
     answerPicker(path) {
       picks.push(path)

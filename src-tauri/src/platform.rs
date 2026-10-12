@@ -9,10 +9,11 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 use winreg::RegKey;
+use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)] // Network and HashMismatch arrive with downloads.
+#[allow(dead_code)] // HashMismatch arrives with downloads.
 pub enum ErrorKind {
     NotFound,
     AccessDenied,
@@ -102,6 +103,79 @@ pub fn env_folder(folder: &str) -> Result<String> {
         _ => return Err(PlatformError::new(ErrorKind::Unknown, format!("Unknown folder {folder}"), None)),
     };
     std::env::var(var).map_err(|_| PlatformError::new(ErrorKind::NotFound, format!("{var} is not set"), None))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAdapter {
+    pub name: String,
+    pub vendor_id: u32,
+    pub dedicated_memory: u64,
+    pub software: bool,
+}
+
+/// Enumerates DXGI adapters. Choice and tier matching belong to the TypeScript core.
+pub fn gpu_adapters() -> Result<Vec<GpuAdapter>> {
+    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
+    // SAFETY: the bindings manage the COM interfaces' lifetimes. GetDesc1 returns an owned descriptor;
+    // no raw pointer or interface leaves this thread.
+    unsafe {
+        let factory: IDXGIFactory1 = CreateDXGIFactory1().map_err(error)?;
+        let mut adapters = Vec::new();
+        for index in 0.. {
+            let adapter = match factory.EnumAdapters1(index) {
+                Ok(adapter) => adapter,
+                Err(e) if e.code() == DXGI_ERROR_NOT_FOUND => break,
+                Err(e) => return Err(error(e)),
+            };
+            let desc = adapter.GetDesc1().map_err(error)?;
+            let len = desc.Description.iter().position(|c| *c == 0).unwrap_or(desc.Description.len());
+            adapters.push(GpuAdapter {
+                name: String::from_utf16_lossy(&desc.Description[..len]),
+                vendor_id: desc.VendorId,
+                dedicated_memory: desc.DedicatedVideoMemory as u64,
+                software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
+            });
+        }
+        Ok(adapters)
+    }
+}
+
+/// Fetches text with a bounded wait. HTTP error bodies must never be parsed as manifests.
+pub async fn fetch_text(url: &str) -> Result<String> {
+    let error = |e: reqwest::Error| PlatformError::new(ErrorKind::Network, e.to_string(), None);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .user_agent(concat!("Lucent/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(error)?;
+    client.get(url).send().await.map_err(error)?.error_for_status().map_err(error)?.text().await.map_err(error)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalContent {
+    pub manifest_path: String,
+    pub files_directory: String,
+}
+
+/// Environment overrides are unavailable in the portable release app.
+pub fn dev_content() -> Result<Option<LocalContent>> {
+    if !cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let Some(manifest) = std::env::var_os("LUCENT_DEV_MANIFEST") else { return Ok(None) };
+    let manifest = std::path::absolute(manifest).map_err(|e| PlatformError::io(e, None))?;
+    let files = match std::env::var_os("LUCENT_DEV_FILES") {
+        Some(path) => std::path::absolute(path).map_err(|e| PlatformError::io(e, None))?,
+        None => manifest.parent()
+            .ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The dev manifest must name a file", None))?
+            .join("files"),
+    };
+    Ok(Some(LocalContent {
+        manifest_path: manifest.to_string_lossy().into_owned(),
+        files_directory: files.to_string_lossy().into_owned(),
+    }))
 }
 
 #[cfg(test)]
