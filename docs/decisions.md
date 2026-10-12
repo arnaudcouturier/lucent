@@ -8,7 +8,7 @@ Settled in a design grilling session on 2026-10-12. Each section is a decision; 
 - It is a **manager, not a one-shot installer**: it stays useful after setup (repair after patches, profile switching, updates, rollback, clean uninstall).
 - **Form:** one portable GUI `.exe`. No `.bat` / `.ps1`.
 - **Stack:** Tauri 2 + React + TypeScript. Rust side stays thin: file ops, hashing, archive extraction, registry, GPU detection. Chosen because the project is vibe-coded and TS/React gives the highest aesthetic ceiling; Electron rejected (portable build unpacks on every launch), WinUI/WPF rejected (single-file pain, lower ceiling).
-- On first run it offers to install itself to `%LOCALAPPDATA%\Lucent` with a Start Menu shortcut and a per-user Settings → Apps entry (no admin).
+- On first run it offers to install itself to `%LOCALAPPDATA%\Lucent` with a Start Menu shortcut and a per-user Settings → Apps entry (no admin). The offer is an **"Add Lucent to the Start menu"** checkbox on Review, on by default.
 - Windows 10 22H2 and 11, x64 only. English only. No telemetry.
 - Name: **Lucent**. Use "XIV" rather than "FFXIV"/"Final Fantasy" in branding. No Square Enix logos, art or fonts.
 
@@ -32,7 +32,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
    - Game detection order: XIVLauncher `%APPDATA%\XIVLauncher\launcherConfigV3.json` (`GamePath`), Steam libraries (app 39210), Square Enix launcher uninstall registry entry, default paths, manual picker validated by `game\ffxiv_dx11.exe`.
    - Existing mods detected: GPosingway, leftover GShade files, regular ReShade (`dxgi.dll` etc.), other OptiScaler installs, swapped DLSS DLLs.
 2. **Performance profile**: Fidelity / Balanced / Performance. The only first-run choice.
-3. **Review**: "Include ReShade" checkbox (on by default; always on for Radeon/other tiers), plus files backed up / added and download size.
+3. **Review**: "Include ReShade" checkbox (on by default; always on for Radeon/other tiers), "Add Lucent to the Start menu" checkbox (on by default), plus files backed up / added and download size.
 4. **Install**, then a done screen that teaches the hotkeys (Insert = OptiScaler overlay, Home = ReShade).
 
 - All presets are always installed; **no preset is active** by default.
@@ -42,8 +42,9 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 ## Main screen (lean — nothing else)
 
-- **Status line** with one contextual button: healthy → no button; broken files → **Repair**; update available → **Update** (with changelog).
-- **Performance profile** selector (3 options).
+- **Layout**: a left rail with the crystal and the deployment's facts (graphics card + tier + tier status badge, content version, game version; app version at the bottom), and a right pane with the status card, the performance profile, the Enabled row, and ⋯ in the title strip. The rail facts are the only place the tier badge appears.
+- **Status card** with one contextual action: healthy → no button; drift → **Repair**; update available → **Update**. The changelog shows **inline in the status card** with **Skip** and **Update** buttons (no modal).
+- **Performance profile** as three radio rows. **Custom** appears as a temporary fourth row, "Custom · based on X", that says what changed; it disappears once a profile is picked.
 - **Master switch labelled "Enabled"**. Turning it off leaves the deployment **Disabled**: files present but inactive. The state persists through repair, update and profile changes, and a health check on a disabled deployment expects the disabled state. Not called "Vanilla mode", because "vanilla" means a game folder with no deployment (and is also an Alive preset name).
 - **⋯ menu**: Versions (roll back, or apply a skipped version), Beta channel, XIVLauncher auto-repair, Copy diagnostics, Report a bug, Credits, Uninstall.
 - No separate DLSS 5 toggle (OptiScaler's overlay has one), no "Launch game" button, no preset display.
@@ -99,8 +100,30 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 ## Visual direction
 
-- **Direction B**: premium modern tool (Raycast / Linear / Arc spirit) — dark glass, fluid motion, strong typography, aether-blue accent, crystal motif. All art original.
-- The exact look is chosen by building 2–3 throwaway prototypes of the first-run screen.
+Settled by the look prototype on 2026-10-12: variant **D · Ember**, on branch `prototype/lucent-look`. Its README holds the full design language, and the branch stays as the live reference. Ember combines Rail's layout ("more polished and practical, less noisy") with Prism's idea that the crystal's light is the state. It **replaces** the earlier "dark glass, aether-blue accent" direction. The references are Crunchyroll's colours and beautifului.dev's restraint. All art is original.
+
+- **Theme**: dark only, with no OS light/dark switching. The window is opaque (no Mica or acrylic). The crystal's glow in the rail is the only painted backdrop.
+- **Colour**:
+  - `#F47521` orange is the **only accent**. It marks the primary action (with black `#0b0b0c` text, because white on orange fails contrast), selection, progress, the focus ring and the healthy state.
+  - `#FAB818` yellow means **caution** (drift, Experimental) and nothing else.
+  - `#ff6a5f` is for Uninstall.
+  - Charcoal surfaces: canvas `#141519`, rail `#0d0e11`, card `#1a1b20`, field `#212329`, ink `#f4f4f5` / `#a0a0a6` / `#6e7078`.
+  - Edges are 1px light rings (box-shadow), not borders.
+- **Type**: Geist for the UI and Geist Mono for paths, versions, numbers and keycaps. Both are SIL OFL 1.1 and bundled (no CDN). Body text is 13px and screen titles 20/600.
+- **Spacing**: 4px grid, 32px pane padding. Radius: chip 6, control 8, card 10.
+- **Icons**: Lucide (ISC), 1.75 stroke at 14–16px.
+- **Motion** has two speeds:
+  - The UI is quick and quiet: 180ms `cubic-bezier(.16,1,.3,1)`, screens fade in with a 6px slide, and selection uses springs.
+  - The crystal is the only thing in continuous motion. It speeds up during repair or update, stalls on drift and freezes when Disabled.
+  - Motion honours `prefers-reduced-motion`. The crystal pauses when the window is hidden or unfocused, since the game may be running.
+- **Crystal**: the brand mark and the status light, and it lives only in the rail.
+  - It's an original 3D spire with a clustered base and two precessing gold rings carrying shards.
+  - It evokes an aetheryte but **deliberately omits the cup-and-prong base and the zigzag ring ornament**. Keep it that way.
+  - States: glass (scan, with a scan line; profile; review), filling (install), lit (done, healthy), pulse ring (update available), fast spin (repair or update running), dark facets with a stalled ring and a falling shard (drift), frozen steel (Disabled).
+- **Window**:
+  - A fixed **880×580** frameless window (`decorations: false`) with custom minimize and close buttons, and no maximize.
+  - Drag regions cover the rail and the title strip.
+  - It keeps the native Windows 11 shadow and rounded corners. Still to be verified: `shadow: true`, and how it looks on Windows 10.
 
 ## Deferred
 
