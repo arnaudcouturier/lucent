@@ -25,10 +25,14 @@ export interface DeploymentRecord {
   profile?: ProfileId | null
   /** An interrupted profile change undoes only the journal entries from this index onward. */
   profileChangeStart?: number
+  /** An uninstall in progress: recovery finishes it rather than protecting what the mods changed in Lucent's own files. */
+  uninstalling?: boolean
   recipe: Plan['recipe']
   journal: JournalEntry[]
   /** Directories absent before the deployment, recorded before any step can create them. */
   createdDirectories?: string[]
+  /** The tier's generated files that were absent before the deployment; uninstall removes only these. */
+  generatedFiles?: string[]
   /** Preallocated undo checkpoints: one byte per step, then one once the whole deployment is undone. */
   undoCheckpoints?: { id: string; size: number }
   ownedConfigs: Record<string, string>
@@ -101,6 +105,11 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
     for (const path of value.createdDirectories) assertGamePath(path)
   }
+  if (value.generatedFiles !== undefined) {
+    if (!Array.isArray(value.generatedFiles)) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
+    for (const path of value.generatedFiles) assertGamePath(path)
+  }
+  if (value.uninstalling !== undefined && typeof value.uninstalling !== 'boolean') throw new Error('The uninstall journal is damaged.')
   if (value.profileChangeStart !== undefined && (!Number.isSafeInteger(value.profileChangeStart) || value.profileChangeStart < 0 || value.profileChangeStart > value.journal.length)) throw new Error('The profile change journal is damaged.')
   if (value.undoCheckpoints && value.profileChangeStart === undefined) {
     const progress = value.undoCheckpoints
@@ -123,10 +132,10 @@ const discardCheckpoints = (platform: Platform, recordPath: string, checkpoints:
   checkpoints && platform.removeFile(checkpointsPath(recordPath, checkpoints.id)).catch(() => {})
 
 /** Recovery precedes Scan and does not depend on which folder a launcher currently points at. */
-export async function recoverDeployments(platform: Platform): Promise<string[]> {
+export async function recoverDeployments(platform: Platform): Promise<DeploymentRecord[]> {
   const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
   if (!await maybeStat(platform, directory)) return []
-  const recovered: string[] = []
+  const recovered: DeploymentRecord[] = []
   for (const relative of (await platform.listFiles(directory)).sort()) {
     if (!relative.endsWith('record.json')) continue
     const path = joinPath(directory, relative)
@@ -138,7 +147,7 @@ export async function recoverDeployments(platform: Platform): Promise<string[]> 
     const record = await readDeployment(platform, value.gameFolder)
     if (record?.status === 'applying') {
       await undoDeployment(platform, record)
-      recovered.push(record.gameFolder)
+      recovered.push(record)
     }
   }
   return recovered
@@ -180,6 +189,12 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   const checkpoint = (entry: number | 'all') => record.undoCheckpoints && start === 0
     ? platform.writeFileByte(checkpointsPath(paths.record, record.undoCheckpoints.id), entry === 'all' ? record.undoCheckpoints.size - 1 : entry, UNDONE)
     : platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  if (record.uninstalling) {
+    for (const path of record.generatedFiles ?? []) {
+      const target = await platform.resolveGamePath(root, path)
+      if ((await maybeStat(platform, target))?.kind === 'file') await platform.removeFile(target)
+    }
+  }
   for (let i = record.journal.length - 1; i >= start; i--) {
     const entry = record.journal[i]
     if (entry.undone) continue
@@ -188,7 +203,11 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
       const stat = await maybeStat(platform, target)
       const current = stat ? await platform.hashFile(target) : null
       if (current === before) continue
-      if (current !== entry.after[relative]) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
+      if (current !== entry.after[relative]) {
+        if (!record.uninstalling) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
+        // A file Lucent added stays Lucent's even after a mod rewrites it; a replaced original is newer than the deployment.
+        if (before !== null && current !== null) continue
+      }
       if (before === null) await platform.removeFile(target)
       else {
         const backup = joinPath(paths.backups, before)
@@ -220,6 +239,7 @@ export async function deployContent(
   if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before installing.`)
   const paths = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
+  const present = new Set(Object.keys(scan.files).map(fileKey))
   for (let i = 0; i < plan.files.length; i++) {
     const file = plan.files[i]
     const path = joinPath(paths.cache, file.sha256)
@@ -236,7 +256,8 @@ export async function deployContent(
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
-    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [], undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
+    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [],
+    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   const owned = new Set<string>()
@@ -312,6 +333,21 @@ export async function deployContent(
       throw new DeploymentError(error, true, recoveryError)
     }
     throw new DeploymentError(error, false)
+  }
+}
+
+/** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */
+export async function uninstallDeployment(platform: Platform, gameFolder: string): Promise<void> {
+  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before uninstalling.')
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('There is no deployment to uninstall.')
+  const { record: path } = await dataPaths(platform, gameFolder)
+  record.status = 'applying'
+  record.uninstalling = true
+  // From here on, an interrupted uninstall is finished by recovery at the next start.
+  await platform.writeText(path, JSON.stringify(record, null, 2))
+  try { await undoDeployment(platform, record) } catch (error) {
+    throw new DeploymentError(error, true, error)
   }
 }
 

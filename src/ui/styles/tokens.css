@@ -12,6 +12,8 @@
   --hover-2: #272930;
   --line: #24262c; /* dividers inside cards */
   --line-strong: #31343c; /* unchecked controls */
+  --overlay: #1d1f24; /* menus and dialogs */
+  --scrim: rgba(0, 0, 0, 0.5); /* behind a dialog */
 
   /* Ink */
   --ink: #f4f4f5;
@@ -33,6 +35,7 @@
   --caution-ink: #f5d27e; /* text on the caution tint */
 
   --danger: #ff6a5f; /* Uninstall */
+  --danger-hover: #ff8077;
 
   /* Window chrome */
   --caption-hover: rgba(255, 255, 255, 0.06);

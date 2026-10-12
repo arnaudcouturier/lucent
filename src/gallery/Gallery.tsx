@@ -150,6 +150,11 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'uninstalled', label: 'Scan · after uninstall', async setup() {
+    const core = await workflow('healthy')()
+    await core.uninstall()
+    return core
+  } },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
