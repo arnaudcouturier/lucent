@@ -10,3 +10,9 @@ export function joinPath(...parts: string[]): string {
 }
 
 export const normalizePath = (path: string) => joinPath(path).replace(/\\$/, '')
+
+/** Keeps the trailing separator so a drive-root parent stays absolute (C:\\, not C:). */
+export const parentPath = (path: string) => {
+  const normalized = normalizePath(path)
+  return normalized.slice(0, normalized.lastIndexOf('\\') + 1)
+}

@@ -2,13 +2,17 @@
 use crate::platform::{ErrorKind, PlatformError, Result};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-fn temp_file(path: &Path) -> Result<tempfile::NamedTempFile> {
+fn temp_file(path: &Path, staging_directory: Option<&Path>) -> Result<tempfile::NamedTempFile> {
     let parent = path.parent().ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "File needs a parent folder", Some(path)))?;
     fs::create_dir_all(parent).map_err(|e| PlatformError::io(e, Some(parent)))?;
+    // The core supplies a sibling outside the game folder for game writes. Atomic persist
+    // still requires the same volume, but an abruptly killed process leaves no game file.
+    // A staging folder Windows won't let us write to (such as a drive root) falls back to the destination's.
+    if let Some(Ok(file)) = staging_directory.map(tempfile::NamedTempFile::new_in) { return Ok(file); }
     tempfile::NamedTempFile::new_in(parent).map_err(|e| PlatformError::io(e, Some(path)))
 }
 
@@ -31,15 +35,25 @@ fn mutation_error(error: std::io::Error, path: &Path) -> PlatformError {
     classified
 }
 
-pub fn write_text(path: &Path, text: &str) -> Result<()> {
-    let mut file = temp_file(path)?;
+pub fn write_text(path: &Path, text: &str, staging_directory: Option<&Path>) -> Result<()> {
+    let mut file = temp_file(path, staging_directory)?;
     file.write_all(text.as_bytes()).map_err(|e| PlatformError::io(e, Some(path)))?;
     commit(file, path, true)
 }
 
-pub fn copy_file(from: &Path, to: &Path, replace: bool) -> Result<()> {
+pub fn write_file_byte(path: &Path, offset: u64, value: u8) -> Result<()> {
+    let mut file = fs::OpenOptions::new().write(true).open(path).map_err(|e| PlatformError::io(e, Some(path)))?;
+    if offset >= file.metadata().map_err(|e| PlatformError::io(e, Some(path)))?.len() {
+        return Err(PlatformError::new(ErrorKind::Unknown, "Byte write would extend the file", Some(path)));
+    }
+    file.seek(SeekFrom::Start(offset)).map_err(|e| PlatformError::io(e, Some(path)))?;
+    file.write_all(&[value]).map_err(|e| PlatformError::io(e, Some(path)))?;
+    file.sync_all().map_err(|e| PlatformError::io(e, Some(path)))
+}
+
+pub fn copy_file(from: &Path, to: &Path, replace: bool, staging_directory: Option<&Path>) -> Result<()> {
     let mut source = File::open(from).map_err(|e| PlatformError::io(e, Some(from)))?;
-    let mut file = temp_file(to)?;
+    let mut file = temp_file(to, staging_directory)?;
     std::io::copy(&mut source, &mut file).map_err(|e| PlatformError::io(e, Some(to)))?;
     commit(file, to, replace)
 }
@@ -62,6 +76,15 @@ pub fn remove_file(path: &Path) -> Result<()> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(mutation_error(e, path)),
+    }
+}
+
+pub fn remove_directory_if_empty(path: &Path) -> Result<()> {
+    match fs::remove_dir(path) {
+        Ok(()) => Ok(()),
+        // A folder that gained someone else's file stays, along with that file.
+        Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty) => Ok(()),
+        Err(e) => Err(PlatformError::io(e, Some(path))),
     }
 }
 
@@ -122,11 +145,12 @@ pub fn list_files(root: &Path) -> Result<Vec<String>> {
 }
 
 pub async fn download_file(url: &str, to: &Path, progress: tauri::ipc::Channel<u64>) -> Result<()> {
-    let error = |e: reqwest::Error| PlatformError::new(ErrorKind::Network, e.to_string(), None);
+    let error = |e: reqwest::Error| PlatformError::new(
+        if e.status() == Some(reqwest::StatusCode::NOT_FOUND) { ErrorKind::NotFound } else { ErrorKind::Network }, e.to_string(), None);
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(600))
         .user_agent(concat!("Lucent/", env!("CARGO_PKG_VERSION"))).build().map_err(error)?;
     let mut response = client.get(url).send().await.map_err(error)?.error_for_status().map_err(error)?;
-    let mut file = temp_file(to)?;
+    let mut file = temp_file(to, None)?;
     let mut received = 0;
     while let Some(chunk) = response.chunk().await.map_err(error)? {
         file.write_all(&chunk).map_err(|e| PlatformError::io(e, Some(to)))?;
@@ -170,12 +194,52 @@ mod tests {
         let source = dir.path().join("source.dll");
         let target = dir.path().join("cache").join("file");
         fs::write(&source, b"\x00\xff\x01").unwrap();
-        copy_file(&source, &target, true).unwrap();
+        copy_file(&source, &target, true, None).unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"\x00\xff\x01");
         fs::write(&source, b"OptiScaler").unwrap();
         assert_eq!(hash_file(&source).unwrap(), "f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02");
-        write_text(&target, "complete replacement").unwrap();
+        write_text(&target, "complete replacement", None).unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap(), "complete replacement");
+    }
+
+    #[test]
+    fn stages_game_writes_outside_the_destination_and_falls_back_when_staging_is_unusable() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = dir.path().join("staging");
+        let target = dir.path().join("game").join("ReShade.ini");
+        fs::create_dir(&staging).unwrap();
+        write_text(&target, "staged", Some(&staging)).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "staged");
+        assert_eq!(fs::read_dir(&staging).unwrap().count(), 0);
+        write_text(&target, "fallback", Some(&dir.path().join("missing"))).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "fallback");
+        assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn writes_one_preallocated_byte_and_refuses_to_extend_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("rollback.txt");
+        fs::write(&file, "000").unwrap();
+        write_file_byte(&file, 1, b'1').unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "010");
+        assert!(write_file_byte(&file, 3, b'1').is_err());
+        assert_eq!(fs::read_to_string(&file).unwrap(), "010");
+    }
+
+    #[test]
+    fn removes_a_directory_only_while_it_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let full = dir.path().join("reshade-presets");
+        fs::create_dir(&full).unwrap();
+        fs::write(full.join("My preset.ini"), "user").unwrap();
+        remove_directory_if_empty(&full).unwrap();
+        assert_eq!(fs::read_to_string(full.join("My preset.ini")).unwrap(), "user");
+        let empty = dir.path().join("reshade-shaders");
+        fs::create_dir(&empty).unwrap();
+        remove_directory_if_empty(&empty).unwrap();
+        assert!(!empty.exists());
+        remove_directory_if_empty(&empty).unwrap();
     }
 
     #[test]
@@ -223,7 +287,7 @@ mod tests {
         fs::write(&source, "new bytes").unwrap();
         fs::write(&target, "original bytes").unwrap();
         let held = fs::OpenOptions::new().read(true).share_mode(0).open(&target).unwrap();
-        assert_eq!(copy_file(&source, &target, true).unwrap_err().kind, ErrorKind::Locked);
+        assert_eq!(copy_file(&source, &target, true, None).unwrap_err().kind, ErrorKind::Locked);
         drop(held);
         assert_eq!(fs::read_to_string(&target).unwrap(), "original bytes");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2, "temporary files are removed on failure");
@@ -239,7 +303,7 @@ mod tests {
         let target = dir.path().join("target");
         fs::write(&source, "Lucent bytes").unwrap();
         fs::write(&target, "User bytes").unwrap();
-        assert!(copy_file(&source, &target, false).is_err());
+        assert!(copy_file(&source, &target, false, None).is_err());
         assert!(rename_file(&source, &target, false).is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "User bytes");
         assert_eq!(fs::read_to_string(&source).unwrap(), "Lucent bytes");

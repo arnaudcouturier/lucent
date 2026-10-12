@@ -63,11 +63,16 @@ export interface Platform {
   fetchText(url: string): Promise<string>
   getDevContent(): Promise<LocalContent | null>
   /** Atomic, durable replacement; readers see either the old or the complete new file. */
-  writeText(path: string, text: string): Promise<void>
+  writeText(path: string, text: string, stagingDirectory?: string): Promise<void>
+  /** Durably changes an already allocated byte; refuses to extend the file. */
+  writeFileByte(path: string, offset: number, value: number): Promise<void>
   /** `replace=false` atomically refuses a destination that appeared since the last check. */
-  copyFile(from: string, to: string, replace?: boolean): Promise<void>
+  /** Game writes stage outside the game folder on the same volume, so a kill leaves no temporary game files. */
+  copyFile(from: string, to: string, replace?: boolean, stagingDirectory?: string): Promise<void>
   renameFile(from: string, to: string, replace?: boolean): Promise<void>
   removeFile(path: string): Promise<void>
+  /** Removes a directory only while it is empty; one holding anything, or already gone, is left as is. */
+  removeDirectoryIfEmpty(path: string): Promise<void>
   listFiles(root: string): Promise<string[]>
   hashFile(path: string): Promise<string>
   /** Resolves a relative path, rejecting traversal and reparse points in every existing ancestor. */

@@ -18,12 +18,12 @@ export function ScanScreen() {
   const [state, core] = useCore()
   return (
     <Screen title="Scan" sub="Lucent looks for your game folder, graphics card and launcher.">
-      <ul className="card list">
+      {!state.recoveryRequired && <><ul className="card list">
         <GameFolderRow />
         <XivLauncherRow />
         <GraphicsFeaturesRow />
       </ul>
-      <ManifestNotice />
+      <ManifestNotice /></>}
       {state.rejectedFolder && (
         <p className="callout" role="alert">
           <TriangleAlert size={14} strokeWidth={1.75} />
@@ -34,7 +34,7 @@ export function ScanScreen() {
         </p>
       )}
       <FlowError />
-      <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.review()}>Continue</button></footer>
+      {!state.recoveryRequired && <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.review()}>Continue</button></footer>}
     </Screen>
   )
 }

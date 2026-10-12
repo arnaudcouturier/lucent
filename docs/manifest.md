@@ -107,16 +107,32 @@ Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, `backups\<sha256>`, 
 GPU, tier, content version, ReShade choice, Enabled, the recipe's path lists, each journal entry,
 last-written config text, and every deployed file's SHA-256, size and modification time.
 
-All assets are verified before the game folder changes. The journal is saved atomically before
-each step, including that step's before and intended after hashes. Binary copies and text writes
-also use atomic replacement. Failures undo intents in reverse using verified backups; an
-unfinished record is recovered on the next Scan of that folder. Recovery waits until XIV closes
-and stops if a file differs from both recorded states, preserving a later user change. A successful
-record reopens on the main screen; its deployed hashes determine Healthy or Drift.
+All assets are verified before the game folder changes, so an offline, missing, truncated or
+wrong-hash download leaves it untouched. The journal is saved atomically before each step,
+including that step's before and intended after hashes. Game-folder writes also use atomic
+replacement, staged in the game folder's parent on the same volume, so a killed process leaves no
+temporary file in the game folder. When Windows refuses that parent (such as a system drive root),
+staging falls back to the destination's folder, where a kill mid-write can leave one. Directories
+absent before the deployment are recorded before a step can create them.
+
+Failures undo intents in reverse using verified backups, then remove the recorded directories that
+are empty; one that gained a file Lucent doesn't own stays, with that file. Before Scan, and before
+anything else runs, Lucent recovers every unfinished record in its
+data folder, whatever folder the launcher points at now, and tells the player. If recovery cannot
+finish, Scan, Review and Install stay blocked until it does. Recovery waits until XIV closes and
+stops if a file differs from both recorded states, preserving a later user change. The status card
+explains a failure in plain words (connection, missing file, hash check, disk space, file in use,
+access denied) and offers to try again. A successful record reopens on the main screen; its
+deployed hashes determine Healthy or Drift.
 
 Copies and renames to an absent game-folder destination atomically refuse a file that appears
-between journaling and execution. Recovery saves an `undone` marker after each reversed intent,
-before proceeding to an earlier one, so a second interruption resumes at the correct point.
+between journaling and execution. Recovery marks each reversed intent as undone before proceeding
+to an earlier one, so a second interruption resumes at the correct point. Before the first game
+write, a deployment preallocates `undo-<id>.txt` next to its record: one checkpoint byte per step
+plus a completion byte. Undoing that deployment flips bytes in place instead of rewriting the
+record, so a data disk that fills up cannot stop recovery. A completed deployment, or the next
+attempt, drops and deletes those checkpoints; later journal entries are undone through the record.
 
-The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`, each
-`install-<phase>`, `done`, `done-no-reshade`, `done-radeon`, `done-other`, and `healthy`.
+The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
+`review-failed`, `scan-recovered`, `scan-recovery-blocked`, each `install-<phase>`, `done`,
+`done-no-reshade`, `done-radeon`, `done-other`, and `healthy`.

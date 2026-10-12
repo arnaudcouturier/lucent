@@ -9,7 +9,8 @@ import { MACHINES, graphicsCard, manifestHost, machine, steam, steamGameFolder, 
 import { App } from '../ui/App'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
-import type { DeploymentPhase } from '../core/deployment'
+import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
+import { PlatformError } from '../core/platform'
 import './gallery.css'
 
 const LONG_LIBRARY = 'E:\\Games\\Libraries\\Steam Library (fast NVMe drive)'
@@ -57,6 +58,32 @@ const installStage = (phase: DeploymentPhase) => async () => {
     void core.deploy()
   })
   return core
+}
+
+const failedDeployment = async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  platform.downloadFile = async () => { throw new PlatformError('network', 'Connection lost') }
+  await core.deploy()
+  return core
+}
+const recoveredDeployment = (blocked = false) => async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  const record = (await readDeployment(platform, folder.path))!
+  record.status = 'applying'
+  await platform.writeText((await dataPaths(platform, folder.path)).record, JSON.stringify(record))
+  if (blocked) platform.isGameRunning = async () => true
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
 }
 
 const STATES: GalleryState[] = [
@@ -109,6 +136,9 @@ const STATES: GalleryState[] = [
   { key: 'review-no-reshade', label: 'Review · ReShade excluded', setup: workflow('review', MACHINES.steam, false) },
   { key: 'review-radeon', label: 'Review · ReShade required', setup: workflow('review', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'review-user-file', label: 'Review · user file protected', setup: workflow('review', machine(MACHINES.xivlauncher, { files: { 'C:\\Games\\FFXIV\\game\\winmm.dll': 'User mod' } })) },
+  { key: 'review-failed', label: 'Review · download failed', setup: failedDeployment },
+  { key: 'scan-recovered', label: 'Scan · unfinished deployment recovered', setup: recoveredDeployment() },
+  { key: 'scan-recovery-blocked', label: 'Scan · recovery needs attention', setup: recoveredDeployment(true) },
   ...(['downloading', 'backing-up', 'applying', 'checking'] as const).map((phase) => ({ key: `install-${phase}`, label: `Install · ${phase}`, setup: installStage(phase) })),
   { key: 'done', label: 'Done · both hotkeys', setup: workflow('done') },
   { key: 'done-no-reshade', label: 'Done · OptiScaler only', setup: workflow('done', MACHINES.steam, false) },

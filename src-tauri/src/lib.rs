@@ -41,13 +41,17 @@ async fn platform_dev_content() -> Result<Option<LocalContent>, PlatformError> {
 }
 
 #[tauri::command]
-async fn platform_write_text(path: PathBuf, text: String) -> Result<(), PlatformError> { files::write_text(&path, &text) }
+async fn platform_write_text(path: PathBuf, text: String, staging_directory: Option<PathBuf>) -> Result<(), PlatformError> { files::write_text(&path, &text, staging_directory.as_deref()) }
 #[tauri::command]
-async fn platform_copy_file(from: PathBuf, to: PathBuf, replace: bool) -> Result<(), PlatformError> { files::copy_file(&from, &to, replace) }
+async fn platform_write_file_byte(path: PathBuf, offset: u64, value: u8) -> Result<(), PlatformError> { files::write_file_byte(&path, offset, value) }
+#[tauri::command]
+async fn platform_copy_file(from: PathBuf, to: PathBuf, replace: bool, staging_directory: Option<PathBuf>) -> Result<(), PlatformError> { files::copy_file(&from, &to, replace, staging_directory.as_deref()) }
 #[tauri::command]
 async fn platform_rename_file(from: PathBuf, to: PathBuf, replace: bool) -> Result<(), PlatformError> { files::rename_file(&from, &to, replace) }
 #[tauri::command]
 async fn platform_remove_file(path: PathBuf) -> Result<(), PlatformError> { files::remove_file(&path) }
+#[tauri::command]
+async fn platform_remove_directory_if_empty(path: PathBuf) -> Result<(), PlatformError> { files::remove_directory_if_empty(&path) }
 #[tauri::command]
 async fn platform_list_files(root: PathBuf) -> Result<Vec<String>, PlatformError> { files::list_files(&root) }
 #[tauri::command]
@@ -74,8 +78,8 @@ pub fn run() {
             platform_gpu_adapters,
             platform_fetch_text,
             platform_dev_content,
-            platform_write_text, platform_copy_file, platform_rename_file, platform_remove_file,
-            platform_list_files, platform_hash_file, platform_resolve_game_path,
+            platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
+            platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
             platform_download_file, platform_is_game_running
         ])
         .run(tauri::generate_context!())

@@ -127,6 +127,10 @@ _Avoid_: vanilla mode, paused, off
 Undoing a deployment from its journal, leaving a vanilla game folder.
 _Avoid_: remove, clean up
 
+**Recovery**:
+Undoing an unfinished deployment from its journal after a failure or a crash, so the game folder is as it was before. It runs before anything else at startup.
+_Avoid_: rollback (that word belongs to updates), revert
+
 ### Updates
 
 **Channel**:

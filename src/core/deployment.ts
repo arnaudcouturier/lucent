@@ -2,7 +2,7 @@ import { assertGamePath, type ContentVersion, type Step, type Tier } from '../sh
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { fileKey, planDeployment, type DeploymentScan, type Plan } from './planner'
-import { joinPath, normalizePath } from './paths'
+import { joinPath, normalizePath, parentPath } from './paths'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -23,11 +23,41 @@ export interface DeploymentRecord {
   enabled: boolean
   recipe: Plan['recipe']
   journal: JournalEntry[]
+  /** Directories absent before the deployment, recorded before any step can create them. */
+  createdDirectories?: string[]
+  /** Preallocated undo checkpoints: one byte per step, then one once the whole deployment is undone. */
+  undoCheckpoints?: { id: string; size: number }
   ownedConfigs: Record<string, string>
   files: Record<string, FileStamp>
 }
 export type DeploymentPhase = 'downloading' | 'backing-up' | 'applying' | 'checking'
 export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null }
+
+export function failureReason(error: unknown): string {
+  if (error instanceof PlatformError) {
+    switch (error.kind) {
+      case 'network': return 'Lucent couldn’t download a content file. Check your connection and try again.'
+      case 'not-found': return 'A required file is missing. Try again; if it still fails, report this content version.'
+      case 'hash-mismatch': return 'A file failed its hash check. Try again to download a fresh copy.'
+      case 'disk-full': return 'There isn’t enough free disk space. Free some space and try again.'
+      case 'locked': return 'A file is in use. Close XIV and any apps using the game folder, then try again.'
+      case 'access-denied': return 'Windows denied access to a required file. Check folder permissions and try again.'
+    }
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+export class DeploymentError extends Error {
+  constructor(error: unknown, readonly recoveryRequired: boolean, recoveryError?: unknown) {
+    const reason = failureReason(error)
+    // XIV starting mid-install blocks both the step and its undo; say so once.
+    const recovery = failureReason(recoveryError) === reason ? '' : ` ${failureReason(recoveryError)}`
+    super(`${reason} ${recoveryRequired
+      ? `Recovery could not finish.${recovery} Keep Lucent’s journal and backups; try recovery again once the problem is resolved.`
+      : 'Lucent restored the game folder to how it was before.'}`)
+    this.name = 'DeploymentError'
+  }
+}
 
 export async function dataPaths(platform: Platform, gameFolder: string) {
   const data = joinPath(await platform.envFolder('LocalAppData'), 'Lucent')
@@ -49,7 +79,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   if (!await maybeStat(platform, record)) return null
   const value = JSON.parse(await platform.readText(record)) as DeploymentRecord
   // A damaged record must never authorize writes outside this folder or arbitrary backup paths.
-  if (value.schemaVersion !== 1 || !['applying', 'complete', 'rolled-back'].includes(value.status)
+  if (!value || value.schemaVersion !== 1 || !['applying', 'complete', 'rolled-back'].includes(value.status)
     || typeof value.gameFolder !== 'string' || fileKey(normalizePath(value.gameFolder)) !== fileKey(normalizePath(gameFolder))
     || !Array.isArray(value.journal) || !value.files || !value.ownedConfigs || !value.recipe) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   for (const entry of value.journal) {
@@ -60,7 +90,50 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     }
   }
   for (const path of [...Object.keys(value.files), ...Object.keys(value.ownedConfigs)]) assertGamePath(path)
+  if (value.createdDirectories !== undefined) {
+    if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
+    for (const path of value.createdDirectories) assertGamePath(path)
+  }
+  if (value.undoCheckpoints) {
+    const progress = value.undoCheckpoints
+    if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(progress.id) || !Number.isSafeInteger(progress.size) || progress.size <= value.journal.length) throw new Error('The undo checkpoints are damaged.')
+    const checkpoints = await platform.readText(checkpointsPath(record, progress.id))
+    if (checkpoints.length !== progress.size || !/^[01]+$/.test(checkpoints)) throw new Error('The undo checkpoints are damaged.')
+    value.journal.forEach((entry, i) => { if (checkpoints[i] === '1') entry.undone = true })
+    if (checkpoints.at(-1) === '1') {
+      if (value.journal.some((entry) => !entry.undone)) throw new Error('The undo checkpoints are damaged.')
+      value.status = 'rolled-back'
+    }
+  }
   return value
+}
+
+const checkpointsPath = (recordPath: string, id: string) => joinPath(parentPath(recordPath), `undo-${id}.txt`)
+const UNDONE = '1'.charCodeAt(0)
+/** Checkpoints matter only while a record refers to them, so a leftover is harmless litter in Lucent's data folder. */
+const discardCheckpoints = (platform: Platform, recordPath: string, checkpoints: DeploymentRecord['undoCheckpoints']) =>
+  checkpoints && platform.removeFile(checkpointsPath(recordPath, checkpoints.id)).catch(() => {})
+
+/** Recovery precedes Scan and does not depend on which folder a launcher currently points at. */
+export async function recoverDeployments(platform: Platform): Promise<string[]> {
+  const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
+  if (!await maybeStat(platform, directory)) return []
+  const recovered: string[] = []
+  for (const relative of (await platform.listFiles(directory)).sort()) {
+    if (!relative.endsWith('record.json')) continue
+    const path = joinPath(directory, relative)
+    const value = JSON.parse(await platform.readText(path)) as Partial<DeploymentRecord> | null
+    if (!value || typeof value.gameFolder !== 'string'
+      || fileKey(path) !== fileKey((await dataPaths(platform, value.gameFolder)).record)) {
+      throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
+    }
+    const record = await readDeployment(platform, value.gameFolder)
+    if (record?.status === 'applying') {
+      await undoDeployment(platform, record)
+      recovered.push(record.gameFolder)
+    }
+  }
+  return recovered
 }
 
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null): Promise<DeploymentScan> {
@@ -84,11 +157,22 @@ export function releaseAsset(file: ContentVersion['files'][number]): string {
   return `https://github.com/arnaudcouturier/lucent/releases/download/${file.release}/${file.sha256}`
 }
 
+async function undoDirectories(platform: Platform, record: DeploymentRecord) {
+  const root = joinPath(record.gameFolder, 'game')
+  const directories = [...(record.createdDirectories ?? [])].sort((a, b) => b.split('/').length - a.split('/').length)
+  for (const relative of directories) await platform.removeDirectoryIfEmpty(await platform.resolveGamePath(root, relative))
+}
+
 export async function undoDeployment(platform: Platform, record: DeploymentRecord): Promise<void> {
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before recovering the unfinished deployment.')
   const paths = await dataPaths(platform, record.gameFolder)
   const root = joinPath(record.gameFolder, 'game')
-  for (const entry of [...record.journal].reverse()) {
+  // Flipping a preallocated byte needs no free space, so a full data disk cannot stop the undo.
+  const checkpoint = (entry: number | 'all') => record.undoCheckpoints
+    ? platform.writeFileByte(checkpointsPath(paths.record, record.undoCheckpoints.id), entry === 'all' ? record.undoCheckpoints.size - 1 : entry, UNDONE)
+    : platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  for (let i = record.journal.length - 1; i >= 0; i--) {
+    const entry = record.journal[i]
     if (entry.undone) continue
     for (const [relative, before] of Object.entries(entry.before).reverse()) {
       const target = await platform.resolveGamePath(root, relative)
@@ -100,14 +184,15 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
       else {
         const backup = joinPath(paths.backups, before)
         if (await platform.hashFile(backup) !== before) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
-        await platform.copyFile(backup, target, current !== null)
+        await platform.copyFile(backup, target, current !== null, parentPath(record.gameFolder))
       }
     }
     entry.undone = true
-    await platform.writeText(paths.record, JSON.stringify(record, null, 2))
+    await checkpoint(i)
   }
+  await undoDirectories(platform, record)
   record.status = 'rolled-back'
-  await platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await checkpoint('all')
 }
 
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
@@ -139,11 +224,15 @@ export async function deployContent(
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
-    includeReShade: plan.includeReShade, enabled: true, recipe: plan.recipe, journal: [], ownedConfigs: {}, files: {},
+    includeReShade: plan.includeReShade, enabled: true, recipe: plan.recipe, journal: [], createdDirectories: [], undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   const owned = new Set<string>()
+  // Reserve every undo checkpoint before the first game write. Updating one byte
+  // needs no new file allocation even if a later journal write fills Lucent's disk.
+  await platform.writeText(checkpointsPath(paths.record, record.undoCheckpoints!.id), '0'.repeat(record.undoCheckpoints!.size))
   await save()
+  await discardCheckpoints(platform, paths.record, previous?.undoCheckpoints)
   try {
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i]
@@ -152,6 +241,12 @@ export async function deployContent(
       report({ phase: 'backing-up', progress: 0.4 + i / plan.steps.length * 0.4, file: relatives[0] })
       for (const relative of relatives) {
         assertGamePath(relative)
+        const parts = relative.replace(/\\/g, '/').split('/')
+        for (let length = 1; length < parts.length; length++) {
+          const directory = parts.slice(0, length).join('/')
+          if (!record.createdDirectories!.some((p) => fileKey(p) === fileKey(directory))
+            && !await maybeStat(platform, await platform.resolveGamePath(root, directory))) record.createdDirectories!.push(directory)
+        }
         const path = await platform.resolveGamePath(root, relative)
         const stat = await maybeStat(platform, path)
         if (stat && (!owned.has(fileKey(relative)) || stat.kind !== 'file')) throw new Error(`Protecting a user file: ${relative}. The folder changed since Review.`)
@@ -170,7 +265,7 @@ export async function deployContent(
       report({ phase: 'applying', progress: 0.4 + (i + 0.5) / plan.steps.length * 0.4, file: relatives[0] })
       if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during installation. Close it before retrying.')
       // Resolve again after the durable journal write, immediately before the mutation.
-      if (step.kind === 'copy') await platform.copyFile(joinPath(paths.cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
+      if (step.kind === 'copy') await platform.copyFile(joinPath(paths.cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
       else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
       else await platform.removeFile(await platform.resolveGamePath(root, step.path))
       for (const relative of relatives) owned.add(fileKey(relative))
@@ -184,15 +279,16 @@ export async function deployContent(
       record.files[file.path] = stamp
     }
     for (const config of plan.recipe.ownedConfigs) record.ownedConfigs[config.path] = await platform.readText(await platform.resolveGamePath(root, config.path))
-    record.status = 'complete'
-    await save()
+    // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
+    const complete: DeploymentRecord = { ...record, status: 'complete', undoCheckpoints: undefined }
+    await platform.writeText(paths.record, JSON.stringify(complete, null, 2))
+    await discardCheckpoints(platform, paths.record, record.undoCheckpoints)
     report({ phase: 'checking', progress: 1, file: null })
-    return record
+    return complete
   } catch (error) {
-    record.status = 'applying'
     try { await undoDeployment(platform, record) } catch (recoveryError) {
-      throw new Error(`${error instanceof Error ? error.message : error} Recovery needs attention: ${recoveryError instanceof Error ? recoveryError.message : recoveryError}`)
+      throw new DeploymentError(error, true, recoveryError)
     }
-    throw error
+    throw new DeploymentError(error, false)
   }
 }

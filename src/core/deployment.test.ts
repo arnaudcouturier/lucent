@@ -93,7 +93,7 @@ it('undoes earlier steps when a later write fails', async () => {
   const before = await platform.listFiles(`${ROOT}\\game`)
   await core.review()
   await core.deploy()
-  expect(core.getState().error).toMatch(/Access is denied/)
+  expect(core.getState().error).toMatch(/Windows denied access/)
   expect(await platform.listFiles(`${ROOT}\\game`)).toEqual(before)
 })
 

@@ -12,9 +12,10 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false }
   for (const p of parts) {
     Object.assign(out.files, p.files)
+    out.directories.push(...(p.directories ?? []))
     for (const [key, values] of Object.entries(p.registry ?? {})) out.registry[key] = { ...out.registry[key], ...values }
     Object.assign(out.env, p.env)
     if (p.gpus) out.gpus = p.gpus

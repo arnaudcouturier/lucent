@@ -7,6 +7,7 @@ import { assertGamePath } from '../shared/manifest'
 /** A machine to fake: its files, registry and well-known folders. */
 export interface Machine {
   files?: Record<string, string>
+  directories?: string[]
   /** Full key path (hive included, e.g. `HKLM\SOFTWARE\...`) → its string values. */
   registry?: Record<string, Record<string, string>>
   env?: Partial<Record<EnvFolder, string>>
@@ -28,6 +29,7 @@ const norm = (path: string) =>
 
 export interface FakePlatform extends Platform {
   readonly downloads: string[]
+  listDirectories(root: string): Promise<string[]>
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
   /** Makes reads of a path (and everything under it) fail with access denied. */
@@ -39,7 +41,16 @@ export interface FakePlatform extends Platform {
 
 export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const files = new Map<string, string>()
-  for (const [path, content] of Object.entries(machine.files ?? {})) files.set(norm(path), content)
+  const directories = new Set((machine.directories ?? []).map(norm))
+  const addParents = (path: string) => {
+    let parent = norm(path).slice(0, norm(path).lastIndexOf('\\'))
+    while (parent.includes('\\')) {
+      directories.add(parent)
+      parent = parent.slice(0, parent.lastIndexOf('\\'))
+    }
+  }
+  for (const directory of machine.directories ?? []) addParents(directory)
+  for (const [path, content] of Object.entries(machine.files ?? {})) { files.set(norm(path), content); addParents(path) }
   const registry = new Map<string, Map<string, string>>()
   for (const [key, values] of Object.entries(machine.registry ?? {})) {
     registry.set(norm(key), new Map(Object.entries(values).map(([name, v]) => [name.toLowerCase(), v])))
@@ -52,7 +63,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   let open = () => {}
 
   const isDenied = (p: string) => denied.some((d) => p === d || p.startsWith(d + '\\'))
-  const isDir = (p: string) => [...files.keys()].some((f) => f.startsWith(p + '\\'))
+  const isDir = (p: string) => directories.has(p)
   const writable = (path: string) => {
     const p = norm(path)
     if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${path}`, path)
@@ -62,11 +73,17 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
 
   return {
     downloads,
-    async writeText(path, text) { await gate; files.set(writable(path), text) },
+    async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text) },
+    async writeFileByte(path, offset, value) {
+      const text = await this.readText(path)
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset >= text.length || value < 0 || value > 127) throw new PlatformError('unknown', 'Invalid byte write', path)
+      files.set(writable(path), text.slice(0, offset) + String.fromCharCode(value) + text.slice(offset + 1))
+    },
     async copyFile(from, to, replace = true) {
       const text = await this.readText(from)
       const target = writable(to)
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
+      addParents(target)
       files.set(target, text)
     },
     async renameFile(from, to, replace = true) {
@@ -74,10 +91,22 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const source = writable(from)
       const target = writable(to)
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
+      addParents(target)
       files.set(target, text)
       files.delete(source)
     },
     async removeFile(path) { await gate; files.delete(writable(path)) },
+    async removeDirectoryIfEmpty(path) {
+      await gate
+      const p = norm(path)
+      if (isDenied(p) || files.has(p)) throw new PlatformError('access-denied', `The folder cannot be removed: ${path}`, path)
+      if (![...directories, ...files.keys()].some((child) => child.startsWith(p + '\\'))) directories.delete(p)
+    },
+    async listDirectories(root) {
+      await gate
+      const p = norm(root)
+      return [...directories].filter((d) => d.startsWith(p + '\\')).map((d) => d.slice(p.length + 1))
+    },
     async listFiles(root) {
       await gate
       const p = norm(root)

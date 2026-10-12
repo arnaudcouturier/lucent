@@ -5,8 +5,13 @@ import { useCore } from './useCore'
 import { Path } from './Path'
 
 export function FlowError() {
-  const [{ error, activity, busy }, core] = useCore()
-  return error ? <div className="callout" role="alert"><TriangleAlert size={14} /><div className="scan-notice"><span>{error}</span>{activity.kind === 'scan' && <button className="btn" disabled={busy} onClick={() => void core.scan()}>Scan again</button>}</div></div> : null
+  const [{ error, notice, recoveryRequired, activity, busy, plan }, core] = useCore()
+  return error ? <div className="card health-card is-failed" role="alert"><TriangleAlert size={16} strokeWidth={1.75} /><div className="scan-notice">
+    <h2>{recoveryRequired ? 'Recovery needs attention' : activity.kind === 'review' ? 'Deployment didn’t finish' : 'Couldn’t continue'}</h2>
+    <p>{error}</p>
+    {(activity.kind === 'scan' || recoveryRequired) && <button className="btn" disabled={busy} onClick={() => void core.scan()}>{recoveryRequired ? 'Try recovery again' : 'Scan again'}</button>}
+    {activity.kind === 'review' && <button className="btn" disabled={busy || !plan || !!plan.blockedPaths.length} onClick={() => void core.deploy()}>Try again</button>}
+  </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
 }
 
 function sizeLabel(bytes: number) {
@@ -16,7 +21,7 @@ function sizeLabel(bytes: number) {
 }
 
 export function ReviewScreen() {
-  const [{ plan, gameFolder, graphics, busy }, core] = useCore()
+  const [{ plan, gameFolder, graphics, busy, error }, core] = useCore()
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   return <Screen title="Review" sub="Here’s what Lucent will put in your game folder.">
@@ -36,7 +41,7 @@ export function ReviewScreen() {
     <FlowError />
     <footer className="screen-actions">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToScan()}>Back</button>
-      <button className="btn is-primary" disabled={busy || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>
+      {!error && <button className="btn is-primary" disabled={busy || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
     </footer>
   </Screen>
 }

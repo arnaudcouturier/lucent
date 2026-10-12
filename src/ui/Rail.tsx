@@ -42,7 +42,7 @@ export function Rail() {
           </li>
         ))}
       </ol>}
-      <GraphicsFacts />
+      {!state.recoveryRequired && <GraphicsFacts />}
       {main && <dl className="rail-facts version-facts">
         <dt>Content version</dt><dd className="mono">{state.deployment?.contentVersion ?? 'Unknown'}</dd>
         <dt>Game version</dt><dd className="mono">{state.gameFolder.status === 'found' ? state.gameFolder.version ?? 'Unknown' : 'Unknown'}</dd>
