@@ -100,7 +100,7 @@ the recipe. Downloads are deduplicated by hash; a cache entry counts only after 
 have been checked. Required-ReShade tiers force that choice on.
 
 An existing file without journal ownership blocks deployment. Existing-setup recognition and its
-explicit backup exception belong to #5; a recipe alone cannot claim a player's files.
+explicit backup exception belong to #12; a recipe alone cannot claim a player's files.
 
 Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, `backups\<sha256>`, and
 `deployments\<hash of normalized game-folder path>\record.json`. A record stores the game folder,
