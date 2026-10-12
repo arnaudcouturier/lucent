@@ -5,9 +5,9 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, scanDeployment, undoDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, undoDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
-import { joinPath } from './paths'
+import { checkHealth, type Drift } from './health'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
 
 export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
@@ -19,7 +19,8 @@ export type Activity =
   | {
       kind: 'deployment'
       enabled: boolean
-      health: 'healthy' | 'drift'
+      /** Null when the last health check found the deployment healthy. */
+      drift: Drift | null
       updateAvailable: boolean
       operation: 'repair' | 'update' | 'rollback' | null
     }
@@ -60,6 +61,8 @@ export interface Core {
   backToProfile(): void
   deploy(): Promise<void>
   finish(): void
+  /** Re-applies the deployment so that no drift remains, then checks its health again. */
+  repair(): Promise<void>
 }
 
 export function createCore(platform: Platform): Core {
@@ -88,15 +91,28 @@ export function createCore(platform: Platform): Core {
     let record = await readDeployment(platform, folder.path)
     if (record?.status === 'applying') { await undoDeployment(platform, record); record = null }
     if (record?.status === 'complete') {
-      let healthy = true
-      for (const [relative, expected] of Object.entries(record.files)) {
-        try {
-          const path = await platform.resolveGamePath(joinPath(folder.path, 'game'), relative)
-          if (await platform.hashFile(path) !== expected.sha256) healthy = false
-        } catch { healthy = false }
-      }
-      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: { kind: 'deployment', enabled: record.enabled, health: healthy ? 'healthy' : 'drift', updateAvailable: false, operation: null } })
+      const drift = await checkHealth(platform, record, folder.version)
+      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift) })
     }
+  }
+  const deploymentActivity = (record: DeploymentRecord, drift: Drift | null): Activity =>
+    ({ kind: 'deployment', enabled: record.enabled, drift, updateAvailable: false, operation: null })
+  /** The health check right after a deployment, shown once the player leaves Done. */
+  let deployedDrift: Drift | null = null
+  /** Runs the health check before and after every command that writes to the game folder. */
+  const refreshHealth = async (record: DeploymentRecord, full = false) => {
+    const version = state.gameFolder.status === 'found' ? state.gameFolder.version : null
+    const drift = await checkHealth(platform, record, version, full)
+    if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, drift } })
+    return drift
+  }
+  /** After a command, whether it succeeded or was undone, checks the deployment as it now stands on disk. */
+  const refreshHealthAfter = async (full = false) => {
+    if (state.recoveryRequired || state.gameFolder.status !== 'found') return
+    try {
+      const record = await readDeployment(platform, state.gameFolder.path)
+      if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full) }
+    } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
   const newestContentForTier = (): ContentVersion | undefined => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) return undefined
@@ -170,10 +186,38 @@ export function createCore(platform: Platform): Core {
       if (state.activity.kind !== 'deployment' || !state.deployment) return
       set({ busy: true, error: null })
       try {
+        await refreshHealth(state.deployment)
         const deployment = await changePerformanceProfile(platform, state.deployment.gameFolder, profile)
         set({ deployment, selectedProfile: profile })
       } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
-      finally { set({ busy: false }) }
+      finally {
+        await refreshHealthAfter()
+        set({ busy: false })
+      }
+    },
+    async repair() {
+      const { activity, deployment, manifest } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment) return
+      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'repair' } })
+      let record = deployment
+      try {
+        const drift = await refreshHealth(record, true)
+        if (drift) {
+          const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
+          record = await repairDeployment(platform, record.gameFolder, drift.files, content, manifest.status === 'ready' ? manifest.source : null,
+            (progress) => set({ deploymentProgress: progress }))
+          set({ deployment: record })
+        }
+      } catch (error) {
+        set(error instanceof DeploymentError
+          ? { error: error.message, recoveryRequired: error.recoveryRequired }
+          : { error: `${failureReason(error)} The game folder has not been changed.` })
+      }
+      finally {
+        await refreshHealthAfter(true)
+        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null } })
+        set({ busy: false, deploymentProgress: null })
+      }
     },
     async review(includeReShade = state.includeReShade) {
       if (state.busy || state.deployment || state.recoveryRequired) return
@@ -202,6 +246,7 @@ export function createCore(platform: Platform): Core {
         const hotkeys = []
         if (record.recipe.overlay) hotkeys.push({ key: 'Insert', description: record.recipe.overlay === 'neural-rendering' ? 'OptiScaler · Neural Rendering and upscaling' : 'OptiScaler · FSR upscaling and frame generation' })
         if (record.includeReShade) hotkeys.push({ key: 'Home', description: 'ReShade · shaders and presets' })
+        deployedDrift = await checkHealth(platform, record, state.gameFolder.version, true)
         set({ deployment: record, activity: { kind: 'done' }, hotkeys })
       } catch (error) {
         const recoveryRequired = state.recoveryRequired || (error instanceof DeploymentError && error.recoveryRequired)
@@ -214,7 +259,7 @@ export function createCore(platform: Platform): Core {
       set({ busy: false })
     },
     finish() {
-      if (state.activity.kind === 'done' && state.deployment) set({ activity: { kind: 'deployment', enabled: true, health: 'healthy', updateAvailable: false, operation: null } })
+      if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift) })
     },
   }
   return core

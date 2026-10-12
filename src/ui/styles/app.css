@@ -453,6 +453,11 @@
 .health-card:is(.is-drift, .is-failed) > svg { color: var(--caution); }
 .health-card h2 { font-size: 15px; font-weight: 500; margin: 0 0 var(--space-1); }
 .health-card p { color: var(--ink-2); margin: 0; }
+.health-body { flex: 1; min-width: 0; }
+.health-card > .btn { flex: none; }
+.health-card progress { display: block; width: 100%; height: 5px; margin-top: var(--space-2); appearance: none; border: 0; border-radius: var(--r-chip); background: var(--field); }
+.health-card progress::-webkit-progress-bar { background: var(--field); border-radius: var(--r-chip); }
+.health-card progress::-webkit-progress-value { background: var(--accent); border-radius: var(--r-chip); transition: width var(--duration) var(--ease); }
 .main-destination { margin-top: var(--space-5); }
 .version-facts { margin-top: 0; }
 .version-facts dt:not(:first-child) { margin-top: var(--space-4); }

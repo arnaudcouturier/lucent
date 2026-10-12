@@ -123,8 +123,8 @@ data folder, whatever folder the launcher points at now, and tells the player. I
 finish, Scan, Review and Install stay blocked until it does. Recovery waits until XIV closes and
 stops if a file differs from both recorded states, preserving a later user change. The status card
 explains a failure in plain words (connection, missing file, hash check, disk space, file in use,
-access denied) and offers to try again. A successful record reopens on the main screen; its
-deployed hashes determine Healthy or Drift.
+access denied) and offers to try again. A successful record reopens on the main screen with a
+health check.
 
 Copies and renames to an absent game-folder destination atomically refuse a file that appears
 between journaling and execution. Recovery marks each reversed intent as undone before proceeding
@@ -136,7 +136,24 @@ attempt, drops and deletes those checkpoints; later journal entries are undone t
 
 The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
 `review-failed`, `scan-recovered`, `scan-recovery-blocked`, `profile`, each `install-<phase>`, `done`,
-`done-no-reshade`, `done-radeon`, `done-other`, and `healthy`.
+`done-no-reshade`, `done-radeon`, `done-other`, `healthy`, `drift` and `repairing`.
+
+## Health check and Repair
+
+A health check runs on open, after a deployment, and before and after a profile change or Repair.
+Every stamped file must be present. An owned config must also be readable as text, and a shipped
+preset only present, so a user change to either is never Drift. Every other file must keep its
+hash. A size and modified time matching the record's stamp stand in for the hash, except right
+after a deployment or Repair, and when the game version differs from the one the record saved at
+its last healthy check. A healthy check saves the game version and refreshes stamps whose hash
+still matched. The drift card counts the drifted files and, after a game version change, names
+the new version.
+
+Repair runs a full health check, then restores each drifted file to what Lucent last wrote:
+deployed files from the cache, downloading only the missing assets of the deployed content
+version, and owned configs as their last-written copy. Like a profile change, it journals each
+write with a verified backup from `changeStart`, so a failure or interruption undoes only the
+repair. Disabled entry files come back under their disabled names. A full health check follows.
 
 ## Performance profiles
 
@@ -154,8 +171,7 @@ omitted. The saved recipe keeps only the content's own steps; the record names t
 main screen uses the profiles saved with the deployed content version, so a new manifest cannot
 change an existing deployment's choices. Picking a profile writes only its keys, saves those
 values into the last-written copy, and keeps unrelated user changes distinct from values Lucent
-wrote. A switch stamps the config's new hash only while it matches the last-written copy, so it
-never hides Drift. Enabled remains unchanged.
+wrote. Enabled remains unchanged.
 
 Config edits preserve BOM, line endings, whitespace, ordering and comment lines; a no-op round
 trip is byte-identical for the UTF-8 configs supported by the Platform port. Neither ReShade nor

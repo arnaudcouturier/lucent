@@ -32,7 +32,7 @@ const crystalPreview = (key: string, label: string, activity: Activity, descript
   key: `crystal-${key}`, label: `Crystal · ${label}`, setup: scanned(MACHINES.steam), preview: { activity, description },
 })
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>> = {}): Activity => ({
-  kind: 'deployment', enabled: true, health: 'healthy', updateAvailable: false, operation: null, ...patch,
+  kind: 'deployment', enabled: true, drift: null, updateAvailable: false, operation: null, ...patch,
 })
 
 const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, includeReShade = true) => async () => {
@@ -83,6 +83,28 @@ const recoveredDeployment = (blocked = false) => async () => {
   if (blocked) platform.isGameRunning = async () => true
   const reopened = createCore(platform)
   await reopened.scan()
+  return reopened
+}
+
+/** A game patch replaces OptiScaler's proxy DLL, optionally holding the repair midway. */
+const patched = (stage: 'drift' | 'repairing') => async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  await platform.writeText(`${folder.path}\\game\\winmm.dll`, 'Patched')
+  await platform.writeText(`${folder.path}\\game\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  const reopened = createCore(platform)
+  await reopened.scan()
+  if (stage === 'repairing') await new Promise<void>((resolve) => {
+    const unsubscribe = reopened.subscribe(() => {
+      if (reopened.getState().deploymentProgress?.phase === 'applying') { platform.hold(); unsubscribe(); resolve() }
+    })
+    void reopened.repair()
+  })
   return reopened
 }
 
@@ -150,6 +172,8 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
+  { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
@@ -157,12 +181,12 @@ const STATES: GalleryState[] = [
   crystalPreview('done', 'Done', { kind: 'done' }, 'The lit state after deployment completes.'),
   crystalPreview('lit', 'Healthy', deployment(), 'A lit spire with a slow spin, precessing rings and a gentle float.'),
   crystalPreview('update', 'Update available', deployment({ updateAvailable: true }), 'A pulse ring announces an available update.'),
-  crystalPreview('repair', 'Repair running', deployment({ health: 'drift', operation: 'repair' }), 'The spire and rings move faster during repair.'),
+  crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and rings move faster during repair.'),
   crystalPreview('busy-update', 'Update running', deployment({ updateAvailable: true, operation: 'update' }), 'The same fast spin during an update.'),
   crystalPreview('rollback', 'Rollback running', deployment({ operation: 'rollback' }), 'The same fast spin during rollback.'),
-  crystalPreview('drift', 'Drift', deployment({ health: 'drift' }), 'Dark facets, a small ring stalled in place and a falling shard.'),
+  crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], patch: null } }), 'Dark facets, a small ring stalled in place and a falling shard.'),
   crystalPreview('disabled', 'Disabled', deployment({ enabled: false }), 'Frozen steel rings and unlit glass.'),
-  crystalPreview('disabled-repair', 'Disabled during repair', deployment({ enabled: false, health: 'drift', operation: 'repair' }), 'Disabled stays frozen during repair, update and rollback.'),
+  crystalPreview('disabled-repair', 'Disabled during repair', deployment({ enabled: false, drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'Disabled stays frozen during repair, update and rollback.'),
 ]
 
 /** DEV ONLY: project future activities onto a real Scan core, without adding fixture setters to production. */

@@ -185,7 +185,7 @@ it('a successful retry leaves only its record in the data folder and reopens Hea
   expect(await platform.listFiles(deployments)).toEqual([expect.stringMatching(/\\record\.json$/)])
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
 it.each(['offline', 'missing', 'truncated', 'wrong hash'])('a %s download never touches the game folder and can be retried', async (failure) => {

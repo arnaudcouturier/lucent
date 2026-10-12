@@ -1,5 +1,6 @@
-import { Check, CircleCheck, Download, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { Check, CircleCheck, Download, LoaderCircle, TriangleAlert, Wrench } from 'lucide-react'
 import type { DeploymentPhase } from '../core/deployment'
+import { statusCard } from '../core/statusCard'
 import { Screen } from './Window'
 import { useCore } from './useCore'
 import { Path } from './Path'
@@ -80,15 +81,35 @@ export function DoneScreen() {
 }
 
 export function MainScreen() {
-  const [{ activity, gameFolder }] = useCore()
-  const healthy = activity.kind === 'deployment' && activity.health === 'healthy'
+  const [{ gameFolder }] = useCore()
   return <Screen title="Your game" sub="Your graphics, kept in place.">
-    <div className={`card health-card ${healthy ? 'is-healthy' : 'is-drift'}`}>
-      {healthy ? <CircleCheck size={20} /> : <TriangleAlert size={20} />}
-      <div><h2>{healthy ? 'Healthy' : 'Drift detected'}</h2><p>{healthy ? 'All deployed files match the tested content.' : 'Some deployed files have changed or are missing.'}</p></div>
-    </div>
+    <StatusCard />
     <ProfileSelector />
     {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <FlowError />
   </Screen>
+}
+
+const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back' } as const
+
+/** Renders exactly the one state the core's priority function picks. */
+function StatusCard() {
+  const [state, core] = useCore()
+  const card = statusCard(state)
+  if (!card) return null
+  if (card.kind === 'busy') return <div className="card health-card is-busy" role="status">
+    <LoaderCircle size={20} className="spin" />
+    <div className="health-body"><h2>{OPERATION_LABEL[card.operation]}…</h2>
+      <progress max={1} value={card.progress} aria-label={`${OPERATION_LABEL[card.operation]} progress`} /></div>
+  </div>
+  if (card.kind === 'drift') return <div className="card health-card is-drift" role="alert">
+    <TriangleAlert size={20} />
+    <div className="health-body"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
+      <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
+    <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
+  </div>
+  return <div className="card health-card is-healthy">
+    <CircleCheck size={20} />
+    <div className="health-body"><h2>Healthy</h2><p>All deployed files match the tested content.</p></div>
+  </div>
 }

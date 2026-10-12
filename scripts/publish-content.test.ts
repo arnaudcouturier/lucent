@@ -101,7 +101,7 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
   expect(await platform.readText(`${root}\\game\\dxgi.dll`)).toBe('Inert ReShade fixture\n')
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
 it('reuses assets from any published content release, including one absent from the manifest', async () => {

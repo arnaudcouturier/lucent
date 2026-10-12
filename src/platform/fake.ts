@@ -34,6 +34,8 @@ export interface FakePlatform extends Platform {
   answerPicker(path: string | null): void
   /** Makes reads of a path (and everything under it) fail with access denied. */
   deny(path: string): void
+  /** Sets a file's last-write time, as a tool that preserves timestamps would. */
+  setModifiedTime(path: string, modifiedMs: number): void
   /** Holds every call until `release()`, to observe in-flight states. */
   hold(): void
   release(): void
@@ -41,6 +43,10 @@ export interface FakePlatform extends Platform {
 
 export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const files = new Map<string, string>()
+  // Windows keeps a file's last-write time through copy and rename; only a write gives it a new one.
+  const modified = new Map<string, number>()
+  let clock = 1_700_000_000_000
+  const touch = (path: string) => modified.set(path, ++clock)
   const directories = new Set((machine.directories ?? []).map(norm))
   const addParents = (path: string) => {
     let parent = norm(path).slice(0, norm(path).lastIndexOf('\\'))
@@ -73,11 +79,12 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
 
   return {
     downloads,
-    async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text) },
+    async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text); touch(target) },
     async writeFileByte(path, offset, value) {
       const text = await this.readText(path)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset >= text.length || value < 0 || value > 127) throw new PlatformError('unknown', 'Invalid byte write', path)
       files.set(writable(path), text.slice(0, offset) + String.fromCharCode(value) + text.slice(offset + 1))
+      touch(norm(path))
     },
     async copyFile(from, to, replace = true) {
       const text = await this.readText(from)
@@ -85,6 +92,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
       addParents(target)
       files.set(target, text)
+      modified.set(target, modified.get(norm(from)) ?? 0)
     },
     async renameFile(from, to, replace = true) {
       const text = await this.readText(from)
@@ -93,6 +101,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
       addParents(target)
       files.set(target, text)
+      modified.set(target, modified.get(source) ?? 0)
       files.delete(source)
     },
     async removeFile(path) { await gate; files.delete(writable(path)) },
@@ -144,7 +153,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await gate
       const p = norm(path)
       const content = files.get(p)
-      if (content !== undefined) return { kind: 'file', size: new TextEncoder().encode(content).length, modifiedMs: 0 }
+      if (content !== undefined) return { kind: 'file', size: new TextEncoder().encode(content).length, modifiedMs: modified.get(p) ?? 0 }
       if (isDir(p)) return { kind: 'dir', size: 0, modifiedMs: 0 }
       throw new PlatformError('not-found', `Not found: ${path}`, path)
     },
@@ -181,6 +190,9 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     },
     deny(path) {
       denied.push(norm(path))
+    },
+    setModifiedTime(path, modifiedMs) {
+      modified.set(norm(path), modifiedMs)
     },
     hold() {
       gate = new Promise((resolve) => (open = resolve))

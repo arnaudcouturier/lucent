@@ -29,7 +29,7 @@ it('offers profiles between Scan and Review and deploys the selected values with
   const reopened = createCore(platform)
   await reopened.scan()
   expect(reopened.getState().selectedProfile).toBe('performance')
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
 it('switches profile twice and reopens to a healthy deployment', async () => {
@@ -44,7 +44,7 @@ it('switches profile twice and reopens to a healthy deployment', async () => {
   expect(core.getState().error).toBeNull()
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState()).toMatchObject({ error: null, recoveryRequired: false, selectedProfile: 'balanced', activity: { kind: 'deployment', health: 'healthy' } })
+  expect(reopened.getState()).toMatchObject({ error: null, recoveryRequired: false, selectedProfile: 'balanced', activity: { kind: 'deployment', drift: null } })
   expect(await platform.readText(`${ROOT}\\game\\OptiScaler.ini`)).toBe('; OptiScaler\r\n[DlssNr]\r\n; Neural Rendering passes\r\nPasses = 1\r\nSpatialCompression = false\r\nResidualFG = false\r\n\r\n[Logging]\r\nLogToFile = false\r\n')
   await reopened.selectProfile('fidelity')
   expect(reopened.getState()).toMatchObject({ error: null, selectedProfile: 'fidelity' })
@@ -90,7 +90,7 @@ it('recovers a crashed profile change on reopening without undoing the deploymen
   platform.writeText = write
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
   expect(await platform.readText(`${ROOT}\\game\\OptiScaler.ini`)).toBe(original)
   expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('OptiScaler')
   expect(await readDeployment(platform, ROOT)).toEqual(before)
@@ -184,7 +184,7 @@ it('applies the profile after the recipe without saving it into the deployed rec
   expect(plan.recipe.recipe).toEqual(content.tiers[tier.id].recipe)
 })
 
-it('keeps Drift when a profile switch rewrites a config with unrelated user changes', async () => {
+it('keeps unrelated user config changes through a profile switch, and they are not drift', async () => {
   const platform = createFakePlatform(profileMachine())
   const core = createCore(platform)
   await core.scan()
@@ -197,7 +197,8 @@ it('keeps Drift when a profile switch rewrites a config with unrelated user chan
   expect(core.getState().error).toBeNull()
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'drift' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
+  expect(await platform.readText(config)).toContain('LogToFile = true')
 })
 
 it('returns to Healthy when a profile switch overwrites the only keys the user changed', async () => {
@@ -213,5 +214,5 @@ it('returns to Healthy when a profile switch overwrites the only keys the user c
   await core.selectProfile('fidelity')
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })

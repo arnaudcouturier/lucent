@@ -23,8 +23,8 @@ export interface DeploymentRecord {
   includeReShade: boolean
   enabled: boolean
   profile?: ProfileId | null
-  /** An interrupted profile change undoes only the journal entries from this index onward. */
-  profileChangeStart?: number
+  /** An interrupted change to a complete deployment (a profile change or a repair) undoes only the journal entries from this index onward. */
+  changeStart?: number
   recipe: Plan['recipe']
   journal: JournalEntry[]
   /** Directories absent before the deployment, recorded before any step can create them. */
@@ -33,6 +33,8 @@ export interface DeploymentRecord {
   undoCheckpoints?: { id: string; size: number }
   ownedConfigs: Record<string, string>
   files: Record<string, FileStamp>
+  /** The game version at the last healthy check; a different one means a patch, so the next check hashes every file. */
+  gameVersion?: string | null
 }
 export type DeploymentPhase = 'downloading' | 'backing-up' | 'applying' | 'checking'
 export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null }
@@ -74,7 +76,7 @@ export async function dataPaths(platform: Platform, gameFolder: string) {
   return { data, cache: joinPath(data, 'cache'), backups: joinPath(data, 'backups'), record: joinPath(data, 'deployments', id, 'record.json') }
 }
 
-async function maybeStat(platform: Platform, path: string): Promise<FileStat | null> {
+export async function maybeStat(platform: Platform, path: string): Promise<FileStat | null> {
   try { return await platform.stat(path) } catch (error) {
     if (error instanceof PlatformError && error.kind === 'not-found') return null
     throw error
@@ -97,12 +99,13 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     }
   }
   for (const path of [...Object.keys(value.files), ...Object.keys(value.ownedConfigs)]) assertGamePath(path)
+  if (value.gameVersion !== undefined && value.gameVersion !== null && typeof value.gameVersion !== 'string') throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.createdDirectories !== undefined) {
     if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
     for (const path of value.createdDirectories) assertGamePath(path)
   }
-  if (value.profileChangeStart !== undefined && (!Number.isSafeInteger(value.profileChangeStart) || value.profileChangeStart < 0 || value.profileChangeStart > value.journal.length)) throw new Error('The profile change journal is damaged.')
-  if (value.undoCheckpoints && value.profileChangeStart === undefined) {
+  if (value.changeStart !== undefined && (!Number.isSafeInteger(value.changeStart) || value.changeStart < 0 || value.changeStart > value.journal.length)) throw new Error('The change journal is damaged.')
+  if (value.undoCheckpoints && value.changeStart === undefined) {
     const progress = value.undoCheckpoints
     if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(progress.id) || !Number.isSafeInteger(progress.size) || progress.size <= value.journal.length) throw new Error('The undo checkpoints are damaged.')
     const checkpoints = await platform.readText(checkpointsPath(record, progress.id))
@@ -175,7 +178,7 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before recovering the unfinished deployment.')
   const paths = await dataPaths(platform, record.gameFolder)
   const root = joinPath(record.gameFolder, 'game')
-  const start = record.profileChangeStart ?? 0
+  const start = record.changeStart ?? 0
   // Flipping a preallocated byte needs no free space, so a full data disk cannot stop the undo.
   const checkpoint = (entry: number | 'all') => record.undoCheckpoints && start === 0
     ? platform.writeFileByte(checkpointsPath(paths.record, record.undoCheckpoints.id), entry === 'all' ? record.undoCheckpoints.size - 1 : entry, UNDONE)
@@ -199,9 +202,9 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     entry.undone = true
     await checkpoint(i)
   }
-  if (record.profileChangeStart !== undefined) {
+  if (record.changeStart !== undefined) {
     record.journal.length = start
-    delete record.profileChangeStart
+    delete record.changeStart
     record.status = 'complete'
   } else { await undoDirectories(platform, record); record.status = 'rolled-back' }
   await checkpoint('all')
@@ -224,11 +227,8 @@ export async function deployContent(
     const file = plan.files[i]
     const path = joinPath(paths.cache, file.sha256)
     report({ phase: 'downloading', progress: i / plan.files.length * 0.4, file: null })
-    if (!scan.cachedFiles.includes(file.sha256)) {
-      if (source.kind === 'local') await platform.copyFile(joinPath(source.filesDirectory, file.sha256), path)
-      else await platform.downloadFile(releaseAsset(file), path, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / plan.files.length * 0.4, file: null }))
-    }
-    if ((await platform.stat(path)).size !== file.size || await platform.hashFile(path) !== file.sha256) {
+    if (!scan.cachedFiles.includes(file.sha256)) await cacheFile(platform, paths.cache, file, source, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / plan.files.length * 0.4, file: null }))
+    else if ((await platform.stat(path)).size !== file.size || await platform.hashFile(path) !== file.sha256) {
       await platform.removeFile(path)
       throw new PlatformError('hash-mismatch', 'A downloaded file failed its hash check. The game folder has not been changed.', path)
     }
@@ -315,6 +315,88 @@ export async function deployContent(
   }
 }
 
+/** Downloads a content asset into the cache (or copies it from local dev content) and verifies it. */
+async function cacheFile(platform: Platform, cache: string, file: ContentVersion['files'][number], source: ContentSource, progress: (received: number) => void) {
+  const path = joinPath(cache, file.sha256)
+  if (source.kind === 'local') await platform.copyFile(joinPath(source.filesDirectory, file.sha256), path)
+  else await platform.downloadFile(releaseAsset(file), path, progress)
+  if ((await platform.stat(path)).size !== file.size || await platform.hashFile(path) !== file.sha256) {
+    await platform.removeFile(path)
+    throw new PlatformError('hash-mismatch', 'A downloaded file failed its hash check. The game folder has not been changed.', path)
+  }
+}
+
+/**
+ * Restores the drifted files to what Lucent last wrote, through the journal, against the deployed content version.
+ * Deployed files come back from the cache, downloading only what is missing; an owned config comes back as its last-written copy.
+ * Disabled entry files are restored under their disabled names, so Repair keeps the deployment Disabled.
+ */
+export async function repairDeployment(
+  platform: Platform, gameFolder: string, drifted: string[], content: ContentVersion | null, source: ContentSource | null, report: (progress: DeploymentProgress) => void,
+): Promise<DeploymentRecord> {
+  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before repairing.')
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('Recover the deployment before repairing it.')
+  const paths = await dataPaths(platform, gameFolder)
+  const root = joinPath(gameFolder, 'game')
+  const configFor = (relative: string) => Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(relative))
+  const targets = drifted.map((relative) => {
+    const stamped = Object.keys(record.files).find((p) => fileKey(p) === fileKey(relative))
+    if (!stamped) throw new Error(`Repair found a file the deployment does not own: ${relative}`)
+    const config = configFor(stamped)
+    return { relative: stamped, config: config === undefined ? null : record.ownedConfigs[config], sha256: record.files[stamped].sha256 }
+  })
+  for (const target of targets) if (target.config !== null) target.sha256 = await hashText(target.config)
+  const assets = [...new Set(targets.filter((t) => t.config === null).map((t) => t.sha256))]
+  for (let i = 0; i < assets.length; i++) {
+    report({ phase: 'downloading', progress: i / assets.length * 0.4, file: null })
+    const cached = joinPath(paths.cache, assets[i])
+    if ((await maybeStat(platform, cached))?.kind === 'file' && await platform.hashFile(cached) === assets[i]) continue
+    const file = content?.files.find((f) => f.sha256 === assets[i])
+    if (!file || !source) throw new PlatformError('network', 'Lucent couldn’t download a content file for the repair.')
+    await cacheFile(platform, paths.cache, file, source, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / assets.length * 0.4, file: null }))
+  }
+  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before repairing.')
+  // `record` journals the repair while it applies; `repaired` replaces it once every file is back.
+  const repaired = structuredClone(record)
+  record.status = 'applying'
+  record.changeStart = record.journal.length
+  const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await save()
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      const { relative, config, sha256 } = targets[i]
+      report({ phase: 'applying', progress: 0.4 + i / targets.length * 0.5, file: relative })
+      const path = await platform.resolveGamePath(root, relative)
+      const stat = await maybeStat(platform, path)
+      if (stat && stat.kind !== 'file') throw new Error(`Protecting a user folder: ${relative}`)
+      const before = stat ? await platform.hashFile(path) : null
+      if (before) {
+        const backup = joinPath(paths.backups, before)
+        await platform.copyFile(path, backup)
+        if (await platform.hashFile(backup) !== before) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
+      }
+      record.journal.push({ step: { kind: 'copy', file: sha256, to: relative }, before: { [relative]: before }, after: { [relative]: sha256 } })
+      await save()
+      if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during the repair. Close it before retrying.')
+      const target = await platform.resolveGamePath(root, relative)
+      if (config !== null) await platform.writeText(target, config, parentPath(gameFolder))
+      else await platform.copyFile(joinPath(paths.cache, sha256), target, before !== null, parentPath(gameFolder))
+      if (await platform.hashFile(target) !== sha256) throw new PlatformError('hash-mismatch', `The repaired file failed its hash check: ${relative}`)
+      repaired.files[relative] = { ...await platform.stat(target), sha256 }
+    }
+    report({ phase: 'checking', progress: 1, file: null })
+    repaired.journal = record.journal
+    await platform.writeText(paths.record, JSON.stringify(repaired, null, 2))
+    return repaired
+  } catch (error) {
+    try { await undoDeployment(platform, record) } catch (recoveryError) {
+      throw new DeploymentError(error, true, recoveryError)
+    }
+    throw new DeploymentError(error, false)
+  }
+}
+
 /** Uses the deployed recipe, so a newer manifest cannot change an older deployment's profiles. */
 export async function changePerformanceProfile(platform: Platform, gameFolder: string, profileId: ProfileId): Promise<DeploymentRecord> {
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before changing the performance profile.')
@@ -327,7 +409,7 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
   // `record` journals the change while it applies; `changed` replaces it once every setting is written.
   const changed = structuredClone(record)
   record.status = 'applying'
-  record.profileChangeStart = record.journal.length
+  record.changeStart = record.journal.length
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   await save()
   try {
@@ -358,7 +440,7 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
         await platform.writeText(await platform.resolveGamePath(root, config), afterText, parentPath(gameFolder))
       }
       if (await platform.hashFile(await platform.resolveGamePath(root, config)) !== after) throw new PlatformError('hash-mismatch', `Profile config hash mismatch: ${config}`)
-      // Only a config matching Lucent's last-written copy is stamped again, so a switch never hides Drift.
+      // Only a config matching Lucent's last-written copy is stamped again, so its stamp stays what Lucent wrote.
       if (after === await hashText(changed.ownedConfigs[config])) changed.files[stamped] = { ...await platform.stat(target), sha256: after }
     }
     changed.profile = profile.id

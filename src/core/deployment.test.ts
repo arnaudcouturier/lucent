@@ -28,7 +28,7 @@ it('deploys a vanilla folder, reports the plan numbers and stores a complete rec
   expect(core.getState().deployment).toMatchObject({ status: 'complete', tier: 'rtx-30-40', contentVersion: '2026.10.12', includeReShade: true, ownedConfigs: { 'ReShade.ini': '[GENERAL]\nPresetPath=\n' } })
   const reopened = createCore(platform)
   await reopened.scan()
-  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
 it('a wrong download hash never reaches the game folder, even after earlier downloads pass', async () => {
@@ -109,7 +109,7 @@ it.each([
   await core.deploy()
   expect(core.getState().hotkeys.map((h) => h.key)).toEqual(keys)
   core.finish()
-  expect(core.getState().activity).toMatchObject({ kind: 'deployment', health: 'healthy' })
+  expect(core.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
 it('refuses to touch the game folder while XIV runs', async () => {
