@@ -32,3 +32,30 @@
 .gallery-bar span {
   color: #777;
 }
+.gallery-bar output {
+  min-width: 260px;
+  font-variant-numeric: tabular-nums;
+}
+.gallery-still {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.crystal-preview {
+  padding: var(--space-4);
+}
+.crystal-preview p {
+  margin: 0 0 var(--space-3);
+}
+.crystal-preview .mono {
+  color: var(--ink-2);
+}
+.crystal-preview label {
+  display: grid;
+  gap: var(--space-2);
+}
+.crystal-preview input {
+  width: 100%;
+  accent-color: var(--accent);
+}

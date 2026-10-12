@@ -9,6 +9,28 @@ export const inTauri = isTauri()
 export const minimizeWindow = () => (inTauri ? getCurrentWindow().minimize() : undefined)
 export const closeWindow = () => (inTauri ? getCurrentWindow().close() : undefined)
 
+/** Native focus covers minimize and Alt-Tab even when the WebView's DOM focus is stale. */
+export function observeWindowFocus(listener: (focused: boolean) => void): () => void {
+  if (!inTauri) return () => {}
+  const window = getCurrentWindow()
+  let disposed = false
+  let revision = 0
+  let unlisten: (() => void) | undefined
+  void window.onFocusChanged(({ payload }) => {
+    revision++
+    if (!disposed) listener(payload)
+  }).then(async (stop) => {
+    if (disposed) { stop(); return }
+    unlisten = stop
+    const before = revision
+    const focused = await window.isFocused()
+    if (!disposed && before === revision) listener(focused)
+  }).catch(() => {
+    if (!disposed) listener(document.hasFocus())
+  })
+  return () => { disposed = true; unlisten?.() }
+}
+
 const INTERACTIVE = 'button, a, input, select, textarea, label, [role="button"], [data-no-drag]'
 
 /** onMouseDown for a drag region: drags the window, unless the press lands on a control. */

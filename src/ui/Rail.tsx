@@ -1,6 +1,8 @@
-// The left rail: the mark, the first-run steps and the app version.
-// The large mark is a placeholder; the crystal replaces it.
+// The left rail: the crystal, the first-run steps and the app version.
 import { Check } from 'lucide-react'
+import { crystalState } from '../core/crystal'
+import { Crystal } from './crystal/Crystal'
+import { useCore } from './useCore'
 import { dragWindow } from './shell'
 
 const FIRST_RUN_STEPS = ['Scan', 'Performance profile', 'Review', 'Install', 'Done']
@@ -15,6 +17,8 @@ export function Mark({ className }: { className?: string }) {
 }
 
 export function Rail() {
+  const [state] = useCore()
+  const crystal = crystalState(state)
   const step = 0 // Scan is the only first-run screen so far.
   return (
     <aside className="rail" onMouseDown={dragWindow}>
@@ -22,8 +26,8 @@ export function Rail() {
         <Mark className="brand-mark" />
         Lucent
       </div>
-      <div className="stage">
-        <Mark className="stage-mark" />
+      <div className={`stage is-${crystal.mode}`}>
+        <Crystal state={crystal} />
       </div>
       <ol className="steps" aria-label="Setup steps">
         {FIRST_RUN_STEPS.map((title, i) => (

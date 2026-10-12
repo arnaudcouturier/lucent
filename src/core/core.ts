@@ -5,7 +5,20 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 
 export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
 
+/** Activity reported by the core. Later workflow commands will advance this beyond Scan. */
+export type Activity =
+  | { kind: 'scan' | 'profile' | 'review' | 'done' }
+  | { kind: 'deploying'; progress: number }
+  | {
+      kind: 'deployment'
+      enabled: boolean
+      health: 'healthy' | 'drift'
+      updateAvailable: boolean
+      operation: 'repair' | 'update' | 'rollback' | null
+    }
+
 export interface State {
+  activity: Activity
   gameFolder: GameFolderState
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
@@ -22,7 +35,7 @@ export interface Core {
 }
 
 export function createCore(platform: Platform): Core {
-  let state: State = { gameFolder: { status: 'idle' }, rejectedFolder: null }
+  let state: State = { activity: { kind: 'scan' }, gameFolder: { status: 'idle' }, rejectedFolder: null }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
     state = { ...state, ...patch }

@@ -33,7 +33,7 @@
   width: 11px;
   height: 15px;
 }
-/* The only painted backdrop: the mark's light falling on the rail. */
+/* The only painted backdrop: the crystal's light falling on the rail. */
 .stage {
   position: relative;
   height: 224px;
@@ -46,14 +46,28 @@
   position: absolute;
   inset: -40px 0 -20px;
   background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.16), rgba(var(--accent-glow), 0.04) 60%, transparent);
-  opacity: 0.5;
+  opacity: 1;
   pointer-events: none;
 }
-.stage-mark {
+.stage.is-scan::before,
+.stage.is-glass::before {
+  opacity: 0.15;
+}
+.stage.is-disabled::before {
+  opacity: 0;
+}
+.stage.is-drift::before {
+  opacity: 0.45;
+}
+.stage.is-fill::before {
+  opacity: 0.3;
+}
+.crystal {
   position: relative;
-  width: 64px;
-  height: 88px;
-  filter: drop-shadow(0 0 18px rgba(var(--accent-glow), 0.35));
+  display: block;
+  width: 248px;
+  height: 214px;
+  pointer-events: none;
 }
 
 .steps {
