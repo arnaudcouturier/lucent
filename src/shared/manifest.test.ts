@@ -6,7 +6,7 @@ describe('The shared manifest schema', () => {
   it('reads the published tier definitions', () => {
     const parsed = parseManifest(JSON.stringify(manifest))
 
-    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.schemaVersion).toBe(2)
     expect(parsed.tiers[0]).toMatchObject({
       id: 'rtx-50', label: 'RTX 50', status: 'community-verified',
       neuralRendering: true, requiresReShade: false,
@@ -16,11 +16,11 @@ describe('The shared manifest schema', () => {
 
   it('requires an app update for a newer schema before interpreting its tiers', () => {
     try {
-      parseManifest('{"schemaVersion":2,"tiers":"a future format"}')
+      parseManifest('{"schemaVersion":3,"tiers":"a future format"}')
       expect.fail('A newer schema must not be interpreted')
     } catch (error) {
       expect(error).toBeInstanceOf(ManifestError)
-      expect(error).toMatchObject({ kind: 'update-required', schemaVersion: 2 })
+      expect(error).toMatchObject({ kind: 'update-required', schemaVersion: 3 })
     }
   })
 

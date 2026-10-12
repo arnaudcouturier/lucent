@@ -43,12 +43,12 @@ pub struct FileStat {
 }
 
 impl PlatformError {
-    fn new(kind: ErrorKind, message: impl Into<String>, path: Option<&Path>) -> Self {
+    pub(crate) fn new(kind: ErrorKind, message: impl Into<String>, path: Option<&Path>) -> Self {
         let path = path.map(|p| p.to_string_lossy().into_owned());
         PlatformError { kind, message: message.into(), path }
     }
 
-    fn io(e: io::Error, path: Option<&Path>) -> Self {
+    pub(crate) fn io(e: io::Error, path: Option<&Path>) -> Self {
         // Windows error codes first: std maps several of them to vague kinds.
         const ERROR_SHARING_VIOLATION: i32 = 32;
         const ERROR_LOCK_VIOLATION: i32 = 33;

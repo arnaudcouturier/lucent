@@ -6,7 +6,7 @@ import { useCore } from './useCore'
 import { dragWindow } from './shell'
 import type { TierStatus } from '../shared/manifest'
 
-const FIRST_RUN_STEPS = ['Scan', 'Performance profile', 'Review', 'Install', 'Done']
+const FIRST_RUN_STEPS = ['Scan', 'Review', 'Install', 'Done']
 const TIER_STATUS_LABEL: Record<TierStatus, string> = {
   stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified',
 }
@@ -23,7 +23,8 @@ export function Mark({ className }: { className?: string }) {
 export function Rail() {
   const [state] = useCore()
   const crystal = crystalState(state)
-  const step = 0 // Scan is the only first-run screen so far.
+  const step = state.activity.kind === 'review' ? 1 : state.activity.kind === 'deploying' ? 2 : state.activity.kind === 'done' ? 3 : 0
+  const main = state.activity.kind === 'deployment'
   return (
     <aside className="rail" onMouseDown={dragWindow}>
       <div className="brand">
@@ -33,15 +34,19 @@ export function Rail() {
       <div className={`stage is-${crystal.mode}`}>
         <Crystal state={crystal} />
       </div>
-      <ol className="steps" aria-label="Setup steps">
+      {!main && <ol className="steps" aria-label="Setup steps">
         {FIRST_RUN_STEPS.map((title, i) => (
           <li key={title} className={i < step ? 'is-done' : i === step ? 'is-now' : ''} aria-current={i === step ? 'step' : undefined}>
             <span className="step-dot">{i < step && <Check size={10} strokeWidth={3} />}</span>
             {title}
           </li>
         ))}
-      </ol>
+      </ol>}
       <GraphicsFacts />
+      {main && <dl className="rail-facts version-facts">
+        <dt>Content version</dt><dd className="mono">{state.deployment?.contentVersion ?? 'Unknown'}</dd>
+        <dt>Game version</dt><dd className="mono">{state.gameFolder.status === 'found' ? state.gameFolder.version ?? 'Unknown' : 'Unknown'}</dd>
+      </dl>}
       <div className="rail-foot">Lucent {__APP_VERSION__}</div>
     </aside>
   )

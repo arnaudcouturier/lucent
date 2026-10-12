@@ -2,6 +2,7 @@
 // paths are case-insensitive and accept either slash, and a folder exists when a file lives under it.
 // Used by the core's tests, the state gallery and the app running in a browser.
 import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type LocalContent, type Platform, type RegistryHive } from '../core/platform'
+import { assertGamePath } from '../shared/manifest'
 
 /** A machine to fake: its files, registry and well-known folders. */
 export interface Machine {
@@ -12,6 +13,7 @@ export interface Machine {
   gpus?: GpuAdapter[]
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
+  gameRunning?: boolean
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
@@ -25,6 +27,7 @@ const norm = (path: string) =>
   path.replace(/\//g, '\\').replace(/\\{2,}/g, '\\').replace(/\\$/, '').toLowerCase()
 
 export interface FakePlatform extends Platform {
+  readonly downloads: string[]
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
   /** Makes reads of a path (and everything under it) fail with access denied. */
@@ -43,14 +46,62 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   }
   const env = { ...DEFAULT_ENV, ...machine.env }
   const denied: string[] = []
+  const downloads: string[] = []
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
 
   const isDenied = (p: string) => denied.some((d) => p === d || p.startsWith(d + '\\'))
   const isDir = (p: string) => [...files.keys()].some((f) => f.startsWith(p + '\\'))
+  const writable = (path: string) => {
+    const p = norm(path)
+    if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${path}`, path)
+    if (isDir(p)) throw new PlatformError('access-denied', `Is a folder: ${path}`, path)
+    return p
+  }
 
   return {
+    downloads,
+    async writeText(path, text) { await gate; files.set(writable(path), text) },
+    async copyFile(from, to, replace = true) {
+      const text = await this.readText(from)
+      const target = writable(to)
+      if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
+      files.set(target, text)
+    },
+    async renameFile(from, to, replace = true) {
+      const text = await this.readText(from)
+      const source = writable(from)
+      const target = writable(to)
+      if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
+      files.set(target, text)
+      files.delete(source)
+    },
+    async removeFile(path) { await gate; files.delete(writable(path)) },
+    async listFiles(root) {
+      await gate
+      const p = norm(root)
+      if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${root}`, root)
+      return [...files.keys()].filter((f) => f.startsWith(p + '\\')).map((f) => f.slice(p.length + 1))
+    },
+    async hashFile(path) {
+      const bytes = new TextEncoder().encode(await this.readText(path))
+      const hash = await crypto.subtle.digest('SHA-256', bytes)
+      return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
+    },
+    async resolveGamePath(root, relative) {
+      await gate
+      assertGamePath(relative)
+      return `${root.replace(/[\\/]$/, '')}\\${relative.replace(/\//g, '\\')}`
+    },
+    async downloadFile(url, to, progress) {
+      await gate
+      downloads.push(url)
+      const text = await this.fetchText(url)
+      progress(new TextEncoder().encode(text).length)
+      await this.writeText(to, text)
+    },
+    async isGameRunning() { await gate; return machine.gameRunning ?? false },
     async readText(path) {
       await gate
       const p = norm(path)

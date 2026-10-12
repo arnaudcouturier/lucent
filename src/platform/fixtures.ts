@@ -3,6 +3,7 @@
 import { DEFAULT_ENV, type Machine } from './fake'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
+import { FIXTURE_ASSETS, TEST_MANIFEST, fixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -11,7 +12,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null }
+  const out: Required<Machine> = { files: {}, registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     for (const [key, values] of Object.entries(p.registry ?? {})) out.registry[key] = { ...out.registry[key], ...values }
@@ -19,6 +20,7 @@ export function machine(...parts: Machine[]): Machine {
     if (p.gpus) out.gpus = p.gpus
     Object.assign(out.remoteText, p.remoteText)
     if (p.devContent !== undefined) out.devContent = p.devContent
+    if (p.gameRunning !== undefined) out.gameRunning = p.gameRunning
   }
   return out
 }
@@ -76,6 +78,11 @@ export function manifestHost(value: unknown = manifest): Machine {
   return { remoteText: { [MANIFEST_URL]: JSON.stringify(value) } }
 }
 
+/** The browser and gallery can complete the flow using inert fixture assets. */
+export function fixtureContentHost(): Machine {
+  return { remoteText: { [MANIFEST_URL]: JSON.stringify(TEST_MANIFEST), ...Object.fromEntries(Object.entries(FIXTURE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
+}
+
 export function graphicsCard(name = 'NVIDIA GeForce RTX 4090', vendorId = 0x10de): Machine {
   return { gpus: [{ name, vendorId, dedicatedMemory: 24 * 1024 ** 3, software: false }] }
 }
@@ -87,9 +94,9 @@ export function squareEnixLauncher(installLocation: string): Machine {
 
 /** Named machines for the browser and the state gallery. */
 export const MACHINES = {
-  steam: machine(manifestHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
-  xivlauncher: machine(manifestHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
-  squareenix: machine(manifestHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
+  steam: machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
+  xivlauncher: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV')),
+  squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
   none: machine(manifestHost(), graphicsCard()),
 } satisfies Record<string, Machine>
 

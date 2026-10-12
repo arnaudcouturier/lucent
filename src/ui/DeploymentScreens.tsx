@@ -1,0 +1,87 @@
+import { Check, CircleCheck, Download, LoaderCircle, TriangleAlert } from 'lucide-react'
+import type { DeploymentPhase } from '../core/deployment'
+import { Screen } from './Window'
+import { useCore } from './useCore'
+import { Path } from './Path'
+
+export function FlowError() {
+  const [{ error, activity, busy }, core] = useCore()
+  return error ? <div className="callout" role="alert"><TriangleAlert size={14} /><div className="scan-notice"><span>{error}</span>{activity.kind === 'scan' && <button className="btn" disabled={busy} onClick={() => void core.scan()}>Scan again</button>}</div></div> : null
+}
+
+function sizeLabel(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+}
+
+export function ReviewScreen() {
+  const [{ plan, gameFolder, graphics, busy }, core] = useCore()
+  if (!plan) return null
+  const required = graphics.status === 'found' && graphics.tier?.requiresReShade
+  return <Screen title="Review" sub="Here’s what Lucent will put in your game folder.">
+    {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
+    <dl className="card plan-numbers">
+      <div><dt>Files backed up</dt><dd>{plan.counts.backedUp}</dd></div>
+      <div><dt>Files added</dt><dd>{plan.counts.added}</dd></div>
+      <div><dt>Download</dt><dd>{sizeLabel(plan.downloadSize)}</dd></div>
+    </dl>
+    <label className="card option-row">
+      <input type="checkbox" checked={plan.includeReShade} disabled={!!required || busy} onChange={(e) => void core.review(e.target.checked)} />
+      <span><strong>Include ReShade</strong><small>{required ? 'Required for your tier.' : 'Shaders and presets, ready when you want them.'}</small></span>
+      {required && <span className="option-required">Included</span>}
+    </label>
+    <p className="screen-note">{plan.includeReShade ? 'All presets are included. You choose a look in game; none is active by default.' : 'ReShade, shaders and presets will be left out.'}</p>
+    {!!plan.blockedPaths.length && <p className="callout" role="alert"><TriangleAlert size={14} /><span>These user files would be replaced: {plan.blockedPaths.join(', ')}. Move them aside before installing, then run Scan again.</span></p>}
+    <FlowError />
+    <footer className="screen-actions">
+      <button className="btn is-ghost" disabled={busy} onClick={() => core.backToScan()}>Back</button>
+      <button className="btn is-primary" disabled={busy || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>
+    </footer>
+  </Screen>
+}
+
+const PHASES: { key: DeploymentPhase; label: string; description: string }[] = [
+  { key: 'downloading', label: 'Downloading', description: 'Every file is checked before it reaches your game.' },
+  { key: 'backing-up', label: 'Backing up', description: 'Saving each file before a step changes it.' },
+  { key: 'applying', label: 'Applying', description: 'Putting the tested content in place.' },
+  { key: 'checking', label: 'Checking', description: 'Confirming the deployed files match their hashes.' },
+]
+export function InstallScreen() {
+  const [{ deploymentProgress, activity }] = useCore()
+  const progress = activity.kind === 'deploying' ? activity.progress : 0
+  const phase = PHASES.findIndex((p) => p.key === deploymentProgress?.phase)
+  return <Screen title="Installing" sub="Keep Lucent open while it prepares your game.">
+    <div className="card install-progress">
+      <div className="progress-heading"><span>{PHASES[Math.max(0, phase)].label}</span><span className="mono">{Math.round(progress * 100)}%</span></div>
+      <progress max={1} value={progress} aria-label="Installation progress" />
+      <p>{PHASES[Math.max(0, phase)].description}</p>
+      {deploymentProgress?.file && <Path path={deploymentProgress.file} />}
+    </div>
+    <ol className="install-phases" aria-live="polite">{PHASES.map((p, i) => <li key={p.key} className={i === phase ? 'is-current' : i < phase ? 'is-complete' : ''}>
+      {i < phase ? <Check size={14} /> : i === phase ? <LoaderCircle size={14} className="spin" /> : <span className="phase-dot" />}{p.label}
+    </li>)}</ol>
+  </Screen>
+}
+
+export function DoneScreen() {
+  const [{ hotkeys, deployment }, core] = useCore()
+  return <Screen title="You’re ready" sub="Lucent is in place. Open XIV when you’re ready to play.">
+    <div className="card hotkeys">{hotkeys.map((hint) => <div className="hotkey" key={hint.key}><kbd>{hint.key}</kbd><span>{hint.description}</span></div>)}</div>
+    {deployment?.includeReShade && <p className="screen-note">No preset is active. Press Home in game to choose one.</p>}
+    <footer className="screen-actions"><button className="btn is-primary" onClick={() => core.finish()}>Done<Check size={14} /></button></footer>
+  </Screen>
+}
+
+export function MainScreen() {
+  const [{ activity, gameFolder }] = useCore()
+  const healthy = activity.kind === 'deployment' && activity.health === 'healthy'
+  return <Screen title="Your game" sub="Your graphics, kept in place.">
+    <div className={`card health-card ${healthy ? 'is-healthy' : 'is-drift'}`}>
+      {healthy ? <CircleCheck size={20} /> : <TriangleAlert size={20} />}
+      <div><h2>{healthy ? 'Healthy' : 'Drift detected'}</h2><p>{healthy ? 'All deployed files match the tested content.' : 'Some deployed files have changed or are missing.'}</p></div>
+    </div>
+    {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
+    <FlowError />
+  </Screen>
+}

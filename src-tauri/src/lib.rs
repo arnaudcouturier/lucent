@@ -1,4 +1,5 @@
 mod platform;
+mod files;
 
 use platform::{FileStat, GpuAdapter, LocalContent, PlatformError};
 use std::path::PathBuf;
@@ -39,6 +40,29 @@ async fn platform_dev_content() -> Result<Option<LocalContent>, PlatformError> {
     platform::dev_content()
 }
 
+#[tauri::command]
+async fn platform_write_text(path: PathBuf, text: String) -> Result<(), PlatformError> { files::write_text(&path, &text) }
+#[tauri::command]
+async fn platform_copy_file(from: PathBuf, to: PathBuf, replace: bool) -> Result<(), PlatformError> { files::copy_file(&from, &to, replace) }
+#[tauri::command]
+async fn platform_rename_file(from: PathBuf, to: PathBuf, replace: bool) -> Result<(), PlatformError> { files::rename_file(&from, &to, replace) }
+#[tauri::command]
+async fn platform_remove_file(path: PathBuf) -> Result<(), PlatformError> { files::remove_file(&path) }
+#[tauri::command]
+async fn platform_list_files(root: PathBuf) -> Result<Vec<String>, PlatformError> { files::list_files(&root) }
+#[tauri::command]
+async fn platform_hash_file(path: PathBuf) -> Result<String, PlatformError> { files::hash_file(&path) }
+#[tauri::command]
+async fn platform_resolve_game_path(root: PathBuf, relative: String) -> Result<String, PlatformError> {
+    files::resolve_game_path(&root, &relative).map(|p| p.to_string_lossy().into_owned())
+}
+#[tauri::command]
+async fn platform_download_file(url: String, to: PathBuf, progress: tauri::ipc::Channel<u64>) -> Result<(), PlatformError> {
+    files::download_file(&url, &to, progress).await
+}
+#[tauri::command]
+async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_game_running() }
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -49,7 +73,10 @@ pub fn run() {
             platform_env_folder,
             platform_gpu_adapters,
             platform_fetch_text,
-            platform_dev_content
+            platform_dev_content,
+            platform_write_text, platform_copy_file, platform_rename_file, platform_remove_file,
+            platform_list_files, platform_hash_file, platform_resolve_game_path,
+            platform_download_file, platform_is_game_running
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");

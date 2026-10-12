@@ -70,7 +70,7 @@ describe('Scan shows the graphics card and its tier', () => {
   })
 
   it.each([
-    ['newer schema', '{"schemaVersion":2}', 'update-required'],
+    ['newer schema', '{"schemaVersion":3}', 'update-required'],
     ['invalid manifest', '{"schemaVersion":1,"tiers":[]}', 'invalid'],
   ])('keeps the graphics card but refuses its tier for a %s', async (_, text, status) => {
     const core = createCore(createFakePlatform({

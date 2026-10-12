@@ -191,9 +191,12 @@ describe('The state is observable', () => {
     platform.release()
     await scanning
     unsubscribe()
+    const notifications = seen.length
     await core.scan()
 
-    expect(seen).toEqual(['scanning', 'found'])
+    expect(seen[0]).toBe('scanning')
+    expect(seen.at(-1)).toBe('found')
+    expect(seen).toHaveLength(notifications)
   })
 })
 

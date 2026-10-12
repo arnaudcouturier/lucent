@@ -62,4 +62,17 @@ export interface Platform {
   /** Fetches UTF-8 text; HTTP errors are port failures, never document contents. */
   fetchText(url: string): Promise<string>
   getDevContent(): Promise<LocalContent | null>
+  /** Atomic, durable replacement; readers see either the old or the complete new file. */
+  writeText(path: string, text: string): Promise<void>
+  /** `replace=false` atomically refuses a destination that appeared since the last check. */
+  copyFile(from: string, to: string, replace?: boolean): Promise<void>
+  renameFile(from: string, to: string, replace?: boolean): Promise<void>
+  removeFile(path: string): Promise<void>
+  listFiles(root: string): Promise<string[]>
+  hashFile(path: string): Promise<string>
+  /** Resolves a relative path, rejecting traversal and reparse points in every existing ancestor. */
+  resolveGamePath(root: string, relative: string): Promise<string>
+  /** Streams to a temporary file and atomically commits it when complete. */
+  downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
+  isGameRunning(): Promise<boolean>
 }

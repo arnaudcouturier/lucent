@@ -4,6 +4,7 @@ import { GAME_EXECUTABLE, type GameFolderSource } from '../core/gameFolder'
 import { Path } from './Path'
 import { useCore } from './useCore'
 import { Screen } from './Window'
+import { FlowError } from './DeploymentScreens'
 
 const SOURCE_LABEL: Record<GameFolderSource, string> = {
   xivlauncher: 'XIVLauncher',
@@ -14,7 +15,7 @@ const SOURCE_LABEL: Record<GameFolderSource, string> = {
 }
 
 export function ScanScreen() {
-  const [state] = useCore()
+  const [state, core] = useCore()
   return (
     <Screen title="Scan" sub="Lucent looks for your game folder, graphics card and launcher.">
       <ul className="card list">
@@ -32,6 +33,8 @@ export function ScanScreen() {
           </span>
         </p>
       )}
+      <FlowError />
+      <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.review()}>Continue</button></footer>
     </Screen>
   )
 }

@@ -1,5 +1,5 @@
 // The real Platform port: each method is one Rust primitive (src-tauri/src/platform.rs).
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { PlatformError, type FileStat, type GpuAdapter, type LocalContent, type Platform, type PlatformErrorKind } from '../core/platform'
 
@@ -27,6 +27,19 @@ export function createTauriPlatform(): Platform {
     getGpuAdapters: () => call<GpuAdapter[]>('platform_gpu_adapters', {}),
     fetchText: (url) => call<string>('platform_fetch_text', { url }),
     getDevContent: () => call<LocalContent | null>('platform_dev_content', {}),
+    writeText: (path, text) => call('platform_write_text', { path, text }),
+    copyFile: (from, to, replace = true) => call('platform_copy_file', { from, to, replace }),
+    renameFile: (from, to, replace = true) => call('platform_rename_file', { from, to, replace }),
+    removeFile: (path) => call('platform_remove_file', { path }),
+    listFiles: (root) => call('platform_list_files', { root }),
+    hashFile: (path) => call('platform_hash_file', { path }),
+    resolveGamePath: (root, relative) => call('platform_resolve_game_path', { root, relative }),
+    isGameRunning: () => call('platform_is_game_running', {}),
+    downloadFile: (url, to, progress) => {
+      const channel = new Channel<number>()
+      channel.onmessage = progress
+      return call('platform_download_file', { url, to, progress: channel })
+    },
     async pickFolder({ title }) {
       const picked = await open({ directory: true, multiple: false, title })
       return typeof picked === 'string' ? picked : null

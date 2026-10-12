@@ -9,6 +9,7 @@ import { MACHINES, graphicsCard, manifestHost, machine, steam, steamGameFolder, 
 import { App } from '../ui/App'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
+import type { DeploymentPhase } from '../core/deployment'
 import './gallery.css'
 
 const LONG_LIBRARY = 'E:\\Games\\Libraries\\Steam Library (fast NVMe drive)'
@@ -32,6 +33,31 @@ const crystalPreview = (key: string, label: string, activity: Activity, descript
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>> = {}): Activity => ({
   kind: 'deployment', enabled: true, health: 'healthy', updateAvailable: false, operation: null, ...patch,
 })
+
+const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, includeReShade = true) => async () => {
+  const core = await scanned(m)()
+  await core.review(includeReShade)
+  if (stage !== 'review') await core.deploy()
+  if (stage === 'healthy') core.finish()
+  return core
+}
+const installStage = (phase: DeploymentPhase) => async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await new Promise<void>((resolve) => {
+    const unsubscribe = core.subscribe(() => {
+      if (core.getState().deploymentProgress?.phase === phase) {
+        platform.hold()
+        unsubscribe()
+        resolve()
+      }
+    })
+    void core.deploy()
+  })
+  return core
+}
 
 const STATES: GalleryState[] = [
   {
@@ -63,7 +89,7 @@ const STATES: GalleryState[] = [
   { key: 'rtx-20', label: 'Scan · RTX 20, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('NVIDIA GeForce RTX 2080 SUPER'))) },
   { key: 'radeon', label: 'Scan · Radeon, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'intel', label: 'Scan · Intel, Other', setup: scanned(machine(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086))) },
-  { key: 'schema-update', label: 'Scan · app update required', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 2 }))) },
+  { key: 'schema-update', label: 'Scan · app update required', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 3 }))) },
   { key: 'invalid-manifest', label: 'Scan · invalid manifest', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 1, tiers: [] }))) },
   { key: 'manifest-offline', label: 'Scan · manifest unavailable', setup: scanned(machine(steam(), graphicsCard())) },
   { key: 'no-gpu', label: 'Scan · no hardware graphics card', setup: scanned(machine(MACHINES.steam, { gpus: [] })) },
@@ -79,6 +105,16 @@ const STATES: GalleryState[] = [
       return core
     },
   },
+  { key: 'review', label: 'Review · ReShade included', setup: workflow('review') },
+  { key: 'review-no-reshade', label: 'Review · ReShade excluded', setup: workflow('review', MACHINES.steam, false) },
+  { key: 'review-radeon', label: 'Review · ReShade required', setup: workflow('review', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
+  { key: 'review-user-file', label: 'Review · user file protected', setup: workflow('review', machine(MACHINES.xivlauncher, { files: { 'C:\\Games\\FFXIV\\game\\winmm.dll': 'User mod' } })) },
+  ...(['downloading', 'backing-up', 'applying', 'checking'] as const).map((phase) => ({ key: `install-${phase}`, label: `Install · ${phase}`, setup: installStage(phase) })),
+  { key: 'done', label: 'Done · both hotkeys', setup: workflow('done') },
+  { key: 'done-no-reshade', label: 'Done · OptiScaler only', setup: workflow('done', MACHINES.steam, false) },
+  { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
+  { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
+  { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
