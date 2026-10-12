@@ -132,6 +132,11 @@ const STATES: GalleryState[] = [
       return core
     },
   },
+  { key: 'profile', label: 'Profile · Neural Rendering', async setup() {
+    const core = await scanned(MACHINES.steam)()
+    await core.continueSetup()
+    return core
+  } },
   { key: 'review', label: 'Review · ReShade included', setup: workflow('review') },
   { key: 'review-no-reshade', label: 'Review · ReShade excluded', setup: workflow('review', MACHINES.steam, false) },
   { key: 'review-radeon', label: 'Review · ReShade required', setup: workflow('review', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },

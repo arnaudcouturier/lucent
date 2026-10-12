@@ -1,8 +1,9 @@
-import { assertGamePath, type ContentVersion, type Step, type Tier } from '../shared/manifest'
+import { assertGamePath, type ContentVersion, type ProfileId, type Step, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { fileKey, planDeployment, type DeploymentScan, type Plan } from './planner'
 import { joinPath, normalizePath, parentPath } from './paths'
+import { readIni } from './ini'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -21,6 +22,9 @@ export interface DeploymentRecord {
   contentVersion: string
   includeReShade: boolean
   enabled: boolean
+  profile?: ProfileId | null
+  /** An interrupted profile change undoes only the journal entries from this index onward. */
+  profileChangeStart?: number
   recipe: Plan['recipe']
   journal: JournalEntry[]
   /** Directories absent before the deployment, recorded before any step can create them. */
@@ -59,11 +63,14 @@ export class DeploymentError extends Error {
   }
 }
 
+async function hashText(text: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export async function dataPaths(platform: Platform, gameFolder: string) {
   const data = joinPath(await platform.envFolder('LocalAppData'), 'Lucent')
-  const bytes = new TextEncoder().encode(normalizePath(gameFolder).toLowerCase())
-  const hash = await crypto.subtle.digest('SHA-256', bytes)
-  const id = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  const id = await hashText(normalizePath(gameFolder).toLowerCase())
   return { data, cache: joinPath(data, 'cache'), backups: joinPath(data, 'backups'), record: joinPath(data, 'deployments', id, 'record.json') }
 }
 
@@ -94,7 +101,8 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
     for (const path of value.createdDirectories) assertGamePath(path)
   }
-  if (value.undoCheckpoints) {
+  if (value.profileChangeStart !== undefined && (!Number.isSafeInteger(value.profileChangeStart) || value.profileChangeStart < 0 || value.profileChangeStart > value.journal.length)) throw new Error('The profile change journal is damaged.')
+  if (value.undoCheckpoints && value.profileChangeStart === undefined) {
     const progress = value.undoCheckpoints
     if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(progress.id) || !Number.isSafeInteger(progress.size) || progress.size <= value.journal.length) throw new Error('The undo checkpoints are damaged.')
     const checkpoints = await platform.readText(checkpointsPath(record, progress.id))
@@ -167,11 +175,12 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before recovering the unfinished deployment.')
   const paths = await dataPaths(platform, record.gameFolder)
   const root = joinPath(record.gameFolder, 'game')
+  const start = record.profileChangeStart ?? 0
   // Flipping a preallocated byte needs no free space, so a full data disk cannot stop the undo.
-  const checkpoint = (entry: number | 'all') => record.undoCheckpoints
+  const checkpoint = (entry: number | 'all') => record.undoCheckpoints && start === 0
     ? platform.writeFileByte(checkpointsPath(paths.record, record.undoCheckpoints.id), entry === 'all' ? record.undoCheckpoints.size - 1 : entry, UNDONE)
     : platform.writeText(paths.record, JSON.stringify(record, null, 2))
-  for (let i = record.journal.length - 1; i >= 0; i--) {
+  for (let i = record.journal.length - 1; i >= start; i--) {
     const entry = record.journal[i]
     if (entry.undone) continue
     for (const [relative, before] of Object.entries(entry.before).reverse()) {
@@ -190,21 +199,24 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     entry.undone = true
     await checkpoint(i)
   }
-  await undoDirectories(platform, record)
-  record.status = 'rolled-back'
+  if (record.profileChangeStart !== undefined) {
+    record.journal.length = start
+    delete record.profileChangeStart
+    record.status = 'complete'
+  } else { await undoDirectories(platform, record); record.status = 'rolled-back' }
   await checkpoint('all')
 }
 
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
 export async function deployContent(
-  platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, includeReShade: boolean,
+  platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, includeReShade: boolean, profile: ProfileId | null,
   graphics: GpuAdapter, source: ContentSource, report: (progress: DeploymentProgress) => void,
 ): Promise<DeploymentRecord> {
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
   const previous = await readDeployment(platform, gameFolder)
   if (previous && previous.status !== 'rolled-back') throw new Error('This game folder already has a deployment. Reopen Lucent to inspect it.')
   const scan = await scanDeployment(platform, gameFolder, content, null)
-  const plan = planDeployment(content, tier, includeReShade, scan)
+  const plan = planDeployment(content, tier, includeReShade, scan, profile)
   if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before installing.`)
   const paths = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
@@ -224,7 +236,7 @@ export async function deployContent(
   if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
-    includeReShade: plan.includeReShade, enabled: true, recipe: plan.recipe, journal: [], createdDirectories: [], undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
+    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [], undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   const owned = new Set<string>()
@@ -236,7 +248,7 @@ export async function deployContent(
   try {
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i]
-      const relatives = step.kind === 'copy' ? [step.to] : step.kind === 'rename' ? [step.from, step.to] : [step.path]
+      const relatives = step.kind === 'copy' ? [step.to] : step.kind === 'rename' ? [step.from, step.to] : [step.kind === 'ini_set' ? step.file : step.path]
       const before: JournalEntry['before'] = Object.create(null)
       report({ phase: 'backing-up', progress: 0.4 + i / plan.steps.length * 0.4, file: relatives[0] })
       for (const relative of relatives) {
@@ -257,8 +269,15 @@ export async function deployContent(
           if (await platform.hashFile(backup) !== before[relative]) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
         }
       }
+      let configText: string | null = null
+      if (step.kind === 'ini_set') {
+        const config = readIni(await platform.readText(await platform.resolveGamePath(root, step.file)))
+        config.set(step.section, step.key, step.value)
+        configText = config.toString()
+      }
       const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }
-        : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] } : { [step.path]: null }
+        : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
+        : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) } : { [step.path]: null }
       if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
       record.journal.push({ step, before, after })
       await save()
@@ -267,6 +286,7 @@ export async function deployContent(
       // Resolve again after the durable journal write, immediately before the mutation.
       if (step.kind === 'copy') await platform.copyFile(joinPath(paths.cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
       else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
+      else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
       else await platform.removeFile(await platform.resolveGamePath(root, step.path))
       for (const relative of relatives) owned.add(fileKey(relative))
     }
@@ -275,7 +295,9 @@ export async function deployContent(
       report({ phase: 'checking', progress: 0.8 + i / plan.expectedFiles.length * 0.2, file: file.path })
       const path = await platform.resolveGamePath(root, file.path)
       const stamp = { ...await platform.stat(path), sha256: await platform.hashFile(path) }
-      if (stamp.sha256 !== file.sha256) throw new PlatformError('hash-mismatch', `The deployed file failed its hash check: ${file.path}`)
+      const lastWrite = [...record.journal].reverse().flatMap((entry) => Object.entries(entry.after)).find(([p]) => fileKey(p) === fileKey(file.path))
+      const expected = file.sha256 ?? lastWrite?.[1]
+      if (stamp.sha256 !== expected) throw new PlatformError('hash-mismatch', `The deployed file failed its hash check: ${file.path}`)
       record.files[file.path] = stamp
     }
     for (const config of plan.recipe.ownedConfigs) record.ownedConfigs[config.path] = await platform.readText(await platform.resolveGamePath(root, config.path))
@@ -290,5 +312,63 @@ export async function deployContent(
       throw new DeploymentError(error, true, recoveryError)
     }
     throw new DeploymentError(error, false)
+  }
+}
+
+/** Uses the deployed recipe, so a newer manifest cannot change an older deployment's profiles. */
+export async function changePerformanceProfile(platform: Platform, gameFolder: string, profileId: ProfileId): Promise<DeploymentRecord> {
+  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before changing the performance profile.')
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing its performance profile.')
+  const profile = record.recipe.performanceProfiles?.find((p) => p.id === profileId)
+  if (!profile) throw new Error('This performance profile is unavailable for the deployed tier.')
+  const paths = await dataPaths(platform, gameFolder)
+  const root = joinPath(gameFolder, 'game')
+  // `record` journals the change while it applies; `changed` replaces it once every setting is written.
+  const changed = structuredClone(record)
+  record.status = 'applying'
+  record.profileChangeStart = record.journal.length
+  const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await save()
+  try {
+    for (const setting of profile.settings) {
+      // The deployed recipe's profiles only contain settings for configs it deployed.
+      const config = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(setting.file))
+      const stamped = Object.keys(record.files).find((p) => fileKey(p) === fileKey(setting.file))
+      if (!config || !stamped) throw new Error(`Profile config is missing from the deployment: ${setting.file}`)
+      const target = await platform.resolveGamePath(root, config)
+      const text = await platform.readText(target)
+      const before = await platform.hashFile(target)
+      if (before !== await hashText(text)) throw new Error(`The config changed while it was being read: ${config}. Try again.`)
+      const edited = readIni(text)
+      edited.set(setting.section, setting.key, setting.value)
+      const afterText = edited.toString()
+      const after = await hashText(afterText)
+      const lastWritten = readIni(changed.ownedConfigs[config])
+      lastWritten.set(setting.section, setting.key, setting.value)
+      changed.ownedConfigs[config] = lastWritten.toString()
+      if (after !== before) {
+        const backup = joinPath(paths.backups, before)
+        await platform.copyFile(target, backup)
+        if (await platform.hashFile(backup) !== before) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${config}`)
+        record.journal.push({ step: { kind: 'ini_set', ...setting, file: config }, before: { [config]: before }, after: { [config]: after } })
+        await save()
+        if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during the profile change. Close it before retrying.')
+        if (await platform.hashFile(await platform.resolveGamePath(root, config)) !== before) throw new Error(`The config changed during the profile change: ${config}. Try again.`)
+        await platform.writeText(await platform.resolveGamePath(root, config), afterText, parentPath(gameFolder))
+      }
+      if (await platform.hashFile(await platform.resolveGamePath(root, config)) !== after) throw new PlatformError('hash-mismatch', `Profile config hash mismatch: ${config}`)
+      // Only a config matching Lucent's last-written copy is stamped again, so a switch never hides Drift.
+      if (after === await hashText(changed.ownedConfigs[config])) changed.files[stamped] = { ...await platform.stat(target), sha256: after }
+    }
+    changed.profile = profile.id
+    changed.journal = record.journal
+    await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
+    return changed
+  } catch (error) {
+    try { await undoDeployment(platform, record) } catch (recoveryError) {
+      throw new DeploymentError(error, true, recoveryError)
+    }
+    throw error
   }
 }

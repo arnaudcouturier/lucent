@@ -1,4 +1,4 @@
-import { assertGamePath, type ContentFile, type ContentVersion, type Step, type Tier, type TierRecipe } from '../shared/manifest'
+import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
 import type { FileStat } from './platform'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
@@ -11,6 +11,7 @@ export interface Plan {
   contentVersion: string
   tier: string
   includeReShade: boolean
+  profile: ProfileId | null
   steps: Step[]
   files: ContentFile[]
   filesToDownload: ContentFile[]
@@ -23,12 +24,17 @@ export interface Plan {
 }
 
 /** Pure planning: all facts about the folder and verified cache are supplied by Scan. */
-export function planDeployment(content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan): Plan {
+export function planDeployment(content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan, profile: ProfileId | null = null): Plan {
   const recipe = content.tiers[tier.id]
   if (!recipe) throw new Error('No content is available for this tier yet.')
   includeReShade ||= tier.requiresReShade
   const included = (v: { when?: 'reshade' }) => !v.when || includeReShade
-  const steps = recipe.recipe.filter(included).map((s) => ({ ...s }))
+  const includedConfig = (file: string) => recipe.ownedConfigs.some((c) => included(c) && fileKey(c.path) === fileKey(file))
+  const recipeSteps = recipe.recipe.filter(included).map((s) => ({ ...s }))
+  const selected = recipe.performanceProfiles?.length ? recipe.performanceProfiles.find((p) => p.id === (profile ?? DEFAULT_PROFILE)) : null
+  if (recipe.performanceProfiles?.length && !selected) throw new Error('Choose a performance profile for this tier.')
+  // The profile applies after the recipe but stays out of the saved recipe: the record names it on its own.
+  const steps: Step[] = [...recipeSteps, ...(selected?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s }))]
   const initial = new Set(Object.keys(scan.files).map(fileKey))
   const owned = new Set(scan.ownedFiles.map(fileKey))
   const present = new Map([...initial].map((p) => [p, null as string | null]))
@@ -55,13 +61,20 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
       modify(step.to)
       present.set(fileKey(step.to), present.get(fileKey(step.from))!)
       present.delete(fileKey(step.from))
+    } else if (step.kind === 'ini_set') {
+      if (!present.has(fileKey(step.file))) throw new Error(`Recipe config is missing: ${step.file}`)
+      if (!includedConfig(step.file)) throw new Error(`INI setting must target an owned config: ${step.file}`)
+      modify(step.file)
+      present.set(fileKey(step.file), null)
     } else {
       modify(step.path)
       present.delete(fileKey(step.path))
     }
   }
   const paths = (items: TierRecipe['entryFiles']) => items.filter(included).map((p) => ({ ...p }))
-  const filteredRecipe = { ...recipe, recipe: steps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles) }
+  const filteredRecipe = { ...recipe, recipe: recipeSteps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles),
+    ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
+  }
   for (const p of [...filteredRecipe.entryFiles, ...filteredRecipe.ownedConfigs, ...filteredRecipe.shippedPresets]) {
     assertGamePath(p.path)
     if (!touched.has(fileKey(p.path)) || !present.has(fileKey(p.path))) throw new Error(`Recipe does not deploy its declared file: ${p.path}`)
@@ -77,7 +90,7 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const filesToDownload = files.filter((f) => !cached.has(f.sha256))
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
-    contentVersion: content.id, tier: tier.id, includeReShade, steps, files, filesToDownload,
+    contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null, steps, files, filesToDownload,
     filesToBackup: [...backups.values()], blockedPaths: [...blocked.values()], expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),

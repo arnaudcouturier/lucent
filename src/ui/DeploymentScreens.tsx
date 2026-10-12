@@ -3,6 +3,7 @@ import type { DeploymentPhase } from '../core/deployment'
 import { Screen } from './Window'
 import { useCore } from './useCore'
 import { Path } from './Path'
+import { ProfileSelector } from './Profiles'
 
 export function FlowError() {
   const [{ error, notice, recoveryRequired, activity, busy, plan }, core] = useCore()
@@ -40,7 +41,7 @@ export function ReviewScreen() {
     {!!plan.blockedPaths.length && <p className="callout" role="alert"><TriangleAlert size={14} /><span>These user files would be replaced: {plan.blockedPaths.join(', ')}. Move them aside before installing, then run Scan again.</span></p>}
     <FlowError />
     <footer className="screen-actions">
-      <button className="btn is-ghost" disabled={busy} onClick={() => core.backToScan()}>Back</button>
+      <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
       {!error && <button className="btn is-primary" disabled={busy || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
     </footer>
   </Screen>
@@ -86,6 +87,7 @@ export function MainScreen() {
       {healthy ? <CircleCheck size={20} /> : <TriangleAlert size={20} />}
       <div><h2>{healthy ? 'Healthy' : 'Drift detected'}</h2><p>{healthy ? 'All deployed files match the tested content.' : 'Some deployed files have changed or are missing.'}</p></div>
     </div>
+    <ProfileSelector />
     {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <FlowError />
   </Screen>

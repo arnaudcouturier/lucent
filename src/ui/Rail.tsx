@@ -6,7 +6,6 @@ import { useCore } from './useCore'
 import { dragWindow } from './shell'
 import type { TierStatus } from '../shared/manifest'
 
-const FIRST_RUN_STEPS = ['Scan', 'Review', 'Install', 'Done']
 const TIER_STATUS_LABEL: Record<TierStatus, string> = {
   stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified',
 }
@@ -23,7 +22,8 @@ export function Mark({ className }: { className?: string }) {
 export function Rail() {
   const [state] = useCore()
   const crystal = crystalState(state)
-  const step = state.activity.kind === 'review' ? 1 : state.activity.kind === 'deploying' ? 2 : state.activity.kind === 'done' ? 3 : 0
+  const steps = [{ kind: 'scan', title: 'Scan' }, ...(state.profiles.length ? [{ kind: 'profile', title: 'Profile' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
+  const step = steps.findIndex((s) => s.kind === state.activity.kind)
   const main = state.activity.kind === 'deployment'
   return (
     <aside className="rail" onMouseDown={dragWindow}>
@@ -35,7 +35,7 @@ export function Rail() {
         <Crystal state={crystal} />
       </div>
       {!main && <ol className="steps" aria-label="Setup steps">
-        {FIRST_RUN_STEPS.map((title, i) => (
+        {steps.map(({ title }, i) => (
           <li key={title} className={i < step ? 'is-done' : i === step ? 'is-now' : ''} aria-current={i === step ? 'step' : undefined}>
             <span className="step-dot">{i < step && <Check size={10} strokeWidth={3} />}</span>
             {title}

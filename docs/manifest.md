@@ -62,9 +62,10 @@ Each version contains:
   `upscaling`, or `null` for a ReShade-only recipe).
 
 The first deployment chooses the newest Stable content for the scanned tier and checks
-`minAppVersion`. Channel switching and performance profiles arrive in later tickets.
+`minAppVersion`. Channel switching arrives in a later ticket.
 
-Steps currently support `copy` (`file` hash and `to` path), `rename` (`from`, `to`), and `delete`
+Steps support `copy` (`file` hash and `to` path), `rename` (`from`, `to`), `ini_set`
+(`file` path, `section`, `key`, string `value`), and `delete`
 (`path`). A step may have `when: "reshade"`; it is omitted when the player excludes ReShade.
 Each path list contains `{ "path": "...", "when": "reshade" }` objects, with `when` optional.
 For example, part of an OptiScaler recipe is:
@@ -86,15 +87,14 @@ For example, part of an OptiScaler recipe is:
 Paths are relative to the game's `game` subfolder. Validation rejects traversal, rooted paths,
 alternate data streams and Windows device names/aliases. Execution repeats these checks, and the
 Windows primitive rejects junctions and symbolic links in the target path. Declared entry files,
-configs and presets must exist after the recipe. Unknown step kinds are rejected; `ini_set`
-belongs to the performance-profile work.
+configs and presets must exist after the recipe. Unknown step kinds are rejected.
 
 The device-name restrictions follow [Microsoft's Windows file-naming rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file), including the reserved superscript COM/LPT names.
 
 ## Planning, journal and recovery
 
-`planDeployment` is a pure function of the content version, tier, ReShade choice and scanned
-folder/cache facts. Review renders its counts and download size directly. Counts cover unique
+`planDeployment` is a pure function of the content version, tier, ReShade choice, performance
+profile and scanned folder/cache facts. Review renders its counts and download size directly. Counts cover unique
 original files to back up and final added files, excluding temporary files created and renamed by
 the recipe. Downloads are deduplicated by hash; a cache entry counts only after its size and hash
 have been checked. Required-ReShade tiers force that choice on.
@@ -104,7 +104,8 @@ explicit backup exception belong to #12; a recipe alone cannot claim a player's 
 
 Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, `backups\<sha256>`, and
 `deployments\<hash of normalized game-folder path>\record.json`. A record stores the game folder,
-GPU, tier, content version, ReShade choice, Enabled, the recipe's path lists, each journal entry,
+GPU, tier, content version, ReShade choice, Enabled, performance profile, the recipe's steps,
+path lists and profiles, each journal entry,
 last-written config text, and every deployed file's SHA-256, size and modification time.
 
 All assets are verified before the game folder changes, so an offline, missing, truncated or
@@ -134,5 +135,34 @@ record, so a data disk that fills up cannot stop recovery. A completed deploymen
 attempt, drops and deletes those checkpoints; later journal entries are undone through the record.
 
 The gallery includes `review`, `review-no-reshade`, `review-radeon`, `review-user-file`,
-`review-failed`, `scan-recovered`, `scan-recovery-blocked`, each `install-<phase>`, `done`,
+`review-failed`, `scan-recovered`, `scan-recovery-blocked`, `profile`, each `install-<phase>`, `done`,
 `done-no-reshade`, `done-radeon`, `done-other`, and `healthy`.
+
+## Performance profiles
+
+Each content tier may supply `performanceProfiles`. Omit it or use `[]` for a tier without
+profiles: Lucent hides the Profile step and the main-screen selector. Otherwise supply all three
+IDs, `fidelity`, `balanced` and `performance`, each with a one-line `label` and tier-specific
+`description`, and nonempty `settings`. Each setting is `{ "file": "OptiScaler.ini", "section": "DlssNr",
+"key": "Passes", "value": "2" }`; its file must be declared in `ownedConfigs`. Values are
+single-line strings, including empty strings. Configs must be deployed before an `ini_set` step.
+An `ini_set` targeting a conditional config uses the same `when` condition.
+
+Scan → Profile → Review uses Fidelity initially, and the rows always appear in ID order. The
+selected profile is applied after the recipe, and settings for an excluded ReShade config are
+omitted. The saved recipe keeps only the content's own steps; the record names the profile. The
+main screen uses the profiles saved with the deployed content version, so a new manifest cannot
+change an existing deployment's choices. Picking a profile writes only its keys, saves those
+values into the last-written copy, and keeps unrelated user changes distinct from values Lucent
+wrote. A switch stamps the config's new hash only while it matches the last-written copy, so it
+never hides Drift. Enabled remains unchanged.
+
+Config edits preserve BOM, line endings, whitespace, ordering and comment lines; a no-op round
+trip is byte-identical for the UTF-8 configs supported by the Platform port. Neither ReShade nor
+OptiScaler has inline comments, so everything after `=` is the value, `#` and `;` included.
+
+Profile writes have verified backups and durable journal entries. An interrupted profile change
+recovers only that change, retaining the earlier deployment and profile. Lucent refuses a profile
+change while XIV runs. NVIDIA fixtures have illustrative profiles; Radeon and Other fixtures
+demonstrate tiers without profiles. Real per-tier settings remain deferred until tested content is
+published.

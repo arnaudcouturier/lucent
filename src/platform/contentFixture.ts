@@ -36,4 +36,31 @@ export const TEST_CONTENT: ContentVersion = {
   tiers: Object.fromEntries(manifest.tiers.map((t) => [t.id, recipe(t.id === 'other', t.id === 'radeon')])),
 }
 export const TEST_MANIFEST: Manifest = { ...manifest, schemaVersion: 2, tiers: manifest.tiers as Manifest['tiers'], versions: [TEST_CONTENT] }
+const PROFILE_CONFIG_HASH = 'b3ef5c1edd86fa42913cf7d887e6730a3a7bd3584e59549be748b0284be5f7ed'
+export const PROFILE_ASSETS = {
+  ...FIXTURE_ASSETS,
+  [PROFILE_CONFIG_HASH]: '; OptiScaler\r\n[DlssNr]\r\n; Neural Rendering passes\r\nPasses = 2\r\nSpatialCompression = false\r\nResidualFG = false\r\n\r\n[Logging]\r\nLogToFile = false\r\n',
+}
+// Illustrative values only: real content remains unpublished until its per-tier settings are tested.
+export const PROFILE_MANIFEST: Manifest = {
+  ...TEST_MANIFEST,
+  versions: [{
+    ...TEST_CONTENT,
+    files: Object.entries(PROFILE_ASSETS).map(([sha256, text]) => ({ sha256, size: new TextEncoder().encode(text).length, release: 'content-2026.10.12' })),
+    tiers: Object.fromEntries(Object.entries(TEST_CONTENT.tiers).map(([id, r]) => [id, id === 'other' || id === 'radeon' ? r : {
+      ...r,
+      recipe: [...r.recipe, { kind: 'copy', file: PROFILE_CONFIG_HASH, to: 'OptiScaler.ini' }, { kind: 'ini_set', file: 'OptiScaler.ini', section: 'Logging', key: 'LogToFile', value: 'false' }],
+      ownedConfigs: [...r.ownedConfigs, { path: 'OptiScaler.ini' }],
+      performanceProfiles: [
+        { id: 'fidelity' as const, label: 'Fidelity', description: 'Two Neural Rendering passes for more detail.' },
+        { id: 'balanced' as const, label: 'Balanced', description: 'One Neural Rendering pass, balancing detail and frame rate.' },
+        { id: 'performance' as const, label: 'Performance', description: 'One pass with compression and residual frames for a higher frame rate.' },
+      ].map((p) => ({ ...p, settings: [
+        { file: 'OptiScaler.ini', section: 'DlssNr', key: 'Passes', value: p.id === 'fidelity' ? '2' : '1' },
+        { file: 'OptiScaler.ini', section: 'DlssNr', key: 'SpatialCompression', value: String(p.id === 'performance') },
+        { file: 'OptiScaler.ini', section: 'DlssNr', key: 'ResidualFG', value: String(p.id === 'performance') },
+      ] })),
+    }])),
+  }],
+}
 export const fixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.10.12/${hash}`

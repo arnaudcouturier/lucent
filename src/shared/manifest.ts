@@ -31,8 +31,12 @@ export interface Component { name: string; upstream: string; licence: string; so
 export interface ConditionalPath { path: string; when?: 'reshade' }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
+/** Also the order of the radio rows. */
+export const PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
+export type ProfileId = typeof PROFILE_IDS[number]
+export const DEFAULT_PROFILE: ProfileId = 'fidelity'
 export interface PerformanceProfile {
-  id: 'fidelity' | 'balanced' | 'performance'
+  id: ProfileId
   label: string
   description: string
   settings: IniSetting[]
@@ -41,6 +45,7 @@ export type Step = (
   | { kind: 'copy'; file: string; to: string }
   | { kind: 'rename'; from: string; to: string }
   | { kind: 'delete'; path: string }
+  | ({ kind: 'ini_set' } & IniSetting)
 ) & { when?: 'reshade' }
 export interface TierRecipe {
   recipe: Step[]
@@ -176,30 +181,36 @@ function paths(value: unknown, field: string): ConditionalPath[] {
     const p = object(v, field)
     return { path: gamePath(p.path), ...condition(p) }
   })
-  unique(result.map((p) => p.path.replace(/\\/g, '/').toLowerCase()), field)
+  unique(result.map((p) => pathKey(p.path)), field)
   return result
 }
+const pathKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
 function hash(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) invalid('Files need a lowercase SHA-256.')
   return value
 }
 function iniKey(value: unknown): IniKey {
   const k = object(value, 'INI key')
-  if (typeof k.section !== 'string' || /[\r\n\[\]]/.test(k.section)) invalid('Invalid INI section.')
+  if (typeof k.section !== 'string' || /[\r\n\0\[\]]/.test(k.section) || k.section !== k.section.trim()) invalid('Invalid INI section.')
   const key = nonemptyString(k.key, 'INI key')
-  if (/[\r\n=]/.test(key)) invalid('Invalid INI key.')
+  if (/[\r\n\0=;#\[\]]/.test(key) || key !== key.trim()) invalid('Invalid INI key.')
   return { file: gamePath(k.file), section: k.section, key }
+}
+function iniSetting(s: Record<string, unknown>): IniSetting {
+  if (typeof s.value !== 'string' || /[\r\n\0]/.test(s.value)) invalid('INI values must be single-line strings.')
+  return { ...iniKey(s), value: s.value }
+}
+function singleLine(value: unknown, field: string): string {
+  if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
+  return value as string
 }
 function profile(value: unknown): PerformanceProfile {
   const p = object(value, 'Performance profile')
-  if (p.id !== 'fidelity' && p.id !== 'balanced' && p.id !== 'performance') invalid('Unknown performance profile.')
-  const settings = array(p.settings, 'Profile settings').map((value): IniSetting => {
-    const s = object(value, 'Profile setting')
-    if (typeof s.value !== 'string' || /[\r\n]/.test(s.value)) invalid('INI values must be single-line strings.')
-    return { ...iniKey(s), value: s.value }
-  })
-  unique(settings.map((s) => JSON.stringify([s.file.replace(/\\/g, '/').toLowerCase(), s.section.toLowerCase(), s.key.toLowerCase()])), 'Profile keys')
-  return { id: p.id, label: nonemptyString(p.label, 'Profile label'), description: nonemptyString(p.description, 'Profile description'), settings }
+  if (!PROFILE_IDS.includes(p.id as ProfileId)) invalid('Unknown performance profile.')
+  const settings = array(p.settings, 'Profile settings').map((value) => iniSetting(object(value, 'Profile setting')))
+  unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Profile keys')
+  if (!settings.length) invalid('A performance profile needs settings.')
+  return { id: p.id as ProfileId, label: singleLine(p.label, 'Profile label'), description: singleLine(p.description, 'Profile description'), settings }
 }
 function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
   const v = object(value, 'Content version')
@@ -237,17 +248,26 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       }
       if (s.kind === 'rename') return { kind: 'rename', from: gamePath(s.from), to: gamePath(s.to), ...when }
       if (s.kind === 'delete') return { kind: 'delete', path: gamePath(s.path), ...when }
+      if (s.kind === 'ini_set') return { kind: 'ini_set', ...iniSetting(s), ...when }
       return invalid('Unknown recipe step.')
     })
     if (!recipe.length) invalid('A tier recipe must contain steps.')
     if (r.overlay !== null && r.overlay !== 'neural-rendering' && r.overlay !== 'upscaling') invalid('Unknown overlay hint.')
     recipes[id] = { recipe, entryFiles: paths(r.entryFiles, 'Entry files'), ownedConfigs: paths(r.ownedConfigs, 'Owned configs'), shippedPresets: paths(r.shippedPresets, 'Shipped presets'), generatedFiles: paths(r.generatedFiles, 'Generated files'), overlay: r.overlay }
     if (r.performanceProfiles !== undefined) {
-      recipes[id].performanceProfiles = array(r.performanceProfiles, 'Performance profiles').map(profile)
-      unique(recipes[id].performanceProfiles!.map((p) => p.id), 'Performance profile ids')
+      const profiles = array(r.performanceProfiles, 'Performance profiles').map(profile)
+      unique(profiles.map((p) => p.id), 'Performance profile ids')
+      if (profiles.length && profiles.length !== PROFILE_IDS.length) invalid('A tier must offer Fidelity, Balanced and Performance together.')
+      recipes[id].performanceProfiles = profiles.sort((a, b) => PROFILE_IDS.indexOf(a.id) - PROFILE_IDS.indexOf(b.id))
     }
     if (r.resetKeys !== undefined) recipes[id].resetKeys = array(r.resetKeys, 'Reset keys').map(iniKey)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
+    const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
+    for (const s of recipe) {
+      // A step without a condition would fail to plan whenever its conditional config is excluded.
+      if (s.kind === 'ini_set' && ownedConfig(s.file).when !== s.when) invalid('INI steps must use their owned config condition.')
+    }
+    for (const s of (recipes[id].performanceProfiles ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
   }
   return { id, channel: v.channel, minAppVersion, changelog, components, files, tiers: recipes }
 }
