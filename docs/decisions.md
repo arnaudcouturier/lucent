@@ -44,8 +44,8 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 - **Status line** with one contextual button: healthy → no button; broken files → **Repair**; update available → **Update** (with changelog).
 - **Performance profile** selector (3 options).
-- **Master on/off switch** ("Vanilla mode").
-- **⋯ menu**: Roll back, Beta channel, XIVLauncher auto-repair, Copy diagnostics, Report a bug, Credits, Uninstall.
+- **Master switch labelled "Enabled"**. Turning it off leaves the deployment **Disabled**: files present but inactive. The state persists through repair, update and profile changes, and a health check on a disabled deployment expects the disabled state. Not called "Vanilla mode", because "vanilla" means a game folder with no deployment (and is also an Alive preset name).
+- **⋯ menu**: Versions (roll back, or apply a skipped version), Beta channel, XIVLauncher auto-repair, Copy diagnostics, Report a bug, Credits, Uninstall.
 - No separate DLSS 5 toggle (OptiScaler's overlay has one), no "Launch game" button, no preset display.
 
 ## Deployment engine
@@ -53,7 +53,15 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 - Install steps are **declarative data in the manifest** (`copy`, `rename`, `ini_set`, `delete`); the app is a generic executor. A new upstream round ships as a manifest edit, not an app release.
 - Every step is **journaled**; every overwritten or removed file is **backed up** into Lucent's data folder. Uninstall and rollback replay the journal.
 - Existing user setups: detect and explain, back up, then replace. User presets and shaders are carried over, never deleted.
-- **Managed ini keys**: updates only touch the keys the recipe sets (`ini_set`); the user's other changes survive.
+- **Config files from an existing setup** (e.g. a previous `ReShade.ini`): back up, then write Lucent's whole file. No merging: Lucent doesn't know their history. Lucent is opinionated and built for people who don't want to tinker.
+- **Lucent's own config files on update**: key-by-key three-way merge between what Lucent last wrote, what's on disk, and what the new content version ships:
+  - Key unchanged on disk, changed in the new version → new value.
+  - User change, key unchanged in the new version → user's value kept (e.g. the selected ReShade preset, keybinds).
+  - User change, key also changed in the new version → Lucent's value wins (it's the tested combination).
+  - Key listed as a **reset key** by the content version → Lucent's value wins (escape hatch for breaking values).
+  - The pre-update file is always backed up. The merged file follows the new version's layout and comments; keys the new version dropped are removed (they remain in the backup).
+- A whole-file replace on every update was rejected: ReShade stores the selected preset and keybinds in `ReShade.ini`, so every update would reset them.
+- **Performance profiles** follow the same rule. A user change to a profile setting shows the profile as **Custom (based on X)** until the user picks a profile or a content version changes that setting.
 - Shipped presets are compared by hash; a user-edited one is saved as `<name> (my edits).ini` before ours is written.
 - User-owned and paid shaders (e.g. iMMERSE Pro: RTGI, RELIGHT, REGRADE) are never shipped and never touched.
 - Uninstalling Lucent restores the game folder to vanilla (checkbox on by default). Nothing left behind.
@@ -61,7 +69,9 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 ## Updates
 
 - **App updates**: published to GitHub Releases. **Notify only** — nothing downloads until the user clicks Update. Users can skip a version or stay on one.
-- **Content updates**: Stable and Beta channels in the manifest. Notify only, pinnable, one-click rollback to either of the last two cached content versions.
+- **Content updates**: notify only, pinnable, one-click rollback to either of the last two cached content versions.
+- **One channel switch covers both**: Stable or Beta. Beta users get beta app versions *and* beta content versions, so beta content that needs new app features can be tested before that app version ships to stable.
+- **Rollback pins** the version rolled back to and **skips** the version left behind, so Lucent stops announcing it. The next newer version is announced normally. Skipped versions can still be applied manually from a version list in the ⋯ menu.
 - Manifest carries `minAppVersion`; content that needs a newer app is only offered after the app is updated.
 - Manifest can mark a content version as broken on a given game version → warning for pinned users, never forced.
 - **Game patch detection**: on app open, compare `game\ffxivgame.ver` and verify installed files by hash.
@@ -107,7 +117,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 Game: `C:\Games\Steam\steamapps\common\FINAL FANTASY XIV Online\game`, launched via XIVLauncher.
 
 - OptiScaler `v10.0.0-dev (2679fb17-community-spatial-sm86-20260926)` loaded as `winmm.dll`.
-- ReShade is loaded **through OptiScaler** (`LoadReshade = true` → `ReShade64.dll`), not as `dxgi.dll`.
+- ReShade is loaded **through OptiScaler** (`LoadReshade = true` → `ReShade64.dll`), not as `dxgi.dll`. ReShade's own `dxgi.dll` must be renamed to `ReShade64.dll` for this to work. So an existing ReShade install's `dxgi.dll` is part of an existing setup that Lucent backs up and removes.
 - `OptiScaler.ini`: `Dx11Upscaler = dlss_12` (the only DX11 option that can also run DLSS Neural Rendering); `[DlssNr] Enabled = true`, `RunBeforeSR = true`, `ResidualFG = true`, `Passes = 2`, `SkinProtection = true`, `SpatialCompression = true`.
 - `LogToFile = true`, `LogLevel = 1` produced a 125 MB `OptiScaler.log` → **ship with logging off**.
 - ReShade add-on: ReshadeEffectShaderToggler (`.addon32/.addon64/.ini`, shipped inside the Alive zip). Shaders: iMMERSE (free), qUINT, SweetFX, Alive and FFXIV-specific shaders. `ReShade.ini` uses relative paths `.\reshade-shaders\Shaders\**` and `.\reshade-shaders\Textures\**`.
