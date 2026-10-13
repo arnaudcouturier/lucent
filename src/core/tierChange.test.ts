@@ -52,7 +52,9 @@ it('Switch tier deploys the Radeon recipe, keeping Disabled and the player’s R
   // The Radeon recipe has no OptiScaler profiles, so its config goes; the player's preset choice and preset stay.
   const files = await platform.listFiles(GAME)
   expect(files).not.toContain('optiscaler.ini')
-  expect(files).toContain('winmm.dll.disabled')
+  expect(await platform.readText(`${GAME}\\winmm.dll.disabled`)).toBe('OptiScaler')
+  expect(await platform.readText(`${GAME}\\ReShade64.dll`)).toBe('ReShade')
+  expect(await platform.readText(`${GAME}\\reshade-shaders\\Shaders\\Example.fx`)).toBe('Shader')
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toContain('PresetPath=.\\reshade-presets\\Mine.ini')
   expect(await platform.readText(`${GAME}\\reshade-presets\\Mine.ini`)).toBe('[Mine]\n')
   expect(statusCard(core.getState())).toEqual({ kind: 'disabled' })

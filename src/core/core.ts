@@ -1,6 +1,6 @@
 // The core: all of Lucent's domain logic, framework-free. It exposes one observable state and the
 // commands the UI calls. It reaches the machine only through the Platform port.
-import type { Platform } from './platform'
+import type { GpuAdapter, Platform } from './platform'
 import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder'
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
@@ -186,8 +186,8 @@ export function createCore(platform: Platform): Core {
   }
   class ElevationPending extends Error {}
   let resumeContentVersion: string | null = null
-  /** While Find it scans, a deployment whose folder is gone isn't shown in place of first-run Scan. */
-  let findingFolder = false
+  /** Find it clears this, so a scan that still finds no game folder leads to first-run Scan and its folder picker. */
+  let showLostDeployment = true
   const recover = async () => {
     try {
       const recovered = await recoverDeployments(platform, async (record) => {
@@ -328,6 +328,33 @@ export function createCore(platform: Platform): Core {
     const selectedProfile = profiles.some((p) => p.id === state.selectedProfile) ? state.selectedProfile : profiles.find((p) => p.id === DEFAULT_PROFILE)?.id ?? null
     set({ profiles, selectedProfile })
   }
+  /** Moves the deployment to other content, a version or a tier, through the update path, then checks it again. */
+  const changeContent = async (operation: 'update' | 'rollback' | 'tier', request: GameWriteRequest, target: () => { content: ContentVersion; tier: Tier }, graphics?: GpuAdapter) => {
+    const { activity, deployment, manifest } = state
+    if (activity.kind !== 'deployment' || !deployment) return
+    set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation } })
+    try {
+      if (!await prepareWrite(request)) return
+      await refreshHealth(deployment)
+      const { content, tier } = target()
+      if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, (progress) => set({ deploymentProgress: progress }), graphics)
+      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
+      try { await finishSelection(record) }
+      catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
+      await pruneCache(record)
+    } catch (error) {
+      set(error instanceof DeploymentError
+        ? { error: error.message, recoveryRequired: error.recoveryRequired }
+        : { error: `${failureReason(error)} The game folder has not been changed.` })
+    }
+    finally {
+      await refreshHealthAfter(true)
+      await refreshAnnouncement()
+      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null, tierChange: state.deployment ? tierChange(state.deployment) : null } })
+      set({ busy: false, deploymentProgress: null })
+    }
+  }
   const core: Core = {
     getState: () => state,
     subscribe(listener) {
@@ -372,7 +399,6 @@ export function createCore(platform: Platform): Core {
     },
     async scan() {
       if (state.busy) return
-      const missing = !findingFolder
       set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, versions: [], profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
@@ -392,7 +418,7 @@ export function createCore(platform: Platform): Core {
         if (folder) {
           set({ gameFolder: { status: 'found', ...folder } })
           await restoreDeployment(folder)
-        } else if (missing && !resume) {
+        } else if (showLostDeployment && !resume) {
           const lost = await lostDeployment(platform)
           if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: lost.recipe.performanceProfiles ?? [], selectedProfile: lost.profile ?? null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
         }
@@ -422,9 +448,8 @@ export function createCore(platform: Platform): Core {
     },
     async findGameFolder() {
       if (state.gameFolder.status !== 'missing') return
-      // Find it looks past the missing folder, so a folder that's still gone leads to Scan and its folder picker.
-      findingFolder = true
-      try { await core.scan() } finally { findingFolder = false }
+      showLostDeployment = false
+      try { await core.scan() } finally { showLostDeployment = true }
     },
     async chooseGameFolder() {
       if (state.busy || state.activity.kind !== 'scan') return
@@ -508,56 +533,15 @@ export function createCore(platform: Platform): Core {
       if (state.activity.kind === 'deployment' && state.activity.update) await core.applyVersion(state.activity.update.version)
     },
     async switchTier() {
-      const { activity, deployment, graphics, manifest } = state
-      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found' || manifest.status !== 'ready') return
+      const { activity, deployment, graphics } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
       const target = tierSwitchTarget(deployment)
-      if (!target) return
-      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'tier' } })
-      try {
-        if (!await prepareWrite({ kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id })) return
-        await refreshHealth(deployment)
-        const record = await updateDeployment(platform, deployment.gameFolder, target.content, target.tier, manifest.source, (progress) => set({ deploymentProgress: progress }), graphics.adapter)
-        set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
-        try { await finishSelection(record) }
-        catch (error) { set({ notice: `Lucent switched to ${target.tier.label}. It will finish saving your version choice when you reopen it. ${message(error)}` }) }
-        await pruneCache(record)
-      } catch (error) {
-        set(error instanceof DeploymentError
-          ? { error: error.message, recoveryRequired: error.recoveryRequired }
-          : { error: `${failureReason(error)} The game folder has not been changed.` })
-      }
-      finally {
-        await refreshHealthAfter(true)
-        await refreshAnnouncement()
-        if (state.activity.kind === 'deployment' && state.deployment) set({ activity: { ...state.activity, operation: null, tierChange: tierChange(state.deployment) } })
-        set({ busy: false, deploymentProgress: null })
-      }
+      if (target) await changeContent('tier', { kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id }, () => target, graphics.adapter)
     },
     async applyVersion(version) {
-      const { activity, deployment, manifest } = state
+      const { activity, deployment } = state
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || version === deployment.contentVersion) return
-      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: version < deployment.contentVersion ? 'rollback' : 'update' } })
-      try {
-        if (!await prepareWrite({ kind: 'update', gameFolder: deployment.gameFolder, contentVersion: version })) return
-        await refreshHealth(deployment)
-        const { content, tier } = versionSource(deployment, version)
-        if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
-        const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, (progress) => set({ deploymentProgress: progress }))
-        set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null })
-        try { await finishSelection(record) }
-        catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
-        await pruneCache(record)
-      } catch (error) {
-        set(error instanceof DeploymentError
-          ? { error: error.message, recoveryRequired: error.recoveryRequired }
-          : { error: `${failureReason(error)} The game folder has not been changed.` })
-      }
-      finally {
-        await refreshHealthAfter(true)
-        await refreshAnnouncement()
-        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null } })
-        set({ busy: false, deploymentProgress: null })
-      }
+      await changeContent(version < deployment.contentVersion ? 'rollback' : 'update', { kind: 'update', gameFolder: deployment.gameFolder, contentVersion: version }, () => versionSource(deployment, version))
     },
     async updateApp() {
       if (state.busy || state.recoveryRequired || !state.appUpdate) return
