@@ -12,10 +12,13 @@ export function ProfileSelector({ legend = true }: { legend?: boolean }) {
   if (!profiles.length) return null
   return <fieldset className="profile-selector" disabled={activity.kind === 'deployment' ? !gameActionsAvailable(state) : busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
     {legend && <legend>Performance profile</legend>}
-    <div className="card profile-rows">{profiles.map((profile) => <label className={`option-row profile-row ${selectedProfile === profile.id && !custom ? 'is-selected' : ''}`} key={profile.id}>
-      <input type="radio" name="performance-profile" value={profile.id} checked={selectedProfile === profile.id && !custom} onChange={() => void core.selectProfile(profile.id)} />
-      <span><strong>{profile.label}</strong><small>{profile.description}</small></span>
-    </label>)}
+    <div className="card profile-rows">{profiles.map((profile) => {
+      const selected = selectedProfile === profile.id && !custom
+      return <label className={`option-row profile-row ${selected ? 'is-selected' : ''}`} key={profile.id}>
+        <input type="radio" name="performance-profile" value={profile.id} checked={selected} onChange={() => void core.selectProfile(profile.id)} />
+        <span><strong>{profile.label}</strong><small>{profile.description}</small></span>
+      </label>
+    })}
     {custom && <label className="option-row profile-row is-selected is-custom">
       <input type="radio" name="performance-profile" value="custom" checked readOnly />
       <span><strong>Custom · based on {profiles.find((p) => p.id === custom.basedOn)?.label}</strong><small>{customProfileSummary(custom.changed)}</small></span>

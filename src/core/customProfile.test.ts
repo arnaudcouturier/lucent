@@ -44,6 +44,12 @@ describe('custom profile', () => {
     expect((await reopen(await deployed())).getState().customProfile).toBeNull()
   })
 
+  it('is not Custom when an overlay saves the same values in another spelling', async () => {
+    const platform = await deployed()
+    await edit(platform, 'Passes = 2\r\nSpatialCompression = false', 'Passes = 2.000000\r\nSpatialCompression = False')
+    expect((await reopen(platform)).getState().customProfile).toBeNull()
+  })
+
   it('counts a deleted profile key as changed', async () => {
     const platform = await deployed()
     await edit(platform, 'ResidualFG = false\r\n', '')
