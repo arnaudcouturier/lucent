@@ -209,3 +209,16 @@ it('continues uninstalling from Settings → Apps after admin access to the game
   expect(await exists(platform, DATA)).toBe(false)
   expect(platform.elevationRequests).toHaveLength(1)
 })
+
+it('names the folder to delete by hand when Lucent cannot remove it on exit', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  const core = await openFromSettings(m, platform)
+  platform.exitAndRemove = async () => { throw new PlatformError('unknown', 'Refusing to remove this folder.') }
+  await core.uninstallApp(false)
+  expect(core.getState()).toMatchObject({ busy: false, appUninstalled: false })
+  expect(core.getState().error).toContain(`Delete ${DATA} yourself`)
+  expect(await exists(platform, SHORTCUT)).toBe(false)
+  expect(await entry(platform, 'DisplayName')).toBeNull()
+})

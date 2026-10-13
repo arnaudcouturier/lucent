@@ -608,23 +608,17 @@ fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String
     Ok(steps.join(" & "))
 }
 
-/// The hidden `cmd.exe` script that removes `folders` once this process has ended.
-#[cfg(test)]
-pub fn removal_script(folders: &[PathBuf]) -> Result<String> {
-    build_removal_script(folders, &[])
-}
-
-/// Spawns a detached, hidden `cmd.exe` that deletes `folders` (plus `extra`, such as the WebView2
-/// data folder) once this process has ended, then exits. Nothing is spawned if any folder is invalid.
+/// Spawns a hidden `cmd.exe` that deletes `folders` (plus `extra`, such as the WebView2 data folder)
+/// once this process has ended, then exits. Nothing is spawned if any folder is invalid.
 pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
     use std::os::windows::process::CommandExt;
+    // A hidden console, not DETACHED_PROCESS: without a console, each `ping` would open a visible one.
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    const DETACHED_PROCESS: u32 = 0x00000008;
     let script = build_removal_script(folders, extra)?;
     std::process::Command::new("cmd.exe")
         .raw_arg(format!("/d /c \"{script}\""))
         .current_dir(std::env::temp_dir())
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW)
         .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| PlatformError::io(e, None))?;
@@ -699,17 +693,17 @@ mod tests {
 
     #[test]
     fn removal_script_quotes_folders_and_rejects_unsafe_ones() {
-        let script = removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")]).unwrap();
+        let script = build_removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")], &[]).unwrap();
         assert!(script.starts_with(r#"ping -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#), "got {script}");
         assert_eq!(script.matches("rmdir").count(), 3);
         for bad in [
             r"Users\Me\Local\Lucent", "C:\\Users\\Me\\\"x\\Lucent", r"C:\Users\%TEMP%\Lucent", r"C:\Lucent",
             r"C:\Users\Me\Local\Other", r"C:\Users\Me\..\Lucent", "C:\\Users\\Me\\Local\\Lucent\n",
         ] {
-            assert_eq!(removal_script(&[PathBuf::from(bad)]).unwrap_err().kind, ErrorKind::Unknown, "{bad}");
+            assert_eq!(build_removal_script(&[PathBuf::from(bad)], &[]).unwrap_err().kind, ErrorKind::Unknown, "{bad}");
         }
-        assert!(removal_script(&[]).is_err());
-        assert!(removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")]).is_ok());
+        assert!(build_removal_script(&[], &[]).is_err());
+        assert!(build_removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")], &[]).is_ok());
     }
 
     #[test]

@@ -642,8 +642,10 @@ export function createCore(platform: Platform): Core {
         }
         // Only now: a failed restore keeps the journal and backups recovery needs.
         await removeSelfInstall(platform)
+        const folder = await lucentFolder(platform)
+        try { await platform.exitAndRemove([folder]) }
+        catch (error) { throw new Error(`Lucent is out of the Start menu and Settings → Apps, but couldn’t remove its folder. Delete ${folder} yourself. ${message(error)}`) }
         set({ appUninstalled: true, notice: 'Lucent is uninstalled.' })
-        await platform.exitAndRemove([await lucentFolder(platform)])
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
     },
