@@ -1,6 +1,6 @@
 import { ArrowDownToLine, Check, CircleCheck, Download, LoaderCircle, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import type { DeploymentPhase } from '../core/deployment'
-import { statusCard } from '../core/statusCard'
+import { statusCard, type StatusCard as Card } from '../core/statusCard'
 import { Screen } from './Window'
 import { useCore } from './useCore'
 import { Path } from './Path'
@@ -16,7 +16,7 @@ export function FlowError() {
   </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
 }
 
-function sizeLabel(bytes: number) {
+export function sizeLabel(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
@@ -106,15 +106,23 @@ const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Up
 
 /** Renders exactly the one state the core's priority function picks. */
 export function StatusCard() {
-  const [state, core] = useCore()
+  const [state] = useCore()
   const card = statusCard(state)
   if (!card) return null
-  if (card.kind === 'busy') return <div className="card health-card is-busy" role="status">
+  return <div className="card status-card">
+    <StatusCardContent card={card} />
+    {card.caution && <p className="known-broken" role="status"><TriangleAlert size={14} /><span>{card.caution}</span></p>}
+  </div>
+}
+
+function StatusCardContent({ card }: { card: Card }) {
+  const [state, core] = useCore()
+  if (card.kind === 'busy') return <div className="health-card is-busy" role="status">
     <LoaderCircle size={20} className="spin" />
     <div className="health-body"><h2>{OPERATION_LABEL[card.operation]}…</h2>
       <progress max={1} value={card.progress} aria-label={`${OPERATION_LABEL[card.operation]} progress`} /></div>
   </div>
-  if (card.kind === 'drift') return <div className="card health-card is-drift" role="alert">
+  if (card.kind === 'drift') return <div className="health-card is-drift" role="alert">
     <TriangleAlert size={20} />
     <div className="health-body"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
       <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
@@ -124,7 +132,7 @@ export function StatusCard() {
     const app = card.kind === 'app-update'
     const notes = app ? card.notes : card.changelog
     const size = app ? card.size : card.downloadSize
-    return <div className="card health-card is-update" role="status">
+    return <div className="health-card is-update" role="status">
       <ArrowDownToLine size={20} />
       <div className="health-body"><h2>{app ? 'Lucent' : 'Content'} {card.version} is available</h2>
         <ul className="changelog">{notes.map((line, index) => <li key={index}>{line}</li>)}</ul>
@@ -135,11 +143,11 @@ export function StatusCard() {
         </footer></div>
     </div>
   }
-  if (card.kind === 'disabled') return <div className="card health-card is-disabled">
+  if (card.kind === 'disabled') return <div className="health-card is-disabled">
     <Snowflake size={20} />
     <div className="health-body"><h2>Disabled</h2><p>Lucent’s files are in place but inactive. The game runs as if vanilla.</p></div>
   </div>
-  return <div className="card health-card is-healthy">
+  return <div className="health-card is-healthy">
     <CircleCheck size={20} />
     <div className="health-body"><h2>Healthy</h2><p>All deployed files match the tested content.</p></div>
   </div>

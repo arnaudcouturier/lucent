@@ -7,19 +7,24 @@ import { Rail } from './Rail'
 import { Menu } from './Menu'
 import { useCore } from './useCore'
 import { CreditsScreen } from './CreditsScreen'
+import { VersionsScreen } from './VersionsScreen'
 
 export function Window({ children }: { children: ReactNode }) {
   const [{ activity }] = useCore()
-  const [creditsOpen, setCreditsOpen] = useState(false)
+  const [menuScreen, setMenuScreen] = useState<'credits' | 'versions' | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
-  const showCredits = creditsOpen && activity.kind === 'deployment'
-  useEffect(() => { if (activity.kind !== 'deployment') setCreditsOpen(false) }, [activity.kind])
+  const showMenuScreen = menuScreen && activity.kind === 'deployment'
+  useEffect(() => { if (activity.kind !== 'deployment') setMenuScreen(null) }, [activity.kind])
+  const onBack = () => {
+    setMenuScreen(null)
+    requestAnimationFrame(() => menuButtonRef.current?.focus())
+  }
   return (
     <div className="window">
       <Rail />
       <section className="pane">
         <div className="titlebar" onMouseDown={dragWindow}>
-          {activity.kind === 'deployment' && <Menu onOpenCredits={() => setCreditsOpen(true)} returnFocusRef={menuButtonRef} />}
+          {activity.kind === 'deployment' && <Menu onOpenCredits={() => setMenuScreen('credits')} onOpenVersions={() => setMenuScreen('versions')} returnFocusRef={menuButtonRef} />}
           <button className="caption" aria-label="Minimize" onClick={minimizeWindow}>
             <Minus size={14} strokeWidth={1.75} />
           </button>
@@ -27,11 +32,8 @@ export function Window({ children }: { children: ReactNode }) {
             <X size={14} strokeWidth={1.75} />
           </button>
         </div>
-        <div className="pane-content" hidden={showCredits}>{children}</div>
-        {showCredits && <CreditsScreen onBack={() => {
-          setCreditsOpen(false)
-          requestAnimationFrame(() => menuButtonRef.current?.focus())
-        }} />}
+        <div className="pane-content" hidden={!!showMenuScreen}>{children}</div>
+        {showMenuScreen && (menuScreen === 'credits' ? <CreditsScreen onBack={onBack} /> : <VersionsScreen onBack={onBack} />)}
       </section>
     </div>
   )

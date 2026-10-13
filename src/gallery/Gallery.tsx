@@ -12,6 +12,8 @@ import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
 import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
+import { NEXT_CONTENT, NEXT_MANIFEST, PROFILE_MANIFEST } from '../platform/contentFixture'
+import { MANIFEST_URL } from '../core/manifest'
 import './gallery.css'
 
 const AN_UPDATE = { version: '2026.11.02', changelog: ['OptiScaler 2 with sharper Neural Rendering.', 'Drops the example shader.'], downloadSize: 160 * 1024 ** 2 }
@@ -130,6 +132,46 @@ const updateAvailable = (stage: 'update' | 'updating') => async () => {
   return reopened
 }
 
+const versionHistory = async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  let reopened = createCore(platform)
+  await reopened.scan()
+  await reopened.update()
+  const third = { ...NEXT_CONTENT, id: '2026.11.20', changelog: ['Neural Rendering refinements.'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [...NEXT_MANIFEST.versions, third] })
+  reopened = createCore(platform)
+  await reopened.scan()
+  await reopened.update()
+  const fourth = { ...NEXT_CONTENT, id: '2026.12.01', changelog: ['A new content version you can apply later.'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [...NEXT_MANIFEST.versions, third, fourth] })
+  reopened = createCore(platform)
+  await reopened.scan()
+  await reopened.skipUpdate()
+  return reopened
+}
+
+const knownBrokenContent = async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  await platform.writeText(`${folder.path}\\game\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...PROFILE_MANIFEST, versions: [{ ...PROFILE_MANIFEST.versions[0], knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] })
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
 const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-failed') => async () => {
   const m = machine(MACHINES.steam, appReleaseHost())
   const platform = createFakePlatform(m)
@@ -221,6 +263,8 @@ const STATES: GalleryState[] = [
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
   { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
+  { key: 'versions', label: 'Main · Versions and rollback', setup: versionHistory },
+  { key: 'known-broken', label: 'Main · Known-broken content warning', setup: knownBrokenContent },
   { key: 'app-update', label: 'Main · App update available', setup: appUpdateAvailable('app-update') },
   { key: 'app-updating', label: 'Main · Updating Lucent', setup: appUpdateAvailable('app-updating') },
   { key: 'app-update-failed', label: 'Main · App hash mismatch', setup: appUpdateAvailable('app-update-failed') },

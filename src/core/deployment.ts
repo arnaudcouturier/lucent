@@ -1,10 +1,11 @@
-import { assertGamePath, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, validateManifest, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { mergeIni, readIni } from './ini'
+import { cacheSnapshot, type CachedVersion } from './versions'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -21,6 +22,11 @@ export interface DeploymentRecord {
   tier: string
   graphics: GpuAdapter
   contentVersion: string
+  /** Current content and the two most recently applied other versions. */
+  cachedVersions?: CachedVersion[]
+  pinned?: boolean
+  /** Completed with the deployment; settings are reconciled idempotently after a crash. */
+  pendingSelection?: { skip: string | null }
   includeReShade: boolean
   enabled: boolean
   profile?: ProfileId | null
@@ -116,6 +122,15 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     for (const path of value.generatedFiles) assertGamePath(path)
   }
   if (value.uninstalling !== undefined && typeof value.uninstalling !== 'boolean') throw new Error('The uninstall journal is damaged.')
+  if (value.pinned !== undefined && typeof value.pinned !== 'boolean') throw new Error('The content pin is damaged.')
+  if (value.pendingSelection !== undefined && (!value.pendingSelection || (value.pendingSelection.skip !== null && !/^\d{4}\.\d{2}\.\d{2}$/.test(value.pendingSelection.skip)))) throw new Error('The content selection is damaged.')
+  if (value.cachedVersions !== undefined) {
+    if (!Array.isArray(value.cachedVersions) || value.cachedVersions.length > 3) throw new Error('The content cache record is damaged.')
+    for (const cached of value.cachedVersions) {
+      if (!cached?.tier || cached.tier.id !== value.tier) throw new Error('The cached tier is damaged.')
+      validateManifest({ schemaVersion: 2, tiers: [{ ...cached.tier, gpuMatch: 'any' }], versions: [cached.content] })
+    }
+  }
   if (value.changeStart !== undefined && (!Number.isSafeInteger(value.changeStart) || value.changeStart < 0 || value.changeStart > value.journal.length)) throw new Error('The change journal is damaged.')
   if (value.changeDirectoryStart !== undefined && (value.changeStart === undefined || !Number.isSafeInteger(value.changeDirectoryStart)
     || value.changeDirectoryStart < 0 || value.changeDirectoryStart > (value.createdDirectories?.length ?? 0))) throw new Error('The change journal is damaged.')
@@ -261,6 +276,7 @@ export async function deployContent(
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
     includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [],
+    cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files)],
     generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
@@ -574,6 +590,9 @@ export async function updateDeployment(
     const present = new Set(Object.keys(scan.files).map(fileKey))
     Object.assign(updated, {
       contentVersion: content.id, includeReShade: plan.includeReShade, profile: plan.profile, recipe: plan.recipe,
+      cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...(record.cachedVersions ?? []).filter((v) => v.content.id !== content.id)].slice(0, 3),
+      pinned: content.id < record.contentVersion,
+      pendingSelection: { skip: content.id < record.contentVersion ? record.contentVersion : null },
       journal: record.journal, createdDirectories: record.createdDirectories,
       files, ownedConfigs,
       generatedFiles: [...generated, ...plan.recipe.generatedFiles.map((p) => p.path)

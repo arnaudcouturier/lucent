@@ -1,7 +1,7 @@
 import type { Activity, AppUpdate, ContentUpdate, State } from './core'
 
 /** The one state the main screen's status card shows. Later states slot into `statusCard`'s priority order. */
-export type StatusCard =
+type CardState =
   | { kind: 'busy'; operation: 'deploy' | 'app-update' | NonNullable<Extract<Activity, { kind: 'deployment' }>['operation']>; progress: number }
   | { kind: 'drift'; files: number; patch: string | null }
   | ({ kind: 'update' } & ContentUpdate)
@@ -9,8 +9,20 @@ export type StatusCard =
   | { kind: 'disabled' }
   | { kind: 'healthy' }
 
+export type StatusCard = CardState & { caution?: string }
+
 /** The first match wins. Scan can announce app releases; deployment cards also cover content and health. */
 export function statusCard(state: Readonly<State>): StatusCard | null {
+  const card = cardState(state)
+  if (!card || !state.deployment || state.gameFolder?.status !== 'found' || !state.gameFolder.version) return card
+  const id = state.deployment.contentVersion
+  const content = state.manifest?.status === 'ready' ? state.manifest.manifest.versions.find((v) => v.id === id) : null
+  const knownBroken = content ? content.knownBrokenGameVersions : state.deployment.cachedVersions?.find((v) => v.content.id === id)?.content.knownBrokenGameVersions
+  return knownBroken?.includes(state.gameFolder.version)
+    ? { ...card, caution: `Content ${id} is known broken on game ${state.gameFolder.version}. You can choose another version in Versions.` } : card
+}
+
+function cardState(state: Readonly<State>): CardState | null {
   const { activity } = state
   if (state.appUpdateProgress != null) return { kind: 'busy', operation: 'app-update', progress: state.appUpdateProgress }
   if (activity.kind === 'scan' && !state.recoveryRequired && state.appUpdate) return { kind: 'app-update', ...state.appUpdate }

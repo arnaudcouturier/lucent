@@ -5,10 +5,10 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
-import { announcedContent, needsNewerApp, type Channel } from './updates'
+import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
 export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
@@ -16,6 +16,7 @@ import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
+import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -57,6 +58,7 @@ export interface State {
   /** Mod files Lucent didn't deploy, found by Scan in a folder without a deployment. */
   existingSetups: ExistingSetup[]
   deployment: DeploymentRecord | null
+  versions: VersionChoice[]
   deploymentProgress: DeploymentProgress | null
   includeReShade: boolean
   profiles: PerformanceProfile[]
@@ -89,6 +91,8 @@ export interface Core {
   repair(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
   update(): Promise<void>
+  /** Applies a version from Versions, including cached rollback targets and skipped versions. */
+  applyVersion(version: string): Promise<void>
   /** Downloads the announced app version, verifies it, replaces the running exe and relaunches. */
   updateApp(): Promise<void>
   /** Stops announcing the announced app version. */
@@ -110,7 +114,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], deployment: null, deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
+    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -137,10 +141,24 @@ export function createCore(platform: Platform): Core {
     const files = record?.status === 'complete' ? [] : await platform.listFiles(joinPath(folder.path, 'game'))
     set({ existingSetups: detectExistingSetups(signatures(), files) })
     if (record?.status === 'complete') {
+      // Older journals acquire a snapshot when their deployed version is still published.
+      if (!record.cachedVersions?.length && state.manifest.status === 'ready') {
+        const content = state.manifest.manifest.versions.find((v) => v.id === record!.contentVersion)
+        const tier = state.manifest.manifest.tiers.find((t) => t.id === record!.tier)
+        if (content && tier) {
+          const hashes = new Set(record.recipe.recipe.filter((s) => s.kind === 'copy').map((s) => s.file))
+          record.cachedVersions = [cacheSnapshot(content, tier, record.recipe, content.files.filter((f) => hashes.has(f.sha256)))]
+          await platform.writeText((await dataPaths(platform, record.gameFolder)).record, JSON.stringify(record, null, 2))
+        }
+      }
+      try { await finishSelection(record) }
+      catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
       const drift = await checkHealth(platform, record, folder.version)
       // A version that can't be planned is never announced; it must not keep the deployment from opening.
       const update = await announceUpdate(record).catch(() => null)
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift, update) })
+      await pruneCache(record)
+      await refreshVersions()
     }
   }
   const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
@@ -155,7 +173,7 @@ export function createCore(platform: Platform): Core {
     if (state.manifest.status !== 'ready') return null
     const { manifest } = state.manifest
     const { skippedContent } = await readSettings(platform)
-    const content = announcedContent(manifest, { channel: CHANNEL, tier: record.tier, current: record.contentVersion, skipped: skippedContent, appVersion: APP_VERSION })
+    const content = announcedContent(manifest, { channel: CHANNEL, tier: record.tier, current: record.contentVersion, skipped: [...skippedContent, ...(record.pendingSelection?.skip ? [record.pendingSelection.skip] : [])], appVersion: APP_VERSION })
     const tier = manifest.tiers.find((t) => t.id === record.tier)
     if (!content || !tier) return null
     const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
@@ -184,7 +202,23 @@ export function createCore(platform: Platform): Core {
     try {
       const [update, appUpdate] = await Promise.all([announceUpdate(state.deployment), announceApp()])
       if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update }, appUpdate })
+      await refreshVersions()
     } catch { /* The card keeps the last announcement; Update explains any failure. */ }
+  }
+  const refreshVersions = async () => {
+    if (!state.deployment) { set({ versions: [] }); return }
+    set({ versions: await versionChoices(platform, state.deployment, state.manifest.status === 'ready' ? state.manifest.manifest : null, await readSettings(platform), CHANNEL, APP_VERSION) })
+  }
+  const finishSelection = async (record: DeploymentRecord) => {
+    if (!record.pendingSelection) return
+    const settings = await readSettings(platform)
+    await writeSettings(platform, { ...settings, skippedContent: [...new Set([...settings.skippedContent.filter((id) => id !== record.contentVersion), ...(record.pendingSelection.skip ? [record.pendingSelection.skip] : [])])] })
+    await platform.writeText((await dataPaths(platform, record.gameFolder)).record, JSON.stringify({ ...record, pendingSelection: undefined }, null, 2))
+    delete record.pendingSelection
+  }
+  const pruneCache = async (record: DeploymentRecord) => {
+    try { await pruneContentCache(platform, record.gameFolder) }
+    catch (error) { set({ notice: `Lucent could not prune older cached files. ${message(error)}` }) }
   }
   const newestContentForTier = (): ContentVersion | undefined => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) return undefined
@@ -242,7 +276,7 @@ export function createCore(platform: Platform): Core {
     },
     async scan() {
       if (state.busy) return
-      set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, versions: [], profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       try {
         await recover()
         // Recovery precedes all startup work, including cleanup of the last app update.
@@ -335,16 +369,24 @@ export function createCore(platform: Platform): Core {
       }
     },
     async update() {
+      if (state.activity.kind === 'deployment' && state.activity.update) await core.applyVersion(state.activity.update.version)
+    },
+    async applyVersion(version) {
       const { activity, deployment, manifest } = state
-      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !activity.update || !deployment || manifest.status !== 'ready') return
-      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'update' } })
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || version === deployment.contentVersion) return
+      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: version < deployment.contentVersion ? 'rollback' : 'update' } })
       try {
         await refreshHealth(deployment)
-        const content = manifest.manifest.versions.find((v) => v.id === activity.update!.version)
-        const tier = manifest.manifest.tiers.find((t) => t.id === deployment.tier)
+        const cached = deployment.cachedVersions?.find((v) => v.content.id === version)
+        const content = cached?.content ?? (manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === version && onChannel(v, CHANNEL)) : null)
+        const tier = cached?.tier ?? (manifest.status === 'ready' ? manifest.manifest.tiers.find((t) => t.id === deployment.tier) : null)
         if (!content || !tier) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
-        const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.source, (progress) => set({ deploymentProgress: progress }))
+        if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
+        const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, (progress) => set({ deploymentProgress: progress }))
         set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null })
+        try { await finishSelection(record) }
+        catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
+        await pruneCache(record)
       } catch (error) {
         set(error instanceof DeploymentError
           ? { error: error.message, recoveryRequired: error.recoveryRequired }
@@ -419,6 +461,8 @@ export function createCore(platform: Platform): Core {
         if (record.includeReShade) hotkeys.push({ key: 'Home', description: 'ReShade · shaders and presets' })
         deployedDrift = await checkHealth(platform, record, state.gameFolder.version, true)
         set({ deployment: record, activity: { kind: 'done' }, hotkeys })
+        await pruneCache(record)
+        await refreshVersions()
       } catch (error) {
         const recoveryRequired = state.recoveryRequired || (error instanceof DeploymentError && error.recoveryRequired)
         set({

@@ -28,6 +28,14 @@ it.each(['../file', '..\\file', '/file', '\\file', 'C:\\file', 'file:stream', 'N
 const profileContent = () => structuredClone(PROFILE_MANIFEST)
 const nvidia = (m: Manifest) => m.versions[0].tiers['rtx-30-40']
 
+it('retains known-broken game versions per content version and rejects malformed lists', () => {
+  const m = { ...PROFILE_MANIFEST, versions: [{ ...PROFILE_MANIFEST.versions[0], knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] }
+  expect(parseManifest(JSON.stringify(m)).versions[0]).toMatchObject({ knownBrokenGameVersions: ['2026.10.20.0000.0000'] })
+  for (const list of [null, '2026.10.20.0000.0000', [''], [123], ['bad\nversion']]) {
+    expect(() => parseManifest(JSON.stringify({ ...m, versions: [{ ...m.versions[0], knownBrokenGameVersions: list }] }))).toThrow()
+  }
+})
+
 it('requires an ini_set step on a conditional config to share its condition', () => {
   const m = profileContent()
   nvidia(m).recipe.push({ kind: 'ini_set', file: 'ReShade.ini', section: 'GENERAL', key: 'PresetPath', value: '' })

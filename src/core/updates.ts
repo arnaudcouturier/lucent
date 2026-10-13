@@ -13,7 +13,7 @@ export interface AnnouncementFacts {
 }
 
 /** Beta sees Stable and Beta versions; Stable sees only Stable. */
-const onChannel = (version: ContentVersion, channel: Channel) => channel === 'beta' || version.channel === 'stable'
+export const onChannel = (version: ContentVersion, channel: Channel) => channel === 'beta' || version.channel === 'stable'
 
 /** Compares the numeric parts of two app versions, such as 0.1.0 and 0.2.0. */
 export function needsNewerApp(minAppVersion: string, appVersion: string): boolean {

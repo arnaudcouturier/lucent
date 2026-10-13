@@ -1,10 +1,10 @@
 // The ⋯ menu in the title strip, shown once a deployment exists. Uninstall asks for confirmation first.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
-import { Bug, ClipboardCopy, Ellipsis, LoaderCircle, Trash2, UsersRound } from 'lucide-react'
+import { Bug, ClipboardCopy, Ellipsis, History, LoaderCircle, Trash2, UsersRound } from 'lucide-react'
 import { useCore } from './useCore'
 
-export function Menu({ onOpenCredits, returnFocusRef }: { onOpenCredits: () => void; returnFocusRef: RefObject<HTMLButtonElement | null> }) {
+export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpenCredits: () => void; onOpenVersions: () => void; returnFocusRef: RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
@@ -76,6 +76,7 @@ export function Menu({ onOpenCredits, returnFocusRef }: { onOpenCredits: () => v
         <Ellipsis size={16} strokeWidth={1.75} />
       </button>
       {open && <div className="menu" role="menu" aria-label="More actions" onKeyDown={onMenuKeyDown}>
+        <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => { setOpen(false); onOpenVersions() }}><History size={14} strokeWidth={1.75} />Versions…</button>
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.copyDiagnostics())}><ClipboardCopy size={14} strokeWidth={1.75} />Copy diagnostics</button>
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.reportBug())}><Bug size={14} strokeWidth={1.75} />Report a bug</button>
         <button role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); onOpenCredits() }}><UsersRound size={14} strokeWidth={1.75} />Credits</button>

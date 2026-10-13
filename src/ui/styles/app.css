@@ -507,7 +507,7 @@
 .profile-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
 .profile-row input { flex: none; }
 .profile-selector:disabled .profile-row { cursor: default; opacity: 0.45; }
-.health-card + .profile-selector { margin-top: var(--space-5); }
+.status-card + .profile-selector { margin-top: var(--space-5); }
 .enabled-row { margin-top: var(--space-5); cursor: pointer; }
 .profile-selector + .enabled-row { margin-top: var(--space-4); }
 .health-card.is-disabled > svg { color: var(--ink-3); }
@@ -593,3 +593,17 @@
 .credits-message { margin: 0 0 var(--space-4); padding: var(--space-2) var(--space-3); border-radius: var(--r-control); background: var(--accent-tint); color: var(--ink); overflow-wrap: anywhere; }
 .credits-message.is-error { background: var(--caution-tint); color: var(--caution-ink); }
 .credits-actions { flex: none; display: flex; padding: var(--space-2) var(--pane-padding) var(--pane-padding); }
+
+/* ---------- Versions ---------- */
+.versions-screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.versions-screen > .screen { flex: 1; }
+.version-list { display: grid; gap: var(--space-2); margin: var(--space-4) 0; }
+.version-choice { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+.version-choice-body { flex: 1; min-width: 0; }
+.versions-section > h2 { margin: var(--space-4) 0 0; font-size: var(--text-label); color: var(--ink-2); font-weight: 500; }
+.version-choice h3 { margin: 0; font-size: 14px; font-weight: 500; }
+.version-choice p { color: var(--ink-2); font-size: var(--text-label); margin: var(--space-1) 0 0; }
+.version-choice .version-labels { color: var(--accent); }
+.version-choice .btn { flex: none; }
+.known-broken { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--caution); font-size: var(--text-label); margin: 0 var(--space-5) var(--space-5); }
+.known-broken svg { flex: none; margin-top: 2px; }

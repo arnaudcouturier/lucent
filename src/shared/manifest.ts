@@ -79,6 +79,8 @@ export interface ContentVersion {
   channel: 'stable' | 'beta'
   minAppVersion: string
   changelog: string[]
+  /** Exact game versions on which this content is known broken. Advisory only. */
+  knownBrokenGameVersions?: string[]
   components: Component[]
   files: ContentFile[]
   tiers: Record<string, TierRecipe>
@@ -312,5 +314,9 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     }
     for (const s of (recipes[id].performanceProfiles ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
   }
-  return { id, channel: v.channel, minAppVersion, changelog, components, files, tiers: recipes }
+  const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
+    : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))
+  if (knownBrokenGameVersions) unique(knownBrokenGameVersions, 'Known-broken game versions')
+  return { id, channel: v.channel, minAppVersion, changelog, components, files, tiers: recipes,
+    ...(knownBrokenGameVersions ? { knownBrokenGameVersions } : {}) }
 }

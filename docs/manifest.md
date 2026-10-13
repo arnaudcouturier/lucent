@@ -61,6 +61,9 @@ Each version contains:
 
 - `id`: a date in `YYYY.MM.DD` form; `channel`: `stable` or `beta`; `minAppVersion`: the minimum
   app version; `changelog`: lines to display when offering this content.
+- `knownBrokenGameVersions` (optional): exact game-version strings on which this content is known
+  broken, for example `["2026.10.20.0000.0000"]`. This adds a caution line to the current status card;
+  it never changes a deployment or forces an update. Omitted means no known broken game versions.
 - `components`: objects with `name`, `upstream`, `licence`, and an HTTPS `source` link. GPL components
   should use a source link to their exact source tag.
 - `files`: objects with `sha256`, `size` in bytes, and `release` (a `content-YYYY.MM.DD` tag).
@@ -242,6 +245,30 @@ unchanged, or saved as `<name> (my edits)` beside it when Lucent's changed too. 
 `changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
 follows. The previous version's files stay in the cache. An update never takes over an existing setup: one that
 appeared since the deployment and is in the way blocks the update, which asks the player to move it aside.
+
+## Versions, rollback and cache retention
+
+Versions… in the ⋯ menu lists the current version, the two retained versions, skipped versions,
+and every other version on the channel. A version requiring a newer app or lacking a recipe for
+the deployment's tier is shown with an explanation and cannot be applied. A skipped version can
+be applied explicitly; doing so clears its skip.
+
+Applying an older version uses the same journaled update and config merge. It preserves Disabled
+and the performance profile, pins the target, and skips the version left behind. The pin is a fact
+on the deployment's record, not a gate on announcements: newer unskipped versions still appear.
+Applying a newer version clears the pin. No version is applied automatically.
+
+The journal retains recipe, tier and asset snapshots for the current content and the two most
+recently applied other versions. Those snapshots allow rollback without a live manifest or a
+download when their size- and hash-checked assets are cached. Missing or damaged assets are shown
+as needing a download. Older journals acquire a snapshot of their current version when it is
+still in the manifest. A completed version change durably records its pin and pending skip; if
+settings cannot be saved, startup retries that last step.
+
+After a successful deployment, version change or reopening, Lucent prunes cache assets outside
+the retained versions. Shared assets and files needed by another game folder's deployment stay;
+backups and user files are separate and untouched. An unfinished or unreadable journal stops
+pruning. The gallery includes `versions` and `known-broken`.
 
 ## App updates
 
