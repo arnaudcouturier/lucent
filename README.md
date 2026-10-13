@@ -1,61 +1,55 @@
-# Lucent
+<p align="center">
+  <img src="docs/assets/lucent-banner.svg" alt="Lucent — DLSS 5 and ReShade for FINAL FANTASY XIV, in one app" width="100%">
+</p>
 
-A Windows manager that deploys DLSS 5 (OptiScaler), ReShade, shaders and presets for XIV, and keeps them working across game patches. Design decisions: `docs/decisions.md`. Glossary: `CONTEXT.md`.
+<p align="center">
+  <a href="https://github.com/arnaudcouturier/lucent/releases/latest"><img src="https://img.shields.io/github/v/release/arnaudcouturier/lucent?label=latest%20release&color=f47521" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f47521" alt="MIT licence"></a>
+  <a href="https://arnaudcouturier.github.io/lucent/"><img src="https://img.shields.io/badge/website-download-f47521" alt="Download site"></a>
+</p>
 
-## Layout
+Lucent is a portable Windows app that installs a tested DLSS 5 Neural Rendering + ReShade setup into your FINAL FANTASY XIV game folder — and keeps it working after game patches. No 264 MB archives to unpack, no Discord attachment hunting, no config files to edit by hand.
 
-- `src/core/`: the core. All domain logic, framework-free, with one observable state. It reaches the machine only through the Platform port (`src/core/platform.ts`).
-- `src/platform/`: the port's implementations: `tauri.ts` (the real one, over the Rust primitives), `fake.ts` (in memory, for tests, the gallery and the browser) and `fixtures.ts` (fake machines).
-- `src/ui/`: the React UI. It renders the core's state and calls its commands. The Ember design tokens live in `src/ui/styles/tokens.css`.
-- `src-tauri/`: the Tauri 2 shell and the Rust primitives (`src/platform.rs`).
-- `site/`: the static GitHub Pages download site. It shares the app's Ember tokens and bundled fonts; its build goes to `site-dist/`, separately from the app.
+## Download
 
-## Develop
+**[⬇ Download Lucent.exe](https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe)** — Windows 10 22H2 / 11, x64, single portable exe.
 
-Needs Node, Rust and the MSVC Build Tools.
+The [download site](https://arnaudcouturier.github.io/lucent/) explains the Windows SmartScreen warning before you meet it. Lucent is open source, sends no telemetry, and never asks for an antivirus exclusion.
+
+## How it works
+
+1. **Scan** — Lucent finds your game folder, graphics card and launcher, and spots any existing setup (GShade leftovers, another ReShade or OptiScaler) that it will back up and replace.
+2. **One question** — pick Fidelity, Balanced or Performance.
+3. **Review** — see exactly what will be backed up, added and downloaded before anything changes.
+4. **Done** — Lucent deploys, then teaches you the two overlay hotkeys.
+
+After that it stays quiet: a health check runs on every open, Repair fixes patch drift in one click, updates are offered (never forced), and Uninstall restores your game folder exactly as it was. Your own and paid shaders are never modified or removed.
+
+## Graphics tiers
+
+| Tier | Status | What you get |
+|---|---|---|
+| RTX 50 | Community-verified | DLSS 5 Neural Rendering |
+| RTX 30/40 | Stable | DLSS 5 via the compatibility runtime |
+| RTX 20 | Experimental | DLSS 5 via the compatibility runtime |
+| Radeon | Experimental | FSR upscaling + ReShade |
+| Other | Stable | ReShade and presets |
+
+## Credits
+
+Lucent deploys other people's excellent work, each credited in the app, on the site, and with its licence file next to its files: SirenBrink and the OptiScaler authors, ShortFuse / RenoDX, crosire (ReShade), Marty McFly (iMMERSE), qUINT, the Alive NEXT authors, and ipsusu (ipsuShade). Lucent itself is not affiliated with Square Enix; FINAL FANTASY XIV is a trademark of Square Enix Holdings Co., Ltd.
+
+## For developers
 
 ```sh
 npm install
-npm run dev            # the UI in a browser, on the fake Platform: http://localhost:5173
-                       #   ?machine=steam|xivlauncher|squareenix|beta|none picks the fake machine
-                       #   ?gallery opens the state gallery (← → to step through states)
-npm run tauri dev      # the real app
-npm test               # the core against the fake Platform (Vitest)
-npm run test:rust      # the Rust primitives on a real temp folder (cargo test)
+npm run dev        # UI in a browser on a fake machine · npm run tauri dev for the real app
+npm test           # TypeScript suite      ·  npm run test:rust for the Rust primitives
 npm run typecheck
-npx tauri build --no-bundle   # the portable exe, in src-tauri/target/release
 ```
 
-Game-folder mutations share the guard in `src/core/gameAccess.ts`, including recovery. The UI
-checks the DX11 process every second and restores actions when it closes. Only a denied
-game-folder write probe requests UAC; the probe checks the command's files and existing parent
-folders. A one-use resume file preserves the command, folder, setup choices and the player's data
-context even when UAC uses another administrator account. Cancelling UAC keeps the current screen and files intact.
-The core tests simulate both processes, and the Rust tests exercise a disposable folder with a
-Windows ACL that denies file creation.
+The domain core in `src/core/` is framework-free and reaches the machine only through the Platform port; the Tauri 2 shell in `src-tauri/` provides the real primitives. Start with [CONTEXT.md](CONTEXT.md) for the glossary, [docs/decisions.md](docs/decisions.md) for why things are the way they are, [docs/publishing.md](docs/publishing.md) to publish a content version, and [docs/release-checklist.md](docs/release-checklist.md) to cut an app release.
 
-## Download site
+## Licence
 
-```sh
-npm run dev:site       # http://localhost:5174
-npm run build:site     # static HTML, CSS, SVG and bundled fonts in site-dist/
-npm run preview:site   # preview the production build at http://localhost:4174
-```
-
-The page needs no JavaScript, external fonts or third-party runtime requests. Check it at desktop and phone widths, including the SmartScreen instructions and keyboard navigation. Keep the upstream credits aligned with the app's Credits screen and `docs/decisions.md`.
-
-In the repository's **Settings → Pages**, select **GitHub Actions** as the publishing source. `.github/workflows/pages.yml` builds the site on pull requests and deploys it on relevant pushes to `main` or a manual workflow run on `main`. Only `site-dist/` is uploaded. Relative asset URLs work at the project URL, `https://arnaudcouturier.github.io/lucent/`.
-
-The download button uses `https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe`. Publish stable app versions as `app-vX.Y.Z` with the asset named **Lucent.exe** and mark them as latest. Beta app versions must be pre-releases, and content versions must use `make_latest=false`, as specified in `docs/decisions.md`. Until the first stable app version is published, that download URL returns 404. The repository and its releases must be public before the public launch; this workflow does not change repository visibility.
-
-## Release
-
-Publish tested content with `npm run publish:content -- <publish.json> --dry-run`, then run the
-same command without `--dry-run`. The [publishing guide](docs/publishing.md) describes inputs,
-validation, 7-Zip, hash reuse and recovery. Content releases keep the app's Latest link intact.
-
-Push an `app-vX.Y.Z` tag for Stable or `app-vX.Y.Z-beta.N` for Beta. GitHub Actions runs
-the TypeScript and Rust tests, builds the portable Windows x64 app, and publishes `Lucent.exe`.
-Stable releases are marked Latest; Beta releases are pre-releases. The
-[release checklist](docs/release-checklist.md) covers version preparation, the RTX 4090 manual
-checks, Microsoft false-positive submissions, and enabling SignPath after approval.
+Lucent is [MIT](LICENSE). The components it deploys keep their own licences, shipped alongside their files.

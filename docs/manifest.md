@@ -32,12 +32,11 @@ independently from the game folder, from its config file under `%APPDATA%\XIVLau
 
 ## Local content in a dev build
 
-The repo remains private before launch, so an unauthenticated GitHub fetch may fail. Set these
-environment variables **before** starting the Tauri dev process:
+Set these environment variables **before** starting the Tauri dev process:
 
 ```powershell
-$env:LUCENT_DEV_MANIFEST = 'C:\Users\arnaudc\workspace\ffxiv-dlss5\manifest.json'
-$env:LUCENT_DEV_FILES = 'C:\LucentContent\files'
+$env:LUCENT_DEV_MANIFEST = 'C:\path\to\lucent\manifest.json'
+$env:LUCENT_DEV_FILES = 'C:\path\to\content-files'
 npm run tauri dev
 ```
 

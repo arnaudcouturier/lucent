@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="Lucent — DLSS 5 and ReShade for FINAL FANTASY XIV, in one app">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0d0e11"/>
+      <stop offset="1" stop-color="#141519"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="150" y1="60" x2="230" y2="310" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".85"/>
+      <stop offset=".45" stop-color="#f47521" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#f47521" stop-opacity=".08"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="358" rx="18" fill="none" stroke="#ffffff" stroke-opacity=".08"/>
+  <ellipse cx="190" cy="190" rx="128" ry="34" transform="rotate(-24 190 190)" fill="none" stroke="#fab818" stroke-opacity=".35" stroke-width="2"/>
+  <ellipse cx="190" cy="220" rx="118" ry="38" transform="rotate(24 190 220)" fill="none" stroke="#fab818" stroke-opacity=".22" stroke-width="2"/>
+  <polygon points="190,42 242,140 190,318 138,140" fill="url(#glass)"/>
+  <path d="M190 42 L190 318 M138 140 L242 140 M190 42 L138 140 M190 42 L242 140" stroke="#ffffff" stroke-opacity=".45" stroke-width="1.5" fill="none"/>
+  <polygon points="120,252 152,286 112,300" fill="#f47521" fill-opacity=".55"/>
+  <polygon points="252,238 282,272 240,286" fill="#f47521" fill-opacity=".4"/>
+  <circle cx="824" cy="118" r="3" fill="#f47521"/>
+  <circle cx="902" cy="238" r="2.5" fill="#fab818"/>
+  <circle cx="700" cy="262" r="2" fill="#ffffff" fill-opacity=".6"/>
+  <text x="360" y="158" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="76" font-weight="600" fill="#f4f4f5" letter-spacing="1">Lucent</text>
+  <text x="363" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="27" fill="#f47521">A brighter game. A simpler setup.</text>
+  <text x="363" y="248" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#a0a0a6">DLSS 5 Neural Rendering · ReShade · tested presets for FINAL FANTASY XIV</text>
+  <text x="363" y="292" font-family="Consolas, monospace" font-size="16" fill="#6e7078">one portable exe — no archives, no Discord hunting, no hand-editing configs</text>
+</svg>
