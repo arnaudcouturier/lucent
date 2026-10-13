@@ -81,3 +81,10 @@ export const NEXT_CONTENT: ContentVersion = {
 }
 export const NEXT_MANIFEST: Manifest = { ...PROFILE_MANIFEST, versions: [PROFILE_CONTENT, NEXT_CONTENT] }
 export const nextFixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.11.02/${hash}`
+/** A Beta content version, newer than the next Stable one: the same new OptiScaler build, published under its own release. */
+export const BETA_CONTENT: ContentVersion = {
+  ...NEXT_CONTENT, id: '2026.11.10', channel: 'beta', changelog: ['Beta: OptiScaler 2 with sharper Neural Rendering.'],
+  files: NEXT_CONTENT.files.map((f) => f.sha256 === OPTISCALER_NEXT_HASH ? { ...f, release: 'content-2026.11.10' } : f),
+}
+export const BETA_MANIFEST: Manifest = { ...PROFILE_MANIFEST, versions: [PROFILE_CONTENT, BETA_CONTENT] }
+export const betaFixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.11.10/${hash}`

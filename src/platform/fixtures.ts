@@ -3,7 +3,8 @@
 import { DEFAULT_ENV, FAKE_EXE_PATH, type Machine } from './fake'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
-import { NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, fixtureUrl, nextFixtureUrl } from './contentFixture'
+import { appBetaReleaseHost } from './appUpdateFixture'
+import { BETA_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -136,6 +137,11 @@ export function nextContentHost(): Machine {
   return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(NEXT_MANIFEST), [nextFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
 }
 
+/** The release host with a Beta content version published beside the first Stable one: its manifest and its one new asset. */
+export function betaContentHost(): Machine {
+  return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(BETA_MANIFEST), [betaFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
+}
+
 export function graphicsCard(name = 'NVIDIA GeForce RTX 4090', vendorId = 0x10de): Machine {
   return { gpus: [{ name, vendorId, dedicatedMemory: 24 * 1024 ** 3, software: false }] }
 }
@@ -152,6 +158,8 @@ export const MACHINES = {
   squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
   existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
+  /** Beta content and an app pre-release are published; turn on Beta channel in the ⋯ menu to be offered them. */
+  beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\SteamLibrary'], game: 'D:\SteamLibrary' }), vanillaGame(steamGameFolder('D:\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>
 
 export type MachineName = keyof typeof MACHINES

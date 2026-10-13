@@ -74,8 +74,9 @@ Each version contains:
   `ownedConfigs`, `shippedPresets`, `generatedFiles`, and `overlay` hint (`neural-rendering`,
   `upscaling`, or `null` for a ReShade-only recipe).
 
-The first deployment chooses the newest Stable content for the scanned tier and checks
-`minAppVersion`. Channel switching arrives in a later ticket.
+The first deployment chooses the newest content on the player's channel for the scanned tier (Stable
+by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in the ⋯ menu
+is a player setting, stored with the skipped versions.
 
 Steps support `copy` (`file` hash and `to` path), `rename` (`from`, `to`), `ini_set`
 (`file` path, `section`, `key`, string `value`), and `delete`
@@ -222,8 +223,8 @@ published.
 
 ## Content updates
 
-On open, after the health check, Lucent announces the newest content version on the channel (Stable
-until the Beta channel ticket) that is newer than the deployed one, isn't skipped, has a recipe for the
+On open, after the health check, Lucent announces the newest content version on the channel (Stable, or
+Stable and Beta on the Beta channel) that is newer than the deployed one, isn't skipped, has a recipe for the
 deployed tier and doesn't need a newer app. `announcedContent` in `src/core/updates.ts` is that pure
 function. There is no background check. The status card shows the version's changelog lines and the
 size of the files the update needs that aren't cached yet, with Skip and Update; nothing downloads
@@ -249,7 +250,9 @@ appeared since the deployment and is in the way blocks the update, which asks th
 ## Versions, rollback and cache retention
 
 Versions… in the ⋯ menu lists the current version, the two retained versions, skipped versions,
-and every other version on the channel. A version requiring a newer app or lacking a recipe for
+and every other version on the channel. Leaving Beta changes nothing that's deployed: a beta
+version stays current and keeps its place in the list, and only a Stable version newer than it is
+announced. A version requiring a newer app or lacking a recipe for
 the deployment's tier is shown with an explanation and cannot be applied. A skipped version can
 be applied explicitly; doing so clears its skip.
 

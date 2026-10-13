@@ -211,6 +211,17 @@ const knownBrokenContent = async () => {
   return reopened
 }
 
+/** A Stable deployment whose player turns on the Beta channel: the Beta content version and the app pre-release appear. */
+const betaChannel = async () => {
+  const core = createCore(createFakePlatform(machine(MACHINES.beta)))
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  await core.setChannel('beta')
+  return core
+}
+
 const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-failed') => async () => {
   const m = machine(MACHINES.steam, appReleaseHost())
   const platform = createFakePlatform(m)
@@ -331,6 +342,7 @@ const STATES: GalleryState[] = [
   { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
   { key: 'versions', label: 'Main · Versions and rollback', setup: versionHistory },
   { key: 'known-broken', label: 'Main · Known-broken content warning', setup: knownBrokenContent },
+  { key: 'beta-channel', label: 'Main · Beta channel on', setup: betaChannel },
   { key: 'app-update', label: 'Main · App update available', setup: appUpdateAvailable('app-update') },
   { key: 'app-updating', label: 'Main · Updating Lucent', setup: appUpdateAvailable('app-updating') },
   { key: 'app-update-failed', label: 'Main · App hash mismatch', setup: appUpdateAvailable('app-update-failed') },

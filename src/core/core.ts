@@ -64,6 +64,8 @@ export interface State {
   appUpdate: AppUpdate | null
   /** Null while idle; otherwise the app download/replacement progress from 0 to 1. */
   appUpdateProgress: number | null
+  /** Beta also offers beta app and content versions. Leaving it changes nothing deployed. */
+  channel: Channel
   gameFolder: GameFolderState
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
@@ -132,6 +134,8 @@ export interface Core {
   uninstall(): Promise<void>
   /** Adds or removes XIVLauncher's add-on entries that check on game launch and repair on game close. */
   setAutoRepair(enabled: boolean): Promise<void>
+  /** Switches between Stable and Beta for app and content versions, then announces again. Never touches the game folder, so XIV may be running. */
+  setChannel(channel: Channel): Promise<void>
   /** Opens the uninstall window Settings → Apps starts, continuing a confirmed uninstall after admin access. */
   openAppUninstall(): Promise<void>
   /** Optionally uninstalls every deployment, then removes the shortcut, the Settings → Apps entry, the data folder and the exe. */
@@ -142,8 +146,6 @@ export interface Core {
 }
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
-/** Channel switching arrives with the Beta channel. */
-const CHANNEL: Channel = 'stable'
 
 export function createCore(platform: Platform): Core {
   const nativePlatform = platform
@@ -154,7 +156,7 @@ export function createCore(platform: Platform): Core {
     return Reflect.get(target, key)
   } })
   let state: State = {
-    activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
+    activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
     plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
@@ -170,7 +172,7 @@ export function createCore(platform: Platform): Core {
   const versionSource = (deployment: DeploymentRecord, version: string) => {
     const { manifest } = state
     const cached = deployment.cachedVersions?.find((v) => v.content.id === version)
-    const content = cached?.content ?? (manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === version && onChannel(v, CHANNEL)) : null)
+    const content = cached?.content ?? (manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === version && onChannel(v, state.channel)) : null)
     const tier = cached?.tier ?? (manifest.status === 'ready' ? manifest.manifest.tiers.find((t) => t.id === deployment.tier) : null)
     if (!content || !tier) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
     return { content, tier }
@@ -267,7 +269,7 @@ export function createCore(platform: Platform): Core {
     const { graphics, manifest } = state
     if (graphics.status !== 'found' || !graphics.tier || graphics.tier.id === record.tier || manifest.status !== 'ready') return null
     const tier = graphics.tier
-    const candidates = manifest.manifest.versions.filter((v) => v.tiers[tier.id] && onChannel(v, CHANNEL) && !needsNewerApp(v.minAppVersion, APP_VERSION))
+    const candidates = manifest.manifest.versions.filter((v) => v.tiers[tier.id] && (v.id === record.contentVersion || onChannel(v, state.channel)) && !needsNewerApp(v.minAppVersion, APP_VERSION))
     const content = candidates.find((v) => v.id === record.contentVersion) ?? candidates.sort((a, b) => b.id.localeCompare(a.id))[0]
     return content ? { tier, content } : null
   }
@@ -280,14 +282,14 @@ export function createCore(platform: Platform): Core {
   /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
   const announceApp = async (): Promise<AppUpdate | null> => {
     const { skippedApp } = await readSettings(platform)
-    return fetchAppUpdate(platform, { appVersion: APP_VERSION, skipped: skippedApp, channel: CHANNEL })
+    return fetchAppUpdate(platform, { appVersion: APP_VERSION, skipped: skippedApp, channel: state.channel })
   }
   /** Checked on open and after an update or a skip; there is no background service. */
   const announceUpdate = async (record: DeploymentRecord): Promise<ContentUpdate | null> => {
     if (state.manifest.status !== 'ready') return null
     const { manifest } = state.manifest
     const { skippedContent } = await readSettings(platform)
-    const content = announcedContent(manifest, { channel: CHANNEL, tier: record.tier, current: record.contentVersion, skipped: [...skippedContent, ...(record.pendingSelection?.skip ? [record.pendingSelection.skip] : [])], appVersion: APP_VERSION })
+    const content = announcedContent(manifest, { channel: state.channel, tier: record.tier, current: record.contentVersion, skipped: [...skippedContent, ...(record.pendingSelection?.skip ? [record.pendingSelection.skip] : [])], appVersion: APP_VERSION })
     const tier = manifest.tiers.find((t) => t.id === record.tier)
     if (!content || !tier) return null
     const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
@@ -312,8 +314,9 @@ export function createCore(platform: Platform): Core {
     } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
   const refreshAnnouncement = async () => {
-    if (state.activity.kind !== 'deployment' || !state.deployment) return
     try {
+      // App releases don't depend on a deployment; content announcements do.
+      if (state.activity.kind !== 'deployment' || !state.deployment) { set({ appUpdate: await announceApp() }); return }
       const [update, appUpdate] = await Promise.all([announceUpdate(state.deployment), announceApp()])
       if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update }, appUpdate })
       await refreshVersions()
@@ -321,7 +324,7 @@ export function createCore(platform: Platform): Core {
   }
   const refreshVersions = async () => {
     if (!state.deployment) { set({ versions: [] }); return }
-    set({ versions: await versionChoices(platform, state.deployment, state.manifest.status === 'ready' ? state.manifest.manifest : null, await readSettings(platform), CHANNEL, APP_VERSION) })
+    set({ versions: await versionChoices(platform, state.deployment, state.manifest.status === 'ready' ? state.manifest.manifest : null, await readSettings(platform), state.channel, APP_VERSION) })
   }
   const finishSelection = async (record: DeploymentRecord) => {
     if (!record.pendingSelection) return
@@ -337,7 +340,7 @@ export function createCore(platform: Platform): Core {
   const newestContentForTier = (): ContentVersion | undefined => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) return undefined
     const tier = state.graphics.tier
-    return state.manifest.manifest.versions.filter((v) => v.channel === 'stable' && v.tiers[tier.id]).sort((a, b) => b.id.localeCompare(a.id))[0]
+    return state.manifest.manifest.versions.filter((v) => onChannel(v, state.channel) && v.tiers[tier.id]).sort((a, b) => b.id.localeCompare(a.id))[0]
   }
   const contentForTier = (): ContentVersion => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Finish Scan before continuing.')
@@ -392,7 +395,7 @@ export function createCore(platform: Platform): Core {
       if (state.busy) return
       set({ busy: true, error: null, notice: null })
       try {
-        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, CHANNEL))
+        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, state.channel))
         set({ notice: 'Diagnostics copied to the clipboard.' })
       } catch (error) { set({ error: `Could not copy diagnostics. ${message(error)}` }) }
       finally { set({ busy: false }) }
@@ -422,11 +425,23 @@ export function createCore(platform: Platform): Core {
       } catch (error) { set({ error: `Could not change auto-repair. ${message(error)}` }) }
       finally { set({ busy: false }) }
     },
+    async setChannel(channel) {
+      if (state.busy || channel === state.channel) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        // Only the setting changes: the deployment stays on whatever version it has, and the game folder isn't touched.
+        await writeSettings(platform, { ...await readSettings(platform), channel })
+        set({ channel })
+        await refreshAnnouncement()
+        if (state.activity.kind === 'deployment' && state.deployment) set({ activity: { ...state.activity, tierChange: tierChange(state.deployment) } })
+      } catch (error) { set({ error: `Could not change the channel. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+    },
     async reportBug() {
       if (state.busy) return
       set({ busy: true, error: null, notice: null })
       try {
-        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, CHANNEL))
+        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, state.channel))
         set({ notice: 'Diagnostics copied to the clipboard.' })
         await platform.openUrl(bugReportUrl(state))
         set({ notice: 'Diagnostics copied. Paste them into the GitHub issue.' })
@@ -451,6 +466,8 @@ export function createCore(platform: Platform): Core {
         // Recovery precedes all startup work, including cleanup of the last app update.
         await cleanupOldExe(platform)
         await checkSelfInstall()
+        // The channel decides which app and content versions the announcements below look at.
+        set({ channel: (await readSettings(platform)).channel })
         const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
           findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform), announceApp(),
         ])

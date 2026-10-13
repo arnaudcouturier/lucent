@@ -15,3 +15,16 @@ export const appReleaseHost = (): Machine => ({
   files: { [FAKE_EXE_PATH]: 'Lucent 0.1.0' },
   remoteText: { [APP_RELEASES_URL]: JSON.stringify([APP_RELEASE]), [APP_EXE_URL]: APP_EXE_TEXT },
 })
+
+/** A pre-release of the next app version; only the Beta channel is offered it. */
+export const APP_BETA_RELEASE = {
+  tag_name: 'app-v0.2.0-beta.1', draft: false, prerelease: true,
+  body: 'Beta: faster startup.',
+  assets: [{ name: 'Lucent.exe', browser_download_url: APP_EXE_URL, digest: `sha256:${APP_EXE_HASH}`, size: 12 }],
+}
+
+/** Only the pre-release is published, so Stable has nothing to announce. */
+export const appBetaReleaseHost = (): Machine => ({
+  files: { [FAKE_EXE_PATH]: 'Lucent 0.1.0' },
+  remoteText: { [APP_RELEASES_URL]: JSON.stringify([APP_BETA_RELEASE]), [APP_EXE_URL]: APP_EXE_TEXT },
+})

@@ -1,7 +1,7 @@
 // The ⋯ menu in the title strip, shown once a deployment exists. Uninstall asks for confirmation first.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
-import { Bug, Check, ClipboardCopy, Ellipsis, History, LoaderCircle, Trash2, UsersRound, Wrench } from 'lucide-react'
+import { Bug, Check, ClipboardCopy, Ellipsis, FlaskConical, History, LoaderCircle, Trash2, UsersRound, Wrench } from 'lucide-react'
 import { useCore } from './useCore'
 import { gameActionsAvailable } from '../core/gameAccess'
 
@@ -79,6 +79,9 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
       </button>
       {open && <div className="menu" role="menu" aria-label="More actions" onKeyDown={onMenuKeyDown}>
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => { setOpen(false); onOpenVersions() }}><History size={14} strokeWidth={1.75} />Versions…</button>
+        <button role="menuitemcheckbox" aria-checked={state.channel === 'beta'} tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.setChannel(state.channel === 'beta' ? 'stable' : 'beta'))}>
+          <FlaskConical size={14} strokeWidth={1.75} />Beta channel{state.channel === 'beta' && <Check size={14} strokeWidth={1.75} className="menu-check" aria-hidden />}
+        </button>
         {xivLauncher.status === 'found' && <button role="menuitemcheckbox" aria-checked={xivLauncher.autoRepair} tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.setAutoRepair(!xivLauncher.autoRepair))}>
           <Wrench size={14} strokeWidth={1.75} />XIVLauncher auto-repair{xivLauncher.autoRepair && <Check size={14} strokeWidth={1.75} className="menu-check" aria-hidden />}
         </button>}

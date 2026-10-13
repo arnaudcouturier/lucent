@@ -17,7 +17,7 @@ Needs Node, Rust and the MSVC Build Tools.
 ```sh
 npm install
 npm run dev            # the UI in a browser, on the fake Platform: http://localhost:5173
-                       #   ?machine=steam|xivlauncher|squareenix|none picks the fake machine
+                       #   ?machine=steam|xivlauncher|squareenix|beta|none picks the fake machine
                        #   ?gallery opens the state gallery (← → to step through states)
 npm run tauri dev      # the real app
 npm test               # the core against the fake Platform (Vitest)
