@@ -24,8 +24,9 @@ export async function scanXivLauncher(platform: Platform): Promise<XivLauncherSt
   try {
     const configPath = await xivLauncherConfigPath(platform)
     if ((await platform.stat(configPath)).kind !== 'file') return { status: 'not-found' }
-    // A config Lucent can't read still means XIVLauncher is installed; auto-repair just reads as off.
-    const autoRepair = await readConfig(platform, configPath).then(({ addons }) => addons.some(isLucentAddon), () => false)
+    // A config Lucent can't read still means XIVLauncher is installed; auto-repair just reads as off,
+    // as it does when the player disabled Lucent's entries in XIVLauncher.
+    const autoRepair = await readConfig(platform, configPath).then(({ addons }) => addons.some((a) => isLucentAddon(a) && (a as Partial<AddonEntry>).IsEnabled !== false), () => false)
     return { status: 'found', configPath, autoRepair }
   } catch (error) {
     if (error instanceof PlatformError && error.kind === 'not-found') return { status: 'not-found' }
@@ -53,7 +54,7 @@ async function readConfig(platform: Platform, configPath: string) {
   return { text, config, addons }
 }
 
-const entry = (mode: HeadlessMode, exePath: string, runAsAdmin: boolean): AddonEntry => ({
+const lucentAddon = (mode: HeadlessMode, exePath: string, runAsAdmin: boolean): AddonEntry => ({
   IsEnabled: true,
   Addon: { Path: exePath, CommandLine: HEADLESS_FLAGS[mode], RunAsAdmin: runAsAdmin, RunOnClose: mode === 'repair', KillAfterClose: false },
 })
@@ -69,7 +70,7 @@ export async function setAutoRepair(platform: Platform, configPath: string, opti
   try { read = await readConfig(platform, configPath) }
   catch { throw new Error('Lucent couldn’t read XIVLauncher’s add-on list, so it left it unchanged.') }
   const addons = read.addons.filter((a) => !isLucentAddon(a))
-  if (options.enabled) addons.push(entry('check', options.exePath, options.runAsAdmin), entry('repair', options.exePath, options.runAsAdmin))
+  if (options.enabled) addons.push(lucentAddon('check', options.exePath, options.runAsAdmin), lucentAddon('repair', options.exePath, options.runAsAdmin))
   const newline = read.text.includes('\r\n') ? '\r\n' : '\n'
   const text = JSON.stringify({ ...read.config, AddonList: JSON.stringify(addons) }, null, 2).replace(/\n/g, newline)
   await platform.writeText(configPath, /\r?\n$/.test(read.text) ? text + newline : text)

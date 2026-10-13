@@ -75,6 +75,18 @@ describe('the XIVLauncher auto-repair switch', () => {
     expect((await addons(platform)).map((a) => a.Addon.CommandLine)).toEqual(['--headless-check', '--headless-repair'])
   })
 
+  it('reads as off when the player disabled Lucent’s entries in XIVLauncher, and turning it on enables them again', async () => {
+    const { platform, core } = await deployed()
+    await core.setAutoRepair(true)
+    const disabled = (await addons(platform)).map((a) => ({ ...a, IsEnabled: false }))
+    await platform.writeText(CONFIG, JSON.stringify({ ...await config(platform), AddonList: JSON.stringify(disabled) }, null, 2))
+    const reopened = createCore(platform)
+    await reopened.scan()
+    expect(reopened.getState().xivLauncher).toMatchObject({ autoRepair: false })
+    await reopened.setAutoRepair(true)
+    expect((await addons(platform)).map((a) => a.IsEnabled)).toEqual([true, true])
+  })
+
   it('sets RunAsAdmin on both entries when the game folder needs administrator access', async () => {
     const { m, platform, core } = await deployed()
     m.readOnlyDirectories = [GAME]
