@@ -5,6 +5,7 @@ import { createFakePlatform } from '../platform/fake'
 import { graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { TEST_MANIFEST, FIXTURE_ASSETS, fixtureUrl, OPTISCALER_HASH, RESHADE_HASH, PRESET_HASH } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
+import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
 export function deploymentMachine() {
@@ -87,7 +88,11 @@ it('leaves an unowned file in place and blocks the recipe that would replace it'
 
 it('undoes earlier steps when a later write fails', async () => {
   const platform = createFakePlatform(deploymentMachine())
-  platform.deny(`${ROOT}\\game\\ReShade.ini`)
+  const copy = platform.copyFile.bind(platform)
+  platform.copyFile = async (from, to, replace, staging) => {
+    if (to === `${ROOT}\\game\\ReShade.ini`) throw new PlatformError('access-denied', 'Access changed after Review', to)
+    await copy(from, to, replace, staging)
+  }
   const core = createCore(platform)
   await core.scan()
   const before = await platform.listFiles(`${ROOT}\\game`)

@@ -12,7 +12,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)' }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], elevated: false, elevationCancelled: false, elevationResumePath: null }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
@@ -24,6 +24,10 @@ export function machine(...parts: Machine[]): Machine {
     if (p.gameRunning !== undefined) out.gameRunning = p.gameRunning
     if (p.exePath !== undefined) out.exePath = p.exePath
     if (p.windowsVersion !== undefined) out.windowsVersion = p.windowsVersion
+    if (p.readOnlyDirectories) out.readOnlyDirectories = p.readOnlyDirectories
+    if (p.elevated !== undefined) out.elevated = p.elevated
+    if (p.elevationCancelled !== undefined) out.elevationCancelled = p.elevationCancelled
+    if (p.elevationResumePath !== undefined) out.elevationResumePath = p.elevationResumePath
   }
   return out
 }

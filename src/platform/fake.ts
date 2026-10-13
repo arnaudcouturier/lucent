@@ -15,6 +15,10 @@ export interface Machine {
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
   gameRunning?: boolean
+  readOnlyDirectories?: string[]
+  elevated?: boolean
+  elevationCancelled?: boolean
+  elevationResumePath?: string | null
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
   windowsVersion?: string
@@ -33,6 +37,7 @@ const norm = (path: string) =>
 export const FAKE_EXE_PATH = 'C:\\Users\\Player\\Downloads\\Lucent.exe'
 
 export interface FakePlatform extends Platform {
+  readonly elevationRequests: string[]
   readonly downloads: string[]
   /** Every exe the fake was asked to launch, in order; the real port exits instead of returning. */
   readonly launched: string[]
@@ -76,21 +81,24 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const launched: string[] = []
   let clipboard: string | null = null
   const openedUrls: string[] = []
+  const elevationRequests: string[] = []
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
 
   const isDenied = (p: string) => denied.some((d) => p === d || p.startsWith(d + '\\'))
   const isDir = (p: string) => directories.has(p)
+  const isReadOnly = (p: string) => !machine.elevated && (machine.readOnlyDirectories ?? []).some((path) => p === norm(path) || p.startsWith(norm(path) + '\\'))
   const writable = (path: string) => {
     const p = norm(path)
-    if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${path}`, path)
+    if (isDenied(p) || isReadOnly(p)) throw new PlatformError('access-denied', `Access is denied: ${path}`, path)
     if (isDir(p)) throw new PlatformError('access-denied', `Is a folder: ${path}`, path)
     return p
   }
 
   return {
     downloads,
+    elevationRequests,
     launched,
     get clipboard() { return clipboard },
     openedUrls,
@@ -163,6 +171,19 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await this.writeText(to, text)
     },
     async isGameRunning() { await gate; return machine.gameRunning ?? false },
+    async isDirectoryWritable(path, targets = []) {
+      await gate
+      for (const target of targets) assertGamePath(target)
+      return [path, ...targets.map((target) => `${path}\\${target}`)].every((target) => !isDenied(norm(target)) && !isReadOnly(norm(target)))
+    },
+    async isElevated() { await gate; return machine.elevated ?? false },
+    async getElevationResumePath() { await gate; return machine.elevationResumePath ?? null },
+    async requestElevation(path) {
+      await gate
+      elevationRequests.push(path)
+      if (machine.elevationCancelled) throw new PlatformError('cancelled', 'Administrator access was cancelled.')
+      machine.elevationResumePath = path
+    },
     async exePath() { await gate; return machine.exePath ?? FAKE_EXE_PATH },
     async launchExe(path) { await gate; launched.push(path) },
     async readText(path) {

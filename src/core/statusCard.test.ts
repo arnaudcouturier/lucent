@@ -21,6 +21,12 @@ it('shows healthy when nothing else applies', () => {
   expect(statusCard(deployment({}))).toEqual({ kind: 'healthy' })
 })
 
+it('shows the running game ahead of drift, updates and Disabled, but below an operation in progress', () => {
+  const state = { ...deployment({ enabled: false, drift, update: { version: '2026.11.02', changelog: [], downloadSize: 12 } }), gameRunning: true }
+  expect(statusCard(state)).toEqual({ kind: 'game-running' })
+  expect(statusCard({ ...state, activity: { ...state.activity, operation: 'repair' } as Activity })).toMatchObject({ kind: 'busy' })
+})
+
 it('shows Disabled with no action when the deployment is off', () => {
   expect(statusCard(deployment({ enabled: false }))).toEqual({ kind: 'disabled' })
 })

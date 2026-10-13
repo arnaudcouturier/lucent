@@ -2,10 +2,11 @@ import { ArrowLeft, Download, RotateCcw } from 'lucide-react'
 import type { VersionChoice } from '../core/versions'
 import { FlowError, sizeLabel, StatusCard } from './DeploymentScreens'
 import { useCore } from './useCore'
+import { gameActionsAvailable } from '../core/gameAccess'
 
 export function VersionsScreen({ onBack }: { onBack: () => void }) {
   const [state, core] = useCore()
-  const { versions, deployment, busy, recoveryRequired, activity } = state
+  const { versions, deployment, busy, activity } = state
   const groups: { title: string; versions: VersionChoice[] }[] = [
     { title: 'Current', versions: versions.filter((v) => v.current) },
     { title: 'Cached versions', versions: versions.filter((v) => !v.current && v.cached) },
@@ -20,7 +21,7 @@ export function VersionsScreen({ onBack }: { onBack: () => void }) {
       </header>
       <p className="screen-note">Rolling back pins that version and skips the one you leave behind. Newer content is still announced.</p>
       {state.manifest.status !== 'ready' && <p className="screen-note">Published versions are unavailable. You can still roll back to a cached version.</p>}
-      {activity.kind === 'deployment' && activity.operation && <StatusCard />}
+      {(activity.kind === 'deployment' && activity.operation || state.gameRunning !== false) && <StatusCard />}
       <FlowError />
       {groups.filter((group) => group.versions.length).map((group) => <section className="versions-section" key={group.title} aria-label={group.title}>
         <h2>{group.title}</h2>
@@ -36,7 +37,7 @@ export function VersionsScreen({ onBack }: { onBack: () => void }) {
               {version.changelog[0] && <p>{version.changelog[0]}</p>}
               {!version.current && <p>{version.unavailable ?? download}</p>}
             </div>
-            {!version.current && <button className="btn" disabled={busy || recoveryRequired || !!version.unavailable}
+            {!version.current && <button className="btn" disabled={!gameActionsAvailable(state) || !!version.unavailable}
               aria-label={`${rollback ? 'Roll back to' : 'Apply'} content ${version.id}`} onClick={() => void core.applyVersion(version.id)}>
               {rollback ? <RotateCcw size={14} /> : <Download size={14} />}{rollback ? 'Roll back' : 'Apply'}
             </button>}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { Bug, ClipboardCopy, Ellipsis, History, LoaderCircle, Trash2, UsersRound } from 'lucide-react'
 import { useCore } from './useCore'
+import { gameActionsAvailable } from '../core/gameAccess'
 
 export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpenCredits: () => void; onOpenVersions: () => void; returnFocusRef: RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false)
@@ -10,8 +11,8 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
   const [actionBusy, setActionBusy] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const focusLastOnOpen = useRef(false)
-  const [{ busy }, core] = useCore()
-  const disabled = busy || actionBusy
+  const [state, core] = useCore()
+  const disabled = state.busy || actionBusy
 
   const openMenu = (focusLast = false) => {
     focusLastOnOpen.current = focusLast
@@ -81,7 +82,7 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.reportBug())}><Bug size={14} strokeWidth={1.75} />Report a bug</button>
         <button role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); onOpenCredits() }}><UsersRound size={14} strokeWidth={1.75} />Credits</button>
         <div role="separator" />
-        <button role="menuitem" tabIndex={-1} className="is-danger" disabled={disabled} onClick={() => { setOpen(false); setConfirming(true) }}>Uninstall…</button>
+        <button role="menuitem" tabIndex={-1} className="is-danger" disabled={disabled || !gameActionsAvailable(state)} onClick={() => { setOpen(false); setConfirming(true) }}>Uninstall…</button>
       </div>}
       {confirming && <UninstallDialog onClose={() => setConfirming(false)} />}
     </div>
@@ -89,7 +90,8 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
 }
 
 function UninstallDialog({ onClose }: { onClose: () => void }) {
-  const [{ busy }, core] = useCore()
+  const [state, core] = useCore()
+  const { busy } = state
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
   const uninstall = async () => {
@@ -102,7 +104,7 @@ function UninstallDialog({ onClose }: { onClose: () => void }) {
       <p>Lucent restores the files it backed up and removes everything it added, including the logs the mods wrote. Your own presets and shaders stay.</p>
       <footer className="confirm-actions">
         <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
-        <button className="btn is-danger" disabled={busy} onClick={() => void uninstall()}>
+        <button className="btn is-danger" disabled={!gameActionsAvailable(state)} onClick={() => void uninstall()}>
           {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Trash2 size={14} strokeWidth={1.75} />}{busy ? 'Uninstalling…' : 'Uninstall'}
         </button>
       </footer>

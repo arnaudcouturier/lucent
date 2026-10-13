@@ -26,6 +26,14 @@ npm run typecheck
 npx tauri build --no-bundle   # the portable exe, in src-tauri/target/release
 ```
 
+Game-folder mutations share the guard in `src/core/gameAccess.ts`, including recovery. The UI
+checks the DX11 process every second and restores actions when it closes. Only a denied
+game-folder write probe requests UAC; the probe checks the command's files and existing parent
+folders. A one-use resume file preserves the command, folder, setup choices and the player's data
+context even when UAC uses another administrator account. Cancelling UAC keeps the current screen and files intact.
+The core tests simulate both processes, and the Rust tests exercise a disposable folder with a
+Windows ACL that denies file creation.
+
 ## Download site
 
 ```sh

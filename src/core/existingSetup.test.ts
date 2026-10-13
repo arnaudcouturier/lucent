@@ -5,6 +5,7 @@ import { EXISTING_SETUPS, existingSetup, graphicsCard, machine, vanillaGame, xiv
 import { CONFIG_HASH, FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
 import { dataPaths } from './deployment'
+import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -155,7 +156,11 @@ describe('Deploying over an existing setup', () => {
   it('leaves the folder as it was, without carried presets, when a later step fails', async () => {
     const platform = createFakePlatform(setupMachine('gshade'))
     const before = await snapshot(platform)
-    platform.deny(`${GAME}\\ReShade64.dll`)
+    const rename = platform.renameFile.bind(platform)
+    platform.renameFile = async (from, to, replace) => {
+      if (to === `${GAME}\\ReShade64.dll`) throw new PlatformError('access-denied', 'Access changed after Review', to)
+      await rename(from, to, replace)
+    }
     const core = createCore(platform)
     await core.scan()
     await core.review(true)
