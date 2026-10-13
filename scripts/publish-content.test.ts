@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
@@ -61,6 +61,19 @@ it('refuses a preset reference to a shader not shipped or declared user-supplied
 it('refuses a recipe that escapes the game folder', async () => {
   const manifestPath = await manifestFile()
   await expect(publishContent(resolve('scripts/fixtures/publish/path-escape/publish.json'), { manifestPath, dryRun: true })).rejects.toThrow(/unsafe game-folder path/i)
+})
+
+it('refuses an empty source file, which GitHub cannot store as a release asset', async () => {
+  const manifestPath = await manifestFile()
+  const directory = resolve(manifestPath, '..', 'empty-files')
+  await mkdir(resolve(directory, 'reshade-presets'), { recursive: true })
+  await mkdir(resolve(directory, 'reshade-shaders', 'Shaders'), { recursive: true })
+  for (const name of ['dxgi.dll', 'ReShade.ini', 'reshade-presets/Example.ini', 'reshade-shaders/Shaders/Example.fx']) {
+    await writeFile(resolve(directory, name), await readFile(resolve('scripts/fixtures/publish/valid/files', name)))
+  }
+  await writeFile(resolve(directory, 'Empty.txt'), '')
+  const input = await inputFile(manifestPath, (value) => { value.tiers.other.sources = [{ folder: directory, component: 'ReShade fixture' }] })
+  await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/Empty\.txt.*empty.*release asset/i)
 })
 
 it('refuses an OptiScaler file without a GPL source tag', async () => {
