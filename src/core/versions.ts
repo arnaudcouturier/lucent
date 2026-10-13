@@ -46,13 +46,13 @@ export async function pruneContentCache(platform: Platform, gameFolder: string):
   }
 }
 
-/** Cache presence means every required asset has passed its size and hash checks. */
+/** Listing checks cached assets by size only; applying a version hashes them before use and re-downloads a damaged one. */
 export async function versionChoices(platform: Platform, record: DeploymentRecord, manifest: Manifest | null, settings: Settings, channel: Channel, appVersion: string): Promise<VersionChoice[]> {
   const { cache } = await dataPaths(platform, record.gameFolder)
   const saved = new Map((record.cachedVersions ?? []).map((v) => [v.content.id, v]))
   const published = new Map((manifest?.versions ?? []).filter((v) => onChannel(v, channel)).map((v) => [v.id, v]))
   const ids = new Set([record.contentVersion, ...saved.keys(), ...published.keys(), ...settings.skippedContent])
-  const verified = new Map<string, boolean>()
+  const present = new Map<string, boolean>()
   const choices: VersionChoice[] = []
   for (const id of [...ids].sort((a, b) => b.localeCompare(a))) {
     const content = saved.get(id)?.content ?? published.get(id)
@@ -65,12 +65,11 @@ export async function versionChoices(platform: Platform, record: DeploymentRecor
       const hashes = new Set(recipe.recipe.filter((s) => s.kind === 'copy' && (!s.when || record.includeReShade || tier.requiresReShade)).map((s) => s.kind === 'copy' ? s.file : ''))
       downloadSize = 0
       for (const file of content.files.filter((f) => hashes.has(f.sha256))) {
-        if (!verified.has(file.sha256)) {
-          const path = joinPath(cache, file.sha256)
-          const stat = await maybeStat(platform, path)
-          verified.set(file.sha256, stat?.kind === 'file' && stat.size === file.size && await platform.hashFile(path) === file.sha256)
+        if (!present.has(file.sha256)) {
+          const stat = await maybeStat(platform, joinPath(cache, file.sha256))
+          present.set(file.sha256, stat?.kind === 'file' && stat.size === file.size)
         }
-        if (!verified.get(file.sha256)) downloadSize += file.size
+        if (!present.get(file.sha256)) downloadSize += file.size
       }
     }
     choices.push({ id, changelog: content?.changelog ?? [], current: id === record.contentVersion,

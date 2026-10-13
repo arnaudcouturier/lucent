@@ -260,8 +260,9 @@ Applying a newer version clears the pin. No version is applied automatically.
 
 The journal retains recipe, tier and asset snapshots for the current content and the two most
 recently applied other versions. Those snapshots allow rollback without a live manifest or a
-download when their size- and hash-checked assets are cached. Missing or damaged assets are shown
-as needing a download. Older journals acquire a snapshot of their current version when it is
+download when their assets are cached. Versions… checks cached assets by size only, so opening
+Lucent never re-hashes the cache; missing or wrong-size assets are shown as needing a download.
+Applying a version hash-checks every asset before use and re-downloads a damaged one. Older journals acquire a snapshot of their current version when it is
 still in the manifest. A completed version change durably records its pin and pending skip; if
 settings cannot be saved, startup retries that last step.
 
