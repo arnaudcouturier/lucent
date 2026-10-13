@@ -17,6 +17,7 @@ export interface Machine {
   gameRunning?: boolean
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
+  windowsVersion?: string
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
@@ -35,6 +36,8 @@ export interface FakePlatform extends Platform {
   readonly downloads: string[]
   /** Every exe the fake was asked to launch, in order; the real port exits instead of returning. */
   readonly launched: string[]
+  readonly clipboard: string | null
+  readonly openedUrls: string[]
   listDirectories(root: string): Promise<string[]>
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
@@ -71,6 +74,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const denied: string[] = []
   const downloads: string[] = []
   const launched: string[] = []
+  let clipboard: string | null = null
+  const openedUrls: string[] = []
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
@@ -87,6 +92,16 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   return {
     downloads,
     launched,
+    get clipboard() { return clipboard },
+    openedUrls,
+    async getWindowsVersion() { await gate; return machine.windowsVersion ?? 'Windows 11 24H2 (build 26100.2033)' },
+    async copyText(text) { await gate; clipboard = text },
+    async openUrl(url) { await gate; openedUrls.push(url) },
+    async readTextTail(path, maxLines) {
+      if (!Number.isInteger(maxLines) || maxLines < 1 || maxLines > 10000) throw new PlatformError('unknown', 'Line count must be between 1 and 10000', path)
+      const text = await this.readText(path)
+      return text.replace(/\r?\n$/, '').split(/\r?\n/).slice(-maxLines).join('\n')
+    },
     async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text); touch(target) },
     async writeFileByte(path, offset, value) {
       const text = await this.readText(path)

@@ -15,6 +15,7 @@ import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
+import { bugReportUrl, collectDiagnostics } from './diagnostics'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -96,6 +97,9 @@ export interface Core {
   skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
   uninstall(): Promise<void>
+  copyDiagnostics(): Promise<void>
+  reportBug(): Promise<void>
+  openLink(url: string): Promise<void>
 }
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
@@ -205,6 +209,36 @@ export function createCore(platform: Platform): Core {
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    async copyDiagnostics() {
+      if (state.busy) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, CHANNEL))
+        set({ notice: 'Diagnostics copied to the clipboard.' })
+      } catch (error) { set({ error: `Could not copy diagnostics. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+    },
+    async openLink(url) {
+      if (state.busy) return
+      set({ busy: true, error: null })
+      try {
+        const link = new URL(url)
+        if (link.protocol !== 'https:' || /[\u0000-\u001f]/.test(url)) throw new Error('Source links must use HTTPS.')
+        await platform.openUrl(link.href)
+      } catch (error) { set({ error: `Could not open the link. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+    },
+    async reportBug() {
+      if (state.busy) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        await platform.copyText(await collectDiagnostics(platform, state, APP_VERSION, CHANNEL))
+        set({ notice: 'Diagnostics copied to the clipboard.' })
+        await platform.openUrl(bugReportUrl(state))
+        set({ notice: 'Diagnostics copied. Paste them into the GitHub issue.' })
+      } catch (error) { set({ error: `Could not report the bug. ${message(error)}` }) }
+      finally { set({ busy: false }) }
     },
     async scan() {
       if (state.busy) return

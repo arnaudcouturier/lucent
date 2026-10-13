@@ -41,6 +41,8 @@ export interface GpuAdapter {
   /** Dedicated video memory in bytes, excluding shared system memory. */
   dedicatedMemory: number
   software: boolean
+  /** Windows driver version; absent if the adapter cannot report it. */
+  driverVersion?: string | null
 }
 
 /** Available only in dev builds; local release files live under filesDirectory. */
@@ -52,6 +54,11 @@ export interface LocalContent {
 export interface Platform {
   /** Reads a UTF-8 text file. */
   readText(path: string): Promise<string>
+  /** Reads only the final lines of a potentially large log, without its terminal newline. */
+  readTextTail(path: string, maxLines: number): Promise<string>
+  getWindowsVersion(): Promise<string>
+  copyText(text: string): Promise<void>
+  openUrl(url: string): Promise<void>
   stat(path: string): Promise<FileStat>
   /** Reads a string value. `key` is the full subkey path under the hive. */
   readRegistry(hive: RegistryHive, key: string, value: string): Promise<string>

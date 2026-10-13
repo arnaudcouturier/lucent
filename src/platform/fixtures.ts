@@ -12,7 +12,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)' }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
@@ -23,6 +23,7 @@ export function machine(...parts: Machine[]): Machine {
     if (p.devContent !== undefined) out.devContent = p.devContent
     if (p.gameRunning !== undefined) out.gameRunning = p.gameRunning
     if (p.exePath !== undefined) out.exePath = p.exePath
+    if (p.windowsVersion !== undefined) out.windowsVersion = p.windowsVersion
   }
   return out
 }

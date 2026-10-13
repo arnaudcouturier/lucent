@@ -21,6 +21,10 @@ async function call<T>(command: string, args: Record<string, unknown>): Promise<
 export function createTauriPlatform(): Platform {
   return {
     readText: (path) => call<string>('platform_read_text', { path }),
+    readTextTail: (path, maxLines) => call<string>('platform_read_text_tail', { path, maxLines }),
+    getWindowsVersion: () => call<string>('platform_windows_version', {}),
+    copyText: (text) => call('platform_copy_text', { text }),
+    openUrl: (url) => call('platform_open_url', { url }),
     stat: (path) => call<FileStat>('platform_stat', { path }),
     readRegistry: (hive, key, value) => call<string>('platform_read_registry', { hive, key, value }),
     envFolder: (folder) => call<string>('platform_env_folder', { folder }),
