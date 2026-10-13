@@ -11,6 +11,11 @@ async fn platform_read_text(path: PathBuf) -> Result<String, PlatformError> {
 }
 
 #[tauri::command]
+async fn platform_read_text_tail(path: PathBuf, max_lines: usize) -> Result<String, PlatformError> {
+    platform::read_text_tail(&path, max_lines)
+}
+
+#[tauri::command]
 async fn platform_stat(path: PathBuf) -> Result<FileStat, PlatformError> {
     platform::stat(&path)
 }
@@ -28,6 +33,31 @@ async fn platform_env_folder(folder: String) -> Result<String, PlatformError> {
 #[tauri::command]
 async fn platform_gpu_adapters() -> Result<Vec<GpuAdapter>, PlatformError> {
     platform::gpu_adapters()
+}
+
+#[tauri::command]
+async fn platform_windows_version() -> Result<String, PlatformError> {
+    platform::windows_version()
+}
+
+#[tauri::command]
+async fn platform_copy_text(window: tauri::WebviewWindow, text: String) -> Result<(), PlatformError> {
+    let owner = window.hwnd().map_err(|e| PlatformError {
+        kind: platform::ErrorKind::Unknown,
+        message: e.to_string(),
+        path: None,
+    })?;
+    platform::copy_text(&text, owner)
+}
+
+#[tauri::command]
+async fn platform_open_url(window: tauri::WebviewWindow, url: String) -> Result<(), PlatformError> {
+    let owner = window.hwnd().map_err(|e| PlatformError {
+        kind: platform::ErrorKind::Unknown,
+        message: e.to_string(),
+        path: None,
+    })?;
+    platform::open_url(&url, owner)
 }
 
 #[tauri::command]
@@ -72,10 +102,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             platform_read_text,
+            platform_read_text_tail,
             platform_stat,
             platform_read_registry,
             platform_env_folder,
             platform_gpu_adapters,
+            platform_windows_version,
+            platform_copy_text,
+            platform_open_url,
             platform_fetch_text,
             platform_dev_content,
             platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
