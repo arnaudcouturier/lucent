@@ -4,7 +4,7 @@ import type { GpuAdapter, Platform } from './platform'
 import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder'
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
-import { scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
+import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
 import { changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
@@ -745,11 +745,12 @@ export function createCore(platform: Platform): Core {
           }
         }
         // Only now: a failed restore keeps the journal and backups recovery needs.
+        const addonNote = await removeXivLauncherAddons(platform)
         await removeSelfInstall(platform)
         const folder = await lucentFolder(platform)
         try { await platform.exitAndRemove([folder]) }
         catch (error) { throw new Error(`Lucent is out of the Start menu and Settings → Apps, but couldn’t remove its folder. Delete ${folder} yourself. ${message(error)}`) }
-        set({ appUninstalled: true, notice: 'Lucent is uninstalled.' })
+        set({ appUninstalled: true, notice: addonNote })
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
     },

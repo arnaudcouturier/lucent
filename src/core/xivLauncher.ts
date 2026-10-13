@@ -75,3 +75,21 @@ export async function setAutoRepair(platform: Platform, configPath: string, opti
   const text = JSON.stringify({ ...read.config, AddonList: JSON.stringify(addons) }, null, 2).replace(/\n/g, newline)
   await platform.writeText(configPath, /\r?\n$/.test(read.text) ? text + newline : text)
 }
+
+/**
+ * Takes Lucent's add-ons out of XIVLauncher when Lucent is uninstalled. Returns a note when they're left behind,
+ * and never throws: a stale entry must not stop the uninstall.
+ */
+export async function removeXivLauncherAddons(platform: Platform): Promise<string | null> {
+  try {
+    const configPath = await xivLauncherConfigPath(platform)
+    if (!(await readConfig(platform, configPath)).addons.some(isLucentAddon)) return null
+    if (await platform.isProcessRunning(XIVLAUNCHER_EXE)) return 'XIVLauncher was running, so Lucent’s two add-ons are still in its list. Remove them in XIVLauncher’s settings under Addons.'
+    await setAutoRepair(platform, configPath, { enabled: false, exePath: '', runAsAdmin: false })
+    return null
+  } catch (error) {
+    // No XIVLauncher is nothing to clean up; an unreadable config is left alone, as setAutoRepair does.
+    if (error instanceof PlatformError && error.kind === 'not-found') return null
+    return 'Lucent couldn’t remove its add-ons from XIVLauncher. Remove them in XIVLauncher’s settings under Addons.'
+  }
+}

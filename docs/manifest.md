@@ -193,6 +193,10 @@ even after a mod rewrote it, such as a `ReShade.ini` saved from the overlay. An 
 since the deployment, such as one a game patch replaced, stays as it is. User files, and the
 directories that hold them, always stay. Lucent refuses to uninstall while XIV runs.
 
+Uninstalling Lucent from Settings → Apps also removes Lucent's two XIVLauncher add-ons (only those),
+whether or not the game folder is restored. If XIVLauncher is running, the uninstall still finishes and
+says to remove them in XIVLauncher's settings. No XIVLauncher, or no Lucent add-ons, changes nothing.
+
 ## Performance profiles
 
 Each content tier may supply `performanceProfiles`. Omit it or use `[]` for a tier without

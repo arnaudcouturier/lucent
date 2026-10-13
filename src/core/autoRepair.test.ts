@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCore } from './core'
-import { createFakePlatform, FAKE_EXE_PATH, type FakePlatform } from '../platform/fake'
+import { createFakePlatform, FAKE_EXE_PATH, type FakePlatform, type Machine } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { DEFAULT_ENV } from '../platform/fake'
 import { runHeadless } from './autoRepair'
@@ -205,5 +205,47 @@ describe('the headless repair after the game closes', () => {
     m.gameRunning = true
     expect(await runHeadless(platform, 'repair')).toMatchObject({ kind: 'failed' })
     expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('Patched')
+  })
+})
+
+describe('uninstalling Lucent from Settings → Apps', () => {
+  const uninstall = async (m: Machine, platform: FakePlatform, restore: boolean) => {
+    m.exePath = INSTALLED_EXE
+    const core = createCore(platform)
+    await core.uninstallApp(restore)
+    return core
+  }
+
+  it('removes only Lucent’s XIVLauncher add-ons, whether or not the game folder is restored', async () => {
+    for (const restore of [true, false]) {
+      const { m, platform, core } = await deployed()
+      await platform.writeText(CONFIG, JSON.stringify({ ...await config(platform), AddonList: JSON.stringify([otherAddon]), Other: 1 }, null, 2))
+      await core.setAutoRepair(true)
+      expect(await addons(platform)).toHaveLength(3)
+      const after = await uninstall(m, platform, restore)
+      expect(after.getState()).toMatchObject({ error: null, notice: null, appUninstalled: true })
+      expect(await addons(platform)).toEqual([otherAddon])
+      expect(await config(platform)).toMatchObject({ GamePath: ROOT, Other: 1 })
+    }
+  })
+
+  it('does nothing without XIVLauncher or without Lucent’s add-ons', async () => {
+    const without = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT))
+    const bare = await uninstall(without, createFakePlatform(without), false)
+    expect(bare.getState()).toMatchObject({ error: null, notice: null, appUninstalled: true })
+    const { m, platform } = await deployed()
+    const before = await platform.readText(CONFIG)
+    expect((await uninstall(m, platform, false)).getState()).toMatchObject({ error: null, notice: null, appUninstalled: true })
+    expect(await platform.readText(CONFIG)).toBe(before)
+  })
+
+  it('finishes while XIVLauncher runs, leaves its config alone and says where to remove the add-ons', async () => {
+    const { m, platform, core } = await deployed()
+    await core.setAutoRepair(true)
+    const before = await platform.readText(CONFIG)
+    m.processes = ['XIVLauncher.exe']
+    const after = await uninstall(m, platform, true)
+    expect(after.getState()).toMatchObject({ error: null, appUninstalled: true, notice: expect.stringMatching(/XIVLauncher was running.*Addons/) })
+    expect(await platform.readText(CONFIG)).toBe(before)
   })
 })

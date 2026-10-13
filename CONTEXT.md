@@ -39,7 +39,7 @@ Lucent copying itself onto the player's machine so it can be launched like any i
 _Avoid_: install (that word is ambiguous here)
 
 **App uninstall**:
-Removing Lucent itself from Settings → Apps: optionally an uninstall of every deployment, then the shortcut, the Settings → Apps entry, the data folder and the exe.
+Removing Lucent itself from Settings → Apps: optionally an uninstall of every deployment, then Lucent's XIVLauncher add-ons, the shortcut, the Settings → Apps entry, the data folder and the exe.
 _Avoid_: using "uninstall" alone for it (that word belongs to deployments)
 
 ### Content
