@@ -1,12 +1,12 @@
 // The core: all of Lucent's domain logic, framework-free. It exposes one observable state and the
 // commands the UI calls. It reaches the machine only through the Platform port.
-import type { Platform } from './platform'
+import type { GpuAdapter, Platform } from './platform'
 import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder'
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { disabledName, fileKey, planDeployment, stepWritePaths, type Plan } from './planner'
+import { changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -14,10 +14,11 @@ export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
-import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
+import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
+import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -27,7 +28,17 @@ export interface ContentUpdate {
   downloadSize: number
 }
 
-export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
+/** `missing`: no game folder was found, and the one Lucent last deployed to no longer holds the game. */
+export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' } | { status: 'missing'; path: string }
+
+/** The graphics card now matches another tier than the deployed one, and that tier has content to switch to. */
+export interface TierChange {
+  gpu: string
+  /** The deployed tier's label. */
+  from: string
+  /** The new tier's label. */
+  to: string
+}
 
 /** Activity reported by the core. Later workflow commands will advance this beyond Scan. */
 export type Activity =
@@ -40,7 +51,9 @@ export type Activity =
       drift: Drift | null
       /** The content version to announce, or null when there's none. */
       update: ContentUpdate | null
-      operation: 'repair' | 'update' | 'rollback' | null
+      /** Null when the graphics card still matches the deployed tier, or the new tier has no content yet. */
+      tierChange: TierChange | null
+      operation: 'repair' | 'update' | 'rollback' | 'tier' | null
     }
 
 export interface State {
@@ -64,6 +77,12 @@ export interface State {
   versions: VersionChoice[]
   deploymentProgress: DeploymentProgress | null
   includeReShade: boolean
+  /** Review's "Add Lucent to the Start menu"; Install self-installs when it's on. */
+  addToStartMenu: boolean
+  /** Lucent is in the Start menu and Settings → Apps, so Review no longer offers it. */
+  selfInstalled: boolean
+  /** Set once the uninstall from Settings → Apps finishes; the real port has exited by then. */
+  appUninstalled: boolean
   profiles: PerformanceProfile[]
   selectedProfile: ProfileId | null
   busy: boolean
@@ -83,9 +102,12 @@ export interface Core {
   refreshGameRunning(): Promise<void>
   /** Lets the player pick the game folder, whether or not Scan found one. */
   chooseGameFolder(): Promise<void>
+  /** Find it: scans again for a missing game folder; if it's still gone, Scan offers the folder picker. */
+  findGameFolder(): Promise<void>
   continueSetup(): Promise<void>
   selectProfile(profile: ProfileId): Promise<void>
   review(includeReShade?: boolean): Promise<void>
+  setAddToStartMenu(add: boolean): void
   backToScan(): void
   backToProfile(): void
   deploy(): Promise<void>
@@ -94,6 +116,8 @@ export interface Core {
   setEnabled(enabled: boolean): Promise<void>
   /** Re-applies the deployment so that no drift remains, then checks its health again. */
   repair(): Promise<void>
+  /** Plans the deployment again for the graphics card's new tier, keeping the profile it still has, Disabled and user changes. */
+  switchTier(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
   update(): Promise<void>
   /** Applies a version from Versions, including cached rollback targets and skipped versions. */
@@ -108,6 +132,10 @@ export interface Core {
   uninstall(): Promise<void>
   /** Adds or removes XIVLauncher's add-on entries that check on game launch and repair on game close. */
   setAutoRepair(enabled: boolean): Promise<void>
+  /** Opens the uninstall window Settings → Apps starts, continuing a confirmed uninstall after admin access. */
+  openAppUninstall(): Promise<void>
+  /** Optionally uninstalls every deployment, then removes the shortcut, the Settings → Apps entry, the data folder and the exe. */
+  uninstallApp(restoreGameFolder: boolean): Promise<void>
   copyDiagnostics(): Promise<void>
   reportBug(): Promise<void>
   openLink(url: string): Promise<void>
@@ -128,7 +156,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
+    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -154,15 +182,17 @@ export function createCore(platform: Platform): Core {
     if (request.kind === 'profile') return record.recipe.performanceProfiles?.find((p) => p.id === request.profile)?.settings
       .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))).map((s) => s.file) ?? []
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
-    if (request.kind === 'update') {
-      const { content, tier } = versionSource(record, request.contentVersion)
-      const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
-      return planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled).steps.flatMap(stepWritePaths)
+    if (request.kind === 'update' || request.kind === 'tier') {
+      const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
+      if (!target || target.content.id !== request.contentVersion) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
+      const scan = await scanDeployment(platform, record.gameFolder, target.content, record, [])
+      return planDeployment(target.content, target.tier, record.includeReShade, scan, keptProfile(target.content, target.tier, record.profile), record.enabled).steps.flatMap(stepWritePaths)
     }
     return [...record.journal.slice(request.kind === 'recover' ? record.changeStart ?? 0 : 0).flatMap((entry) => Object.keys(entry.before)),
       ...(record.createdDirectories ?? []), ...(request.kind === 'uninstall' || record.uninstalling ? record.generatedFiles ?? [] : [])]
   }
   const prepareWrite = async (request: GameWriteRequest, targets?: string[]) => {
+    if (state.gameFolder.status === 'missing') throw new Error('The game folder is missing. Find it before changing your setup.')
     await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
     const ready = await access(request, [...new Set(targets ?? await writeTargets(request))])
     if (!ready) set({ notice: 'Lucent is reopening with administrator access to continue your change.' })
@@ -170,6 +200,8 @@ export function createCore(platform: Platform): Core {
   }
   class ElevationPending extends Error {}
   let resumeContentVersion: string | null = null
+  /** Find it clears this, so a scan that still finds no game folder leads to first-run Scan and its folder picker. */
+  let showLostDeployment = true
   const recover = async () => {
     try {
       const recovered = await recoverDeployments(platform, async (record) => {
@@ -215,8 +247,36 @@ export function createCore(platform: Platform): Core {
       await refreshVersions()
     }
   }
+  const checkSelfInstall = async () => {
+    try {
+      const selfInstalled = await isSelfInstalled(platform)
+      set({ selfInstalled })
+      if (selfInstalled) await refreshSelfInstall(platform, APP_VERSION)
+    } catch { /* Review offers the Start menu again; adding it once more is harmless. */ }
+  }
+  const addToStartMenu = async () => {
+    try {
+      await selfInstall(platform, APP_VERSION)
+      set({ selfInstalled: true })
+    } catch (error) { set({ notice: `Lucent couldn’t add itself to the Start menu. ${message(error)} It keeps working from where it is.` }) }
+  }
   const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
-    ({ kind: 'deployment', enabled: record.enabled, drift, update, operation: null })
+    ({ kind: 'deployment', enabled: record.enabled, drift, update, tierChange: tierChange(record), operation: null })
+  /** The graphics card's tier and the content to plan it with: the deployed version when it has that tier, else the newest. */
+  const tierSwitchTarget = (record: DeploymentRecord): { tier: Tier; content: ContentVersion } | null => {
+    const { graphics, manifest } = state
+    if (graphics.status !== 'found' || !graphics.tier || graphics.tier.id === record.tier || manifest.status !== 'ready') return null
+    const tier = graphics.tier
+    const candidates = manifest.manifest.versions.filter((v) => v.tiers[tier.id] && onChannel(v, CHANNEL) && !needsNewerApp(v.minAppVersion, APP_VERSION))
+    const content = candidates.find((v) => v.id === record.contentVersion) ?? candidates.sort((a, b) => b.id.localeCompare(a.id))[0]
+    return content ? { tier, content } : null
+  }
+  const tierChange = (record: DeploymentRecord): TierChange | null => {
+    const target = tierSwitchTarget(record)
+    if (!target || state.graphics.status !== 'found' || state.manifest.status !== 'ready') return null
+    const from = state.manifest.manifest.tiers.find((t) => t.id === record.tier)?.label ?? record.cachedVersions?.[0]?.tier.label ?? record.tier
+    return { gpu: state.graphics.adapter.name, from, to: target.tier.label }
+  }
   /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
   const announceApp = async (): Promise<AppUpdate | null> => {
     const { skippedApp } = await readSettings(platform)
@@ -295,6 +355,33 @@ export function createCore(platform: Platform): Core {
     const selectedProfile = profiles.some((p) => p.id === state.selectedProfile) ? state.selectedProfile : profiles.find((p) => p.id === DEFAULT_PROFILE)?.id ?? null
     set({ profiles, selectedProfile })
   }
+  /** Moves the deployment to other content, a version or a tier, through the update path, then checks it again. */
+  const changeContent = async (operation: 'update' | 'rollback' | 'tier', request: GameWriteRequest, target: () => { content: ContentVersion; tier: Tier }, graphics?: GpuAdapter) => {
+    const { activity, deployment, manifest } = state
+    if (activity.kind !== 'deployment' || !deployment) return
+    set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation } })
+    try {
+      if (!await prepareWrite(request)) return
+      await refreshHealth(deployment)
+      const { content, tier } = target()
+      if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, (progress) => set({ deploymentProgress: progress }), graphics)
+      set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
+      try { await finishSelection(record) }
+      catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
+      await pruneCache(record)
+    } catch (error) {
+      set(error instanceof DeploymentError
+        ? { error: error.message, recoveryRequired: error.recoveryRequired }
+        : { error: `${failureReason(error)} The game folder has not been changed.` })
+    }
+    finally {
+      await refreshHealthAfter(true)
+      await refreshAnnouncement()
+      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null, tierChange: state.deployment ? tierChange(state.deployment) : null } })
+      set({ busy: false, deploymentProgress: null })
+    }
+  }
   const core: Core = {
     getState: () => state,
     subscribe(listener) {
@@ -328,7 +415,9 @@ export function createCore(platform: Platform): Core {
         // The entries run elevated when the game folder needs it; Lucent only ever elevates for that reason.
         const runAsAdmin = enabled && (await platform.isElevated()
           || !await platform.isDirectoryWritable(joinPath(deployment.gameFolder, 'game'), Object.keys(deployment.files)))
-        await setAutoRepair(platform, xivLauncher.configPath, { enabled, exePath: await platform.exePath(), runAsAdmin })
+        // A portable copy may be deleted once the installed one exists, so the entries start the installed one.
+        const exePath = state.selfInstalled ? await installedExe(platform) : await platform.exePath()
+        await setAutoRepair(platform, xivLauncher.configPath, { enabled, exePath, runAsAdmin })
         set({ xivLauncher: { ...xivLauncher, autoRepair: enabled } })
       } catch (error) { set({ error: `Could not change auto-repair. ${message(error)}` }) }
       finally { set({ busy: false }) }
@@ -361,6 +450,7 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) return
         // Recovery precedes all startup work, including cleanup of the last app update.
         await cleanupOldExe(platform)
+        await checkSelfInstall()
         const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
           findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform), announceApp(),
         ])
@@ -371,6 +461,9 @@ export function createCore(platform: Platform): Core {
         if (folder) {
           set({ gameFolder: { status: 'found', ...folder } })
           await restoreDeployment(folder)
+        } else if (showLostDeployment && !resume) {
+          const lost = await lostDeployment(platform)
+          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: lost.recipe.performanceProfiles ?? [], selectedProfile: lost.profile ?? null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
         }
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
@@ -383,7 +476,8 @@ export function createCore(platform: Platform): Core {
           if (resume.kind === 'deploy') {
             resumeContentVersion = resume.contentVersion
             prepareProfiles(contentForTier())
-            set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade })
+            // The player's own process already self-installed before asking for admin access.
+            set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade, addToStartMenu: false })
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'profile') await core.selectProfile(resume.profile)
@@ -391,9 +485,15 @@ export function createCore(platform: Platform): Core {
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall()
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
+          else if (resume.kind === 'tier') await core.switchTier()
         } catch (error) { set({ error: message(error) }) }
         finally { resumeContentVersion = null }
       }
+    },
+    async findGameFolder() {
+      if (state.gameFolder.status !== 'missing') return
+      showLostDeployment = false
+      try { await core.scan() } finally { showLostDeployment = true }
     },
     async chooseGameFolder() {
       if (state.busy || state.activity.kind !== 'scan') return
@@ -476,31 +576,16 @@ export function createCore(platform: Platform): Core {
     async update() {
       if (state.activity.kind === 'deployment' && state.activity.update) await core.applyVersion(state.activity.update.version)
     },
+    async switchTier() {
+      const { activity, deployment, graphics } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
+      const target = tierSwitchTarget(deployment)
+      if (target) await changeContent('tier', { kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id }, () => target, graphics.adapter)
+    },
     async applyVersion(version) {
-      const { activity, deployment, manifest } = state
+      const { activity, deployment } = state
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || version === deployment.contentVersion) return
-      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: version < deployment.contentVersion ? 'rollback' : 'update' } })
-      try {
-        if (!await prepareWrite({ kind: 'update', gameFolder: deployment.gameFolder, contentVersion: version })) return
-        await refreshHealth(deployment)
-        const { content, tier } = versionSource(deployment, version)
-        if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
-        const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, (progress) => set({ deploymentProgress: progress }))
-        set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null })
-        try { await finishSelection(record) }
-        catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
-        await pruneCache(record)
-      } catch (error) {
-        set(error instanceof DeploymentError
-          ? { error: error.message, recoveryRequired: error.recoveryRequired }
-          : { error: `${failureReason(error)} The game folder has not been changed.` })
-      }
-      finally {
-        await refreshHealthAfter(true)
-        await refreshAnnouncement()
-        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null } })
-        set({ busy: false, deploymentProgress: null })
-      }
+      await changeContent(version < deployment.contentVersion ? 'rollback' : 'update', { kind: 'update', gameFolder: deployment.gameFolder, contentVersion: version }, () => versionSource(deployment, version))
     },
     async updateApp() {
       if (state.busy || state.recoveryRequired || !state.appUpdate) return
@@ -548,6 +633,7 @@ export function createCore(platform: Platform): Core {
       } catch (error) { set({ error: message(error) }) }
       set({ busy: false })
     },
+    setAddToStartMenu(add) { if (!state.busy && state.activity.kind === 'review') set({ addToStartMenu: add }) },
     backToScan() { if (!state.busy && !state.deployment) set({ activity: { kind: 'scan' }, plan: null, error: null }) },
     backToProfile() { if (!state.busy && !state.deployment) set({ activity: { kind: state.profiles.length ? 'profile' : 'scan' }, plan: null, error: null }) },
     async deploy() {
@@ -557,6 +643,8 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) { set({ activity: { kind: 'review' } }); return }
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
+        // As the player, before any admin prompt, so the shortcut and the entry are theirs.
+        if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
         if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile })) {
           set({ activity: { kind: 'review' } }); return
         }
@@ -599,6 +687,40 @@ export function createCore(platform: Platform): Core {
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })
+    },
+    async openAppUninstall() {
+      if (state.busy) return
+      set({ busy: true, error: null })
+      let confirmed = false
+      try {
+        const context = await takeElevationResume(platform)
+        if (context) { playerLocalAppData = context.localAppData; confirmed = context.request !== null }
+        await core.refreshGameRunning()
+      } catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false }) }
+      // Admin access is requested only after the player confirmed with "Restore the game folder".
+      if (confirmed) await core.uninstallApp(true)
+    },
+    async uninstallApp(restoreGameFolder) {
+      if (state.busy || state.appUninstalled) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        if (restoreGameFolder) {
+          if (!await recover()) return
+          for await (const record of deploymentRecords(platform)) {
+            if (record.status !== 'complete') continue
+            if (!await prepareWrite({ kind: 'uninstall', gameFolder: record.gameFolder })) return
+            await uninstallDeployment(platform, record.gameFolder)
+          }
+        }
+        // Only now: a failed restore keeps the journal and backups recovery needs.
+        await removeSelfInstall(platform)
+        const folder = await lucentFolder(platform)
+        try { await platform.exitAndRemove([folder]) }
+        catch (error) { throw new Error(`Lucent is out of the Start menu and Settings → Apps, but couldn’t remove its folder. Delete ${folder} yourself. ${message(error)}`) }
+        set({ appUninstalled: true, notice: 'Lucent is uninstalled.' })
+      } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
+      finally { set({ busy: false }) }
     },
   }
   return core

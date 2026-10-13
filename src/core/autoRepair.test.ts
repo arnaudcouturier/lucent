@@ -13,12 +13,15 @@ const CONFIG = `${DEFAULT_ENV.AppData}\\XIVLauncher\\launcherConfigV3.json`
 
 const otherAddon = { IsEnabled: true, Addon: { Path: 'C:\\Tools\\ACT\\Advanced Combat Tracker.exe', CommandLine: '', RunAsAdmin: false, RunOnClose: false, KillAfterClose: true } }
 
-async function deployed() {
+const INSTALLED_EXE = `${DEFAULT_ENV.LocalAppData}\\Lucent\\Lucent.exe`
+
+async function deployed({ addToStartMenu = true } = {}) {
   const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
   const platform = createFakePlatform(m)
   const core = createCore(platform)
   await core.scan()
   await core.review()
+  core.setAddToStartMenu(addToStartMenu)
   await core.deploy()
   core.finish()
   return { m, platform, core }
@@ -49,13 +52,19 @@ describe('the XIVLauncher auto-repair switch', () => {
     expect(after).toMatchObject({ GamePath: ROOT, Unknown: 'kept' })
     expect(await addons(platform)).toEqual([
       otherAddon,
-      { IsEnabled: true, Addon: { Path: FAKE_EXE_PATH, CommandLine: '--headless-check', RunAsAdmin: false, RunOnClose: false, KillAfterClose: false } },
-      { IsEnabled: true, Addon: { Path: FAKE_EXE_PATH, CommandLine: '--headless-repair', RunAsAdmin: false, RunOnClose: true, KillAfterClose: false } },
+      { IsEnabled: true, Addon: { Path: INSTALLED_EXE, CommandLine: '--headless-check', RunAsAdmin: false, RunOnClose: false, KillAfterClose: false } },
+      { IsEnabled: true, Addon: { Path: INSTALLED_EXE, CommandLine: '--headless-repair', RunAsAdmin: false, RunOnClose: true, KillAfterClose: false } },
     ])
     // Reopening reads the switch back from XIVLauncher's own list.
     const reopened = createCore(platform)
     await reopened.scan()
     expect(reopened.getState().xivLauncher).toMatchObject({ autoRepair: true })
+  })
+
+  it('points the entries at the running exe when Lucent stays portable', async () => {
+    const { platform, core } = await deployed({ addToStartMenu: false })
+    await core.setAutoRepair(true)
+    expect((await addons(platform)).map((a) => a.Addon.Path)).toEqual([FAKE_EXE_PATH, FAKE_EXE_PATH])
   })
 
   it('turning it off removes both entries and leaves the other add-ons untouched', async () => {

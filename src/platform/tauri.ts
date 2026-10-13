@@ -48,9 +48,13 @@ export function createTauriPlatform(): Platform {
     exePath: () => call<string>('platform_exe_path', {}),
     launchExe: (path) => call('platform_launch_exe', { path }),
     isProcessRunning: (exeName) => call<boolean>('platform_is_process_running', { exeName }),
-    getHeadlessMode: () => call('platform_headless_mode', {}),
     notify: (title, body) => call('platform_notify', { title, body }),
     exit: () => call('platform_exit', {}),
+    createShortcut: (path, target) => call('platform_create_shortcut', { path, target }),
+    setUninstallEntry: (id, values) => call('platform_set_uninstall_entry', { id, values }),
+    removeUninstallEntry: (id) => call('platform_remove_uninstall_entry', { id }),
+    headlessMode: () => call('platform_headless_mode', {}),
+    exitAndRemove: (folders) => call('platform_exit_and_remove', { folders }),
     downloadFile: (url, to, progress) => {
       const channel = new Channel<number>()
       channel.onmessage = progress

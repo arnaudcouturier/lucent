@@ -101,8 +101,16 @@ export interface Platform {
   exePath(): Promise<string>
   /** Starts the exe at `path`; the real port then exits this process so the new one takes over. */
   launchExe(path: string): Promise<void>
-  /** The headless run this process was started for (by a XIVLauncher add-on), or null for the window. */
-  getHeadlessMode(): Promise<HeadlessMode | null>
+  /** Creates or replaces a Windows shortcut (.lnk) at `path` that starts `target`. */
+  createShortcut(path: string, target: string): Promise<void>
+  /** Creates or updates this user's Settings → Apps entry `id`; strings and DWORD numbers, no admin. */
+  setUninstallEntry(id: string, values: Record<string, string | number>): Promise<void>
+  /** Removes this user's Settings → Apps entry `id`; a missing entry counts as removed. */
+  removeUninstallEntry(id: string): Promise<void>
+  /** How this exe was started: Settings → Apps' uninstall window, a XIVLauncher add-on's headless run, or null for the main window. */
+  headlessMode(): Promise<'uninstall' | HeadlessMode | null>
+  /** Exits Lucent; once its process has ended, removes these folders and everything in them. */
+  exitAndRemove(folders: string[]): Promise<void>
   /** Shows a Windows notification from Lucent. */
   notify(title: string, body: string): Promise<void>
   /** Ends a headless run; the real port exits this process. */

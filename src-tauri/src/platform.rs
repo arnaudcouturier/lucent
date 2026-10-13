@@ -5,7 +5,7 @@
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 use winreg::RegKey;
@@ -451,13 +451,15 @@ pub fn is_elevated() -> Result<bool> {
     }
 }
 
-/// `check` or `repair` when XIVLauncher started Lucent with a headless flag.
+/// `uninstall` when Settings → Apps started Lucent as its own uninstaller (`--uninstall`);
+/// `check` or `repair` when a XIVLauncher add-on started a headless run.
 pub fn headless_mode() -> Option<&'static str> { headless_mode_from(std::env::args_os().skip(1)) }
 
 fn headless_mode_from<I: IntoIterator<Item = std::ffi::OsString>>(args: I) -> Option<&'static str> {
     args.into_iter().find_map(|arg| match arg.to_str()? {
         "--headless-check" => Some("check"),
         "--headless-repair" => Some("repair"),
+        "--uninstall" => Some("uninstall"),
         _ => None,
     })
 }
@@ -506,7 +508,8 @@ fn elevation_arguments(path: &Path) -> Result<String> {
     if path.contains(['"', '\0']) || !Path::new(path).is_absolute() || !path.ends_with(".json") {
         return Err(PlatformError::new(ErrorKind::Unknown, "Invalid administrator resume path.", Some(Path::new(path))));
     }
-    Ok(format!("--lucent-resume \"{path}\""))
+    let uninstall = if headless_mode() == Some("uninstall") { " --uninstall" } else { "" };
+    Ok(format!("--lucent-resume \"{path}\"{uninstall}"))
 }
 
 /// Uses Windows UAC rather than a shell. Cancellation leaves the current app running.
@@ -541,6 +544,123 @@ pub fn request_elevation(resume_path: &Path) -> Result<()> {
         })?;
         if !info.hProcess.is_invalid() { let _ = CloseHandle(info.hProcess); }
     }
+    std::process::exit(0)
+}
+
+/// Creates or replaces a `.lnk` at `path` that starts `target`.
+pub fn create_shortcut(path: &Path, target: &Path) -> Result<()> {
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| PlatformError::io(e, Some(parent)))?; }
+    let target_directory = target.parent().ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The shortcut target must name a file.", Some(target)))?;
+    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), Some(path));
+    // SAFETY: every HSTRING outlives the synchronous COM calls. COM is uninitialized only if this call
+    // initialized it, after the shell link and file interfaces (dropped inside the closure) are released.
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return Err(PlatformError::new(ErrorKind::Unknown, initialized.to_string(), None));
+        }
+        let result = (|| {
+            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).map_err(error)?;
+            link.SetPath(&HSTRING::from(target.as_os_str())).map_err(error)?;
+            link.SetWorkingDirectory(&HSTRING::from(target_directory.as_os_str())).map_err(error)?;
+            link.SetIconLocation(&HSTRING::from(target.as_os_str()), 0).map_err(error)?;
+            link.SetDescription(&HSTRING::from("Lucent")).map_err(error)?;
+            let file: IPersistFile = link.cast().map_err(error)?;
+            file.Save(&HSTRING::from(path.as_os_str()), true).map_err(error)
+        })();
+        if initialized.is_ok() { CoUninitialize(); }
+        result
+    }
+}
+
+const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+
+fn uninstall_key_path(id: &str) -> Result<String> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return Err(PlatformError::new(ErrorKind::Unknown, format!("Invalid uninstall entry id {id:?}"), None));
+    }
+    Ok(format!(r"{UNINSTALL_KEY}\{id}"))
+}
+
+/// Creates the per-user Settings -> Apps entry `id`, or updates its values.
+pub fn set_uninstall_entry(id: &str, values: &serde_json::Map<String, serde_json::Value>) -> Result<()> {
+    let path = uninstall_key_path(id)?;
+    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(&path).map_err(|e| PlatformError::io(e, None))?;
+    for (name, value) in values {
+        let written = match value {
+            serde_json::Value::String(text) => key.set_value(name, text),
+            serde_json::Value::Number(number) => match number.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                Some(n) => key.set_value(name, &n),
+                None => return Err(PlatformError::new(ErrorKind::Unknown, format!("Uninstall value {name} must be a 32-bit unsigned integer"), None)),
+            },
+            _ => return Err(PlatformError::new(ErrorKind::Unknown, format!("Uninstall value {name} must be a string or number"), None)),
+        };
+        written.map_err(|e| PlatformError::io(e, None))?;
+    }
+    Ok(())
+}
+
+/// Deletes the Settings -> Apps entry `id`; one that is already gone is success.
+pub fn remove_uninstall_entry(id: &str) -> Result<()> {
+    let path = uninstall_key_path(id)?;
+    match RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(PlatformError::io(e, None)),
+    }
+}
+
+fn validate_removal_folder(folder: &Path, named_lucent: bool) -> Result<()> {
+    use std::path::Component;
+    let invalid = |why: &str| PlatformError::new(ErrorKind::Unknown, format!("Refusing to remove this folder: {why}."), Some(folder));
+    let text = folder.to_str().ok_or_else(|| invalid("the path is not UTF-8"))?;
+    if text.chars().any(|c| c == '"' || c == '%' || c.is_control()) { return Err(invalid("the path has unsafe characters")); }
+    if !folder.is_absolute() { return Err(invalid("the path is not absolute")); }
+    let mut names = 0;
+    for component in folder.components() {
+        match component {
+            Component::Normal(_) => names += 1,
+            Component::ParentDir | Component::CurDir => return Err(invalid("the path is not normalized")),
+            _ => {}
+        }
+    }
+    if names < 3 { return Err(invalid("the path is too short")); }
+    let last = folder.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if named_lucent && !last.eq_ignore_ascii_case("Lucent") { return Err(invalid("it is not a Lucent folder")); }
+    Ok(())
+}
+
+fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String> {
+    for folder in folders { validate_removal_folder(folder, true)?; }
+    for folder in extra { validate_removal_folder(folder, false)?; }
+    let all: Vec<&PathBuf> = folders.iter().chain(extra).collect();
+    if all.is_empty() { return Err(PlatformError::new(ErrorKind::Unknown, "No folders to remove.", None)); }
+    // WebView2 child processes can hold files briefly after exit, so wait, then retry in rounds.
+    let mut steps = vec!["ping -n 3 127.0.0.1 >nul".to_owned()];
+    for round in 0..3 {
+        if round > 0 { steps.push("ping -n 3 127.0.0.1 >nul".to_owned()); }
+        for folder in &all { steps.push(format!("rmdir /s /q \"{}\" 2>nul", folder.display())); }
+    }
+    Ok(steps.join(" & "))
+}
+
+/// Spawns a hidden `cmd.exe` that deletes `folders` (plus `extra`, such as the WebView2 data folder)
+/// once this process has ended, then exits. Nothing is spawned if any folder is invalid.
+pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    // A hidden console, not DETACHED_PROCESS: without a console, each `ping` would open a visible one.
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let script = build_removal_script(folders, extra)?;
+    std::process::Command::new("cmd.exe")
+        .raw_arg(format!("/d /c \"{script}\""))
+        .current_dir(std::env::temp_dir())
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| PlatformError::io(e, None))?;
     std::process::exit(0)
 }
 
@@ -619,6 +739,7 @@ mod tests {
         assert_eq!(parse(&["--lucent-resume", r"C:\resume.json"]), None);
         assert_eq!(parse(&["--lucent-resume", "x.json", "--headless-repair"]), Some("repair"));
         assert_eq!(parse(&["--headless-checks", "headless-check"]), None);
+        assert_eq!(parse(&["--uninstall"]), Some("uninstall"));
     }
 
     #[test]
@@ -630,6 +751,67 @@ mod tests {
     #[ignore = "shows a real toast"]
     fn shows_a_toast() {
         notify("Lucent test", "Toast smoke test <ok> & fine").unwrap();
+    }
+
+    #[test]
+    fn removal_script_quotes_folders_and_rejects_unsafe_ones() {
+        let script = build_removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")], &[]).unwrap();
+        assert!(script.starts_with(r#"ping -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#), "got {script}");
+        assert_eq!(script.matches("rmdir").count(), 3);
+        for bad in [
+            r"Users\Me\Local\Lucent", "C:\\Users\\Me\\\"x\\Lucent", r"C:\Users\%TEMP%\Lucent", r"C:\Lucent",
+            r"C:\Users\Me\Local\Other", r"C:\Users\Me\..\Lucent", "C:\\Users\\Me\\Local\\Lucent\n",
+        ] {
+            assert_eq!(build_removal_script(&[PathBuf::from(bad)], &[]).unwrap_err().kind, ErrorKind::Unknown, "{bad}");
+        }
+        assert!(build_removal_script(&[], &[]).is_err());
+        assert!(build_removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")], &[]).is_ok());
+    }
+
+    #[test]
+    fn extra_removal_folders_skip_only_the_name_rule() {
+        let lucent = PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent");
+        let webview = PathBuf::from(r"C:\Users\Me\AppData\Local\io.github.lucent");
+        assert!(build_removal_script(std::slice::from_ref(&lucent), std::slice::from_ref(&webview)).is_ok());
+        assert!(build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Local")]).is_err());
+        assert!(build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Users\Me\%x%")]).is_err());
+    }
+
+    #[test]
+    fn uninstall_entry_ids_cannot_escape_the_uninstall_key() {
+        for bad in [r"..\x", r"a\b", "", "a b", "a/b"] {
+            assert_eq!(set_uninstall_entry(bad, &serde_json::Map::new()).unwrap_err().kind, ErrorKind::Unknown, "{bad:?}");
+            assert_eq!(remove_uninstall_entry(bad).unwrap_err().kind, ErrorKind::Unknown, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn uninstall_entry_round_trips_and_removing_a_missing_one_succeeds() {
+        let id = format!("LucentTest-{}", std::process::id());
+        let values = serde_json::json!({ "DisplayName": "Lucent test", "NoModify": 1, "EstimatedSize": 4096 });
+        set_uninstall_entry(&id, values.as_object().unwrap()).unwrap();
+        let result = std::panic::catch_unwind(|| {
+            let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(format!(r"{UNINSTALL_KEY}\{id}")).unwrap();
+            assert_eq!(key.get_value::<String, _>("DisplayName").unwrap(), "Lucent test");
+            assert_eq!(key.get_value::<u32, _>("NoModify").unwrap(), 1);
+            assert_eq!(key.get_value::<u32, _>("EstimatedSize").unwrap(), 4096);
+        });
+        let bad = set_uninstall_entry(&id, serde_json::json!({ "Size": -1 }).as_object().unwrap());
+        remove_uninstall_entry(&id).unwrap();
+        remove_uninstall_entry(&id).unwrap();
+        result.unwrap();
+        assert_eq!(bad.unwrap_err().kind, ErrorKind::Unknown);
+        assert!(RegKey::predef(HKEY_CURRENT_USER).open_subkey(format!(r"{UNINSTALL_KEY}\{id}")).is_err());
+    }
+
+    #[test]
+    fn creates_and_replaces_a_shortcut() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("Programs").join("Lucent.lnk");
+        create_shortcut(&link, Path::new(r"C:\Windows\System32\notepad.exe")).unwrap();
+        assert!(fs::metadata(&link).unwrap().len() > 0);
+        create_shortcut(&link, Path::new(r"C:\Windows\System32\calc.exe")).unwrap();
+        assert!(fs::metadata(&link).unwrap().len() > 0);
     }
 
     #[test]

@@ -38,6 +38,10 @@ _Avoid_: using "vanilla" for a disabled deployment
 Lucent copying itself onto the player's machine so it can be launched like any installed app.
 _Avoid_: install (that word is ambiguous here)
 
+**App uninstall**:
+Removing Lucent itself from Settings → Apps: optionally an uninstall of every deployment, then the shortcut, the Settings → Apps entry, the data folder and the exe.
+_Avoid_: using "uninstall" alone for it (that word belongs to deployments)
+
 ### Content
 
 **Component**:
@@ -118,6 +122,10 @@ _Avoid_: broken, corruption
 **Repair**:
 Re-applying the deployment so that no drift remains.
 _Avoid_: fix, reinstall
+
+**Tier switch**:
+Planning the deployment again for the tier the current GPU matches, started by the user after a graphics card change. The profile stays when the new tier has it; Disabled and user changes stay.
+_Avoid_: re-tier, migrate
 
 **Disabled**:
 The state of a deployment whose files are present but inactive, so the game runs as if vanilla. It persists through repair, update and profile changes.

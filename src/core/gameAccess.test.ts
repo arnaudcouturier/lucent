@@ -8,6 +8,7 @@ import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
+const RADEON = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus
 const fixture = () => machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
 const snapshot = async (platform: FakePlatform) => Object.fromEntries(await Promise.all(
   (await platform.listFiles(GAME)).map(async (path) => [path, await platform.readText(`${GAME}\\${path}`)]),
@@ -30,7 +31,7 @@ it('observes XIV starting and closing without rescanning or losing the selected 
   expect(core.getState().selectedProfile).toBe('balanced')
 })
 
-it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
+it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -41,6 +42,7 @@ it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update'] as con
     core.finish()
     await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
     Object.assign(m.remoteText!, nextContentHost().remoteText)
+    if (command === 'switchTier') m.gpus = RADEON
     core = createCore(platform)
     await core.scan()
   }
@@ -104,7 +106,7 @@ it('asks once for a non-writable game folder and resumes deployment with the sam
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
 })
 
-it.each(['repair', 'profile', 'enabled', 'uninstall', 'update'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
+it.each(['repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -114,6 +116,7 @@ it.each(['repair', 'profile', 'enabled', 'uninstall', 'update'] as const)('conti
   core.finish()
   if (command === 'repair') await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
   if (command === 'update') Object.assign(m.remoteText!, nextContentHost().remoteText)
+  if (command === 'switchTier') m.gpus = RADEON
   core = createCore(platform)
   await core.scan()
   m.readOnlyDirectories = [GAME]
@@ -128,6 +131,7 @@ it.each(['repair', 'profile', 'enabled', 'uninstall', 'update'] as const)('conti
   if (command === 'profile') expect(resumed.getState().selectedProfile).toBe('balanced')
   else if (command === 'enabled') expect(resumed.getState().deployment?.enabled).toBe(false)
   else if (command === 'update') expect(resumed.getState().deployment?.contentVersion).toBe('2026.11.02')
+  else if (command === 'switchTier') expect(resumed.getState().deployment?.tier).toBe('radeon')
   else if (command === 'repair') expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
   else expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
   expect(platform.elevationRequests).toHaveLength(1)

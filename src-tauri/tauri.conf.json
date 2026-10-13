@@ -13,7 +13,6 @@
     "windows": [
       {
         "label": "main",
-        "create": false,
         "title": "Lucent",
         "width": 880,
         "height": 580,
@@ -22,6 +21,7 @@
         "decorations": false,
         "shadow": true,
         "center": true,
+        "visible": false,
         "backgroundColor": "#141519"
       }
     ],

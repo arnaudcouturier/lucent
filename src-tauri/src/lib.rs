@@ -99,8 +99,6 @@ async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_g
 #[tauri::command]
 async fn platform_is_process_running(exe_name: String) -> Result<bool, PlatformError> { files::is_process_running(&exe_name) }
 #[tauri::command]
-async fn platform_headless_mode() -> Option<&'static str> { platform::headless_mode() }
-#[tauri::command]
 async fn platform_notify(title: String, body: String) -> Result<(), PlatformError> { platform::notify(&title, &body) }
 #[tauri::command]
 async fn platform_exit(app: tauri::AppHandle) { app.exit(0) }
@@ -117,22 +115,45 @@ async fn platform_exe_path() -> Result<String, PlatformError> { platform::exe_pa
 #[tauri::command]
 async fn platform_launch_exe(path: PathBuf) -> Result<(), PlatformError> { platform::launch_exe(&path) }
 
+#[tauri::command]
+async fn platform_create_shortcut(path: PathBuf, target: PathBuf) -> Result<(), PlatformError> { platform::create_shortcut(&path, &target) }
+#[tauri::command]
+async fn platform_set_uninstall_entry(id: String, values: serde_json::Map<String, serde_json::Value>) -> Result<(), PlatformError> { platform::set_uninstall_entry(&id, &values) }
+#[tauri::command]
+async fn platform_remove_uninstall_entry(id: String) -> Result<(), PlatformError> { platform::remove_uninstall_entry(&id) }
+#[tauri::command]
+async fn platform_headless_mode() -> Option<String> { platform::headless_mode().map(str::to_owned) }
+#[tauri::command]
+async fn platform_exit_and_remove(app: tauri::AppHandle, folders: Vec<PathBuf>) -> Result<(), PlatformError> {
+    use tauri::Manager;
+    // The WebView2 data folder is only released once this process ends, so it goes in the same script.
+    let webview: Vec<PathBuf> = app.path().app_local_data_dir().ok().filter(|p| p.exists()).into_iter().collect();
+    platform::exit_and_remove(&folders, &webview)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // The window is built here, not auto-created from the config, so a headless run
-            // (XIVLauncher hooks) never shows or flashes one; the webview still loads and works.
-            let headless = platform::headless_mode().is_some();
-            if headless {
-                // A stuck run would stay hidden, and XIVLauncher skips an add-on whose exe is still running.
-                std::thread::spawn(|| { std::thread::sleep(std::time::Duration::from_secs(30 * 60)); std::process::exit(1) });
+            use tauri::Manager;
+            let Some(window) = app.get_webview_window("main") else { return Ok(()) };
+            match platform::headless_mode() {
+                // A XIVLauncher add-on run: the window stays hidden while the webview does the work.
+                Some("check" | "repair") => {
+                    window.set_skip_taskbar(true)?;
+                    // A stuck run would stay hidden, and XIVLauncher skips an add-on whose exe is still running.
+                    std::thread::spawn(|| { std::thread::sleep(std::time::Duration::from_secs(30 * 60)); std::process::exit(1) });
+                    return Ok(());
+                }
+                // Sized to --uninstall-width and --uninstall-height in tokens.css.
+                Some("uninstall") => {
+                    window.set_size(tauri::LogicalSize::new(460.0, 340.0))?;
+                    window.center()?;
+                    window.set_title("Uninstall Lucent")?;
+                }
+                _ => {}
             }
-            let config = app.config().app.windows.first().expect("main window config").clone();
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
-                .visible(!headless)
-                .skip_taskbar(headless)
-                .build()?;
+            window.show()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -151,7 +172,9 @@ pub fn run() {
             platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
             platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe,
             platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation,
-            platform_is_process_running, platform_headless_mode, platform_notify, platform_exit
+            platform_is_process_running, platform_notify, platform_exit,
+            platform_create_shortcut, platform_set_uninstall_entry, platform_remove_uninstall_entry, platform_headless_mode,
+            platform_exit_and_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");

@@ -7,6 +7,7 @@ import { crystalState } from '../core/crystal'
 import { createFakePlatform, type Machine } from '../platform/fake'
 import { MACHINES, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
+import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
@@ -30,13 +31,15 @@ interface GalleryState {
   label: string
   setup: () => Promise<Core>
   preview?: { activity: Activity; description: string }
+  /** The window Settings → Apps opens, instead of the main one. */
+  uninstallWindow?: boolean
 }
 
 const crystalPreview = (key: string, label: string, activity: Activity, description: string): GalleryState => ({
   key: `crystal-${key}`, label: `Crystal · ${label}`, setup: scanned(MACHINES.steam), preview: { activity, description },
 })
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>> = {}): Activity => ({
-  kind: 'deployment', enabled: true, drift: null, update: null, operation: null, ...patch,
+  kind: 'deployment', enabled: true, drift: null, update: null, tierChange: null, operation: null, ...patch,
 })
 
 const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, includeReShade = true) => async () => {
@@ -132,6 +135,35 @@ const updateAvailable = (stage: 'update' | 'updating') => async () => {
   return reopened
 }
 
+/** The player swaps their graphics card after deploying. */
+const newGraphicsCard = async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  m.gpus = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
+/** The game folder is emptied or moved after deploying. */
+const missingGameFolder = async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  for (const file of await platform.listFiles(folder.path)) await platform.removeFile(`${folder.path}\\${file}`)
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
 const versionHistory = async () => {
   const m = machine(MACHINES.steam)
   const platform = createFakePlatform(m)
@@ -192,6 +224,23 @@ const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-f
     m.remoteText![APP_EXE_URL] = 'Corrupt download'
     await core.updateApp()
   }
+  return core
+}
+
+/** Lucent deployed and in the Start menu, then opened from Settings → Apps. */
+const appUninstall = (stage: 'confirm' | 'game-running' | 'done') => async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const deployed = createCore(platform)
+  await deployed.scan()
+  await deployed.review()
+  await deployed.deploy()
+  m.exePath = `${await platform.envFolder('LocalAppData')}\\Lucent\\Lucent.exe`
+  m.headlessMode = 'uninstall'
+  if (stage === 'game-running') m.gameRunning = true
+  const core = createCore(platform)
+  await core.openAppUninstall()
+  if (stage === 'done') await core.uninstallApp(true)
   return core
 }
 
@@ -276,6 +325,8 @@ const STATES: GalleryState[] = [
   } },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
+  { key: 'new-gpu', label: 'Main · New graphics card', setup: newGraphicsCard },
+  { key: 'folder-missing', label: 'Main · Game folder missing', setup: missingGameFolder },
   { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
   { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
   { key: 'versions', label: 'Main · Versions and rollback', setup: versionHistory },
@@ -288,6 +339,9 @@ const STATES: GalleryState[] = [
     await core.uninstall()
     return core
   } },
+  { key: 'app-uninstall', label: 'Settings → Apps · Uninstall Lucent', setup: appUninstall('confirm'), uninstallWindow: true },
+  { key: 'app-uninstall-game-running', label: 'Settings → Apps · XIV running', setup: appUninstall('game-running'), uninstallWindow: true },
+  { key: 'app-uninstall-done', label: 'Settings → Apps · uninstalled', setup: appUninstall('done'), uninstallWindow: true },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
@@ -379,7 +433,7 @@ export function Gallery() {
                 </div>
               </Screen>
             </Window>
-          ) : <App />}
+          ) : state.uninstallWindow ? <UninstallWindow /> : <App />}
         </CoreContext.Provider>
       )}
       <div className="gallery-bar" role="toolbar" aria-label="State gallery">

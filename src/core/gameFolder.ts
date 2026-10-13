@@ -86,7 +86,7 @@ const SOURCES: [GameFolderSource, (platform: Platform) => Promise<string[]>][] =
 ]
 
 /** A folder is a game folder only if it holds the DX11 game executable. */
-async function isGameFolder(platform: Platform, folder: string): Promise<boolean> {
+export async function isGameFolder(platform: Platform, folder: string): Promise<boolean> {
   return (await attempt(() => platform.stat(joinPath(folder, GAME_EXECUTABLE))))?.kind === 'file'
 }
 
