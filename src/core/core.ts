@@ -17,6 +17,7 @@ import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
+import { detectCustomProfile, type CustomProfile } from './customProfile'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
 import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
 
@@ -85,6 +86,8 @@ export interface State {
   appUninstalled: boolean
   profiles: PerformanceProfile[]
   selectedProfile: ProfileId | null
+  /** Null unless a user change to one of the selected profile's settings shows the profile as Custom. */
+  customProfile: CustomProfile | null
   busy: boolean
   error: string | null
   notice: string | null
@@ -156,7 +159,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
+    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -243,6 +246,7 @@ export function createCore(platform: Platform): Core {
       // A version that can't be planned is never announced; it must not keep the deployment from opening.
       const update = await announceUpdate(record).catch(() => null)
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift, update) })
+      await refreshCustomProfile()
       await pruneCache(record)
       await refreshVersions()
     }
@@ -303,12 +307,20 @@ export function createCore(platform: Platform): Core {
     if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, drift } })
     return drift
   }
+  /** Shows the profile as Custom while the deployed configs hold a changed value of its settings. */
+  const refreshCustomProfile = async () => {
+    if (state.deployment?.status !== 'complete' || state.gameFolder.status !== 'found') return
+    try {
+      const customProfile = await detectCustomProfile(platform, state.deployment)
+      if (JSON.stringify(customProfile) !== JSON.stringify(state.customProfile)) set({ customProfile })
+    } catch { /* The last result keeps showing; configs that can't be read are the health check's concern. */ }
+  }
   /** After a command, whether it succeeded or was undone, checks the deployment as it now stands on disk. */
   const refreshHealthAfter = async (full = false) => {
     if (state.recoveryRequired || state.gameFolder.status !== 'found') return
     try {
       const record = await readDeployment(platform, state.gameFolder.path)
-      if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full) }
+      if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full); await refreshCustomProfile() }
     } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
   const refreshAnnouncement = async () => {
@@ -436,12 +448,14 @@ export function createCore(platform: Platform): Core {
     async refreshGameRunning() {
       try {
         const gameRunning = await platform.isGameRunning()
+        const closed = state.gameRunning === true && !gameRunning
         if (state.gameRunning !== gameRunning) set({ gameRunning })
+        if (closed) await refreshCustomProfile()
       } catch { if (state.gameRunning !== null) set({ gameRunning: null }) }
     },
     async scan() {
       if (state.busy) return
-      set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, versions: [], profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, versions: [], profiles: [], selectedProfile: null, customProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
         const context = await takeElevationResume(platform)
@@ -463,7 +477,7 @@ export function createCore(platform: Platform): Core {
           await restoreDeployment(folder)
         } else if (showLostDeployment && !resume) {
           const lost = await lostDeployment(platform)
-          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: lost.recipe.performanceProfiles ?? [], selectedProfile: lost.profile ?? null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
+          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: lost.recipe.performanceProfiles ?? [], selectedProfile: lost.profile ?? null, customProfile: null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
         }
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
@@ -503,7 +517,7 @@ export function createCore(platform: Platform): Core {
         const picked = await platform.pickFolder({ title: 'Choose the game folder' })
         if (picked === null) return
         const folder = await checkPickedFolder(platform, picked)
-        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, plan: null, existingSetups: [] } : { rejectedFolder: picked })
+        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, customProfile: null, plan: null, existingSetups: [] } : { rejectedFolder: picked })
         if (folder) await restoreDeployment(folder)
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
@@ -680,10 +694,10 @@ export function createCore(platform: Platform): Core {
       } catch (error) {
         const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
         // A half-undone deployment is no longer the one the main screen describes.
-        set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, plan: null, activity: { kind: 'scan' } } : {}) })
+        set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, customProfile: null, plan: null, activity: { kind: 'scan' } } : {}) })
         return
       }
-      set({ busy: false, deployment: null, existingSetups: [], hotkeys: [], notice: 'Lucent is uninstalled. Your game folder is as it was before.' })
+      set({ busy: false, deployment: null, customProfile: null, existingSetups: [], hotkeys: [], notice: 'Lucent is uninstalled. Your game folder is as it was before.' })
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })
