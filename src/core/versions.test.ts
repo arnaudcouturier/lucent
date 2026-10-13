@@ -124,14 +124,20 @@ it('rolls back offline using the saved recipe when the manifest no longer contai
   expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
 })
 
-it('does not force a version change or download because content is known broken on the detected game version', async () => {
+it('warns only a pinned player whose content is known broken on the detected game version, and never forces a change or download', async () => {
   const { platform, m } = await deployed()
   await platform.writeText(`${GAME}\\ffxivgame.ver`, '2026.10.20.0000.0000')
-  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [{ ...FIRST, knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] })
+  const broken = { ...FIRST, knownBrokenGameVersions: ['2026.10.20.0000.0000'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [broken] })
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+  await publish(m, '2026.11.02', 'Second OptiScaler', [broken])
+  await (await reopen(platform)).update()
   const downloads = platform.downloads.length
+  await (await reopen(platform)).applyVersion(FIRST.id)
   const core = await reopen(platform)
-  expect(core.getState().deployment?.contentVersion).toBe(FIRST.id)
+  expect(core.getState().deployment).toMatchObject({ contentVersion: FIRST.id, pinned: true })
   expect(statusCard(core.getState())).toMatchObject({ kind: 'healthy', caution: expect.stringContaining('known broken on game 2026.10.20.0000.0000') })
+  expect(core.getState().deployment?.contentVersion).toBe(FIRST.id)
   expect(platform.downloads.length).toBe(downloads)
 })
 

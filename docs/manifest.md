@@ -62,8 +62,8 @@ Each version contains:
 - `id`: a date in `YYYY.MM.DD` form; `channel`: `stable` or `beta`; `minAppVersion`: the minimum
   app version; `changelog`: lines to display when offering this content.
 - `knownBrokenGameVersions` (optional): exact game-version strings on which this content is known
-  broken, for example `["2026.10.20.0000.0000"]`. This adds a caution line to the current status card;
-  it never changes a deployment or forces an update. Omitted means no known broken game versions.
+  broken, for example `["2026.10.20.0000.0000"]`. When the player has pinned this version, it adds a
+  caution line to the status card; it never changes a deployment or forces an update. Omitted means no known broken game versions.
 - `components`: objects with `name`, `upstream`, `licence`, and an HTTPS `source` link. GPL components
   should use a source link to their exact source tag.
 - `files`: objects with `sha256`, `size` in bytes, and `release` (a `content-YYYY.MM.DD` tag).

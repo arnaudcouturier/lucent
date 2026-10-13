@@ -42,13 +42,14 @@ it('shows deploying as busy, and no card before a deployment exists', () => {
   expect(statusCard({ activity: { kind: 'review' }, deploymentProgress: null } as unknown as State)).toBeNull()
 })
 
-it('adds a known-broken caution to the existing card only for the deployed content and detected game version', () => {
+it('adds a known-broken caution to a pinned deployment card only for its content and the detected game version', () => {
   const state = { ...deployment({ enabled: false }),
-    deployment: { contentVersion: '2026.10.12' },
+    deployment: { contentVersion: '2026.10.12', pinned: true },
     gameFolder: { status: 'found', version: '2026.10.20.0000.0000' },
     manifest: { status: 'ready', manifest: { ...PROFILE_MANIFEST, versions: [{ ...PROFILE_MANIFEST.versions[0], knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] } },
   } as State
   expect(statusCard(state)).toEqual({ kind: 'disabled', caution: 'Content 2026.10.12 is known broken on game 2026.10.20.0000.0000. You can choose another version in Versions.' })
   expect(statusCard({ ...state, gameFolder: { ...state.gameFolder, version: '2026.10.12.0000.0000' } } as State)).toEqual({ kind: 'disabled' })
+  expect(statusCard({ ...state, deployment: { ...state.deployment!, pinned: false } })).toEqual({ kind: 'disabled' })
   expect(statusCard({ ...state, activity: { ...deployment({ drift }).activity } })).toMatchObject({ kind: 'drift', caution: expect.stringContaining('known broken') })
 })

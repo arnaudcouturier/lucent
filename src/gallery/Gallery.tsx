@@ -12,7 +12,7 @@ import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
 import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
-import { NEXT_CONTENT, NEXT_MANIFEST, PROFILE_MANIFEST } from '../platform/contentFixture'
+import { NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
 import { MANIFEST_URL } from '../core/manifest'
 import './gallery.css'
 
@@ -165,10 +165,17 @@ const knownBrokenContent = async () => {
   await core.deploy()
   const folder = core.getState().gameFolder
   if (folder.status !== 'found') throw new Error('Gallery game folder missing')
-  await platform.writeText(`${folder.path}\\game\\ffxivgame.ver`, '2026.10.20.0000.0000')
-  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...PROFILE_MANIFEST, versions: [{ ...PROFILE_MANIFEST.versions[0], knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] })
-  const reopened = createCore(platform)
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  let reopened = createCore(platform)
   await reopened.scan()
+  await reopened.update()
+  // The caution is for pinned players, so roll back to the known-broken version first.
+  const [first, ...rest] = NEXT_MANIFEST.versions
+  await platform.writeText(`${folder.path}\\game\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [{ ...first, knownBrokenGameVersions: ['2026.10.20.0000.0000'] }, ...rest] })
+  reopened = createCore(platform)
+  await reopened.scan()
+  await reopened.applyVersion(first.id)
   return reopened
 }
 

@@ -16,7 +16,8 @@ export type StatusCard = CardState & { caution?: string }
 /** The first match wins. Scan can announce app releases; deployment cards also cover content and health. */
 export function statusCard(state: Readonly<State>): StatusCard | null {
   const card = cardState(state)
-  if (!card || !state.deployment || state.gameFolder?.status !== 'found' || !state.gameFolder.version) return card
+  // Known-broken is advisory for pinned players; unpinned players are offered the next version instead.
+  if (!card || !state.deployment?.pinned || state.gameFolder?.status !== 'found' || !state.gameFolder.version) return card
   const id = state.deployment.contentVersion
   const content = state.manifest?.status === 'ready' ? state.manifest.manifest.versions.find((v) => v.id === id) : null
   const knownBroken = content ? content.knownBrokenGameVersions : state.deployment.cachedVersions?.find((v) => v.content.id === id)?.content.knownBrokenGameVersions
