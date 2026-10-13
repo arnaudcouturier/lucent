@@ -96,7 +96,7 @@ describe('Scan shows the graphics card and its tier', () => {
   it('reads a dev manifest locally and carries its local files directory without contacting GitHub', async () => {
     const core = createCore(createFakePlatform({
       devContent: { manifestPath: 'C:\\Dev\\manifest.json', filesDirectory: 'C:\\Dev\\files' },
-      files: { 'C:\\Dev\\manifest.json': JSON.stringify({ ...manifest, tiers: [{ ...manifest.tiers.at(-1), label: 'Local tier' }] }) },
+      files: { 'C:\\Dev\\manifest.json': JSON.stringify({ ...manifest, versions: [], tiers: [{ ...manifest.tiers.at(-1), label: 'Local tier' }] }) },
       gpus: [{ name: 'NVIDIA GeForce RTX 4090', vendorId: 0x10de, dedicatedMemory: 24 * GIB, software: false }],
       // No fake release host: a network fetch would fail.
     }))
