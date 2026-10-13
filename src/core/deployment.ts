@@ -158,9 +158,20 @@ const discardCheckpoints = (platform: Platform, recordPath: string, checkpoints:
 
 /** Recovery precedes Scan and does not depend on which folder a launcher currently points at. */
 export async function recoverDeployments(platform: Platform, beforeRecovery?: (record: DeploymentRecord) => Promise<void>): Promise<DeploymentRecord[]> {
-  const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
-  if (!await maybeStat(platform, directory)) return []
   const recovered: DeploymentRecord[] = []
+  for await (const record of deploymentRecords(platform)) {
+    if (record.status !== 'applying') continue
+    await beforeRecovery?.(record)
+    await undoDeployment(platform, record)
+    recovered.push(record)
+  }
+  return recovered
+}
+
+/** Every deployment record in Lucent's data folder, whichever game folder it belongs to. */
+export async function* deploymentRecords(platform: Platform): AsyncGenerator<DeploymentRecord> {
+  const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
+  if (!await maybeStat(platform, directory)) return
   for (const relative of (await platform.listFiles(directory)).sort()) {
     if (!relative.endsWith('record.json')) continue
     const path = joinPath(directory, relative)
@@ -170,13 +181,8 @@ export async function recoverDeployments(platform: Platform, beforeRecovery?: (r
       throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
     }
     const record = await readDeployment(platform, value.gameFolder)
-    if (record?.status === 'applying') {
-      await beforeRecovery?.(record)
-      await undoDeployment(platform, record)
-      recovered.push(record)
-    }
+    if (record) yield record
   }
-  return recovered
 }
 
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {

@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -18,6 +18,7 @@ import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type Pro
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
+import { isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -64,6 +65,12 @@ export interface State {
   versions: VersionChoice[]
   deploymentProgress: DeploymentProgress | null
   includeReShade: boolean
+  /** Review's "Add Lucent to the Start menu"; Install self-installs when it's on. */
+  addToStartMenu: boolean
+  /** Lucent is in the Start menu and Settings → Apps, so Review no longer offers it. */
+  selfInstalled: boolean
+  /** Set once the uninstall from Settings → Apps finishes; the real port has exited by then. */
+  appUninstalled: boolean
   profiles: PerformanceProfile[]
   selectedProfile: ProfileId | null
   busy: boolean
@@ -86,6 +93,7 @@ export interface Core {
   continueSetup(): Promise<void>
   selectProfile(profile: ProfileId): Promise<void>
   review(includeReShade?: boolean): Promise<void>
+  setAddToStartMenu(add: boolean): void
   backToScan(): void
   backToProfile(): void
   deploy(): Promise<void>
@@ -106,6 +114,10 @@ export interface Core {
   skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
   uninstall(): Promise<void>
+  /** Opens the uninstall window Settings → Apps starts, continuing a confirmed uninstall after admin access. */
+  openAppUninstall(): Promise<void>
+  /** Optionally uninstalls every deployment, then removes the shortcut, the Settings → Apps entry, the data folder and the exe. */
+  uninstallApp(restoreGameFolder: boolean): Promise<void>
   copyDiagnostics(): Promise<void>
   reportBug(): Promise<void>
   openLink(url: string): Promise<void>
@@ -126,7 +138,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
+    plan: null, existingSetups: [], deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -212,6 +224,19 @@ export function createCore(platform: Platform): Core {
       await pruneCache(record)
       await refreshVersions()
     }
+  }
+  const checkSelfInstall = async () => {
+    try {
+      const selfInstalled = await isSelfInstalled(platform)
+      set({ selfInstalled })
+      if (selfInstalled) await refreshSelfInstall(platform, APP_VERSION)
+    } catch { /* Review offers the Start menu again; adding it once more is harmless. */ }
+  }
+  const addToStartMenu = async () => {
+    try {
+      await selfInstall(platform, APP_VERSION)
+      set({ selfInstalled: true })
+    } catch (error) { set({ notice: `Lucent couldn’t add itself to the Start menu. ${message(error)} It keeps working from where it is.` }) }
   }
   const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
     ({ kind: 'deployment', enabled: record.enabled, drift, update, operation: null })
@@ -346,6 +371,7 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) return
         // Recovery precedes all startup work, including cleanup of the last app update.
         await cleanupOldExe(platform)
+        await checkSelfInstall()
         const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
           findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform), announceApp(),
         ])
@@ -368,7 +394,8 @@ export function createCore(platform: Platform): Core {
           if (resume.kind === 'deploy') {
             resumeContentVersion = resume.contentVersion
             prepareProfiles(contentForTier())
-            set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade })
+            // The player's own process already self-installed before asking for admin access.
+            set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade, addToStartMenu: false })
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'profile') await core.selectProfile(resume.profile)
@@ -533,6 +560,7 @@ export function createCore(platform: Platform): Core {
       } catch (error) { set({ error: message(error) }) }
       set({ busy: false })
     },
+    setAddToStartMenu(add) { if (!state.busy && state.activity.kind === 'review') set({ addToStartMenu: add }) },
     backToScan() { if (!state.busy && !state.deployment) set({ activity: { kind: 'scan' }, plan: null, error: null }) },
     backToProfile() { if (!state.busy && !state.deployment) set({ activity: { kind: state.profiles.length ? 'profile' : 'scan' }, plan: null, error: null }) },
     async deploy() {
@@ -542,6 +570,8 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) { set({ activity: { kind: 'review' } }); return }
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
+        // As the player, before any admin prompt, so the shortcut and the entry are theirs.
+        if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
         if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile })) {
           set({ activity: { kind: 'review' } }); return
         }
@@ -584,6 +614,38 @@ export function createCore(platform: Platform): Core {
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })
+    },
+    async openAppUninstall() {
+      if (state.busy) return
+      set({ busy: true, error: null })
+      let confirmed = false
+      try {
+        const context = await takeElevationResume(platform)
+        if (context) { playerLocalAppData = context.localAppData; confirmed = context.request !== null }
+        await core.refreshGameRunning()
+      } catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false }) }
+      // Admin access is requested only after the player confirmed with "Restore the game folder".
+      if (confirmed) await core.uninstallApp(true)
+    },
+    async uninstallApp(restoreGameFolder) {
+      if (state.busy || state.appUninstalled) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        if (restoreGameFolder) {
+          if (!await recover()) return
+          for await (const record of deploymentRecords(platform)) {
+            if (record.status !== 'complete') continue
+            if (!await prepareWrite({ kind: 'uninstall', gameFolder: record.gameFolder })) return
+            await uninstallDeployment(platform, record.gameFolder)
+          }
+        }
+        // Only now: a failed restore keeps the journal and backups recovery needs.
+        await removeSelfInstall(platform)
+        set({ appUninstalled: true, notice: 'Lucent is uninstalled.' })
+        await platform.exitAndRemove([await lucentFolder(platform)])
+      } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
+      finally { set({ busy: false }) }
     },
   }
   return core

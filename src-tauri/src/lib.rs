@@ -109,9 +109,37 @@ async fn platform_exe_path() -> Result<String, PlatformError> { platform::exe_pa
 #[tauri::command]
 async fn platform_launch_exe(path: PathBuf) -> Result<(), PlatformError> { platform::launch_exe(&path) }
 
+#[tauri::command]
+async fn platform_create_shortcut(path: PathBuf, target: PathBuf) -> Result<(), PlatformError> { platform::create_shortcut(&path, &target) }
+#[tauri::command]
+async fn platform_set_uninstall_entry(id: String, values: serde_json::Map<String, serde_json::Value>) -> Result<(), PlatformError> { platform::set_uninstall_entry(&id, &values) }
+#[tauri::command]
+async fn platform_remove_uninstall_entry(id: String) -> Result<(), PlatformError> { platform::remove_uninstall_entry(&id) }
+#[tauri::command]
+async fn platform_headless_mode() -> Option<String> { platform::headless_mode().map(str::to_owned) }
+#[tauri::command]
+async fn platform_exit_and_remove(app: tauri::AppHandle, folders: Vec<PathBuf>) -> Result<(), PlatformError> {
+    use tauri::Manager;
+    // The WebView2 data folder is only released once this process ends, so it goes in the same script.
+    let webview: Vec<PathBuf> = app.path().app_local_data_dir().ok().filter(|p| p.exists()).into_iter().collect();
+    platform::exit_and_remove(&folders, &webview)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            use tauri::Manager;
+            let Some(window) = app.get_webview_window("main") else { return Ok(()) };
+            // Sized to --uninstall-width and --uninstall-height in tokens.css.
+            if platform::headless_mode() == Some("uninstall") {
+                window.set_size(tauri::LogicalSize::new(460.0, 340.0))?;
+                window.center()?;
+                window.set_title("Uninstall Lucent")?;
+            }
+            window.show()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             platform_read_text,
             platform_read_text_tail,
@@ -127,7 +155,9 @@ pub fn run() {
             platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
             platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
             platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe,
-            platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation
+            platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation,
+            platform_create_shortcut, platform_set_uninstall_entry, platform_remove_uninstall_entry, platform_headless_mode,
+            platform_exit_and_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");

@@ -21,6 +21,7 @@
         "decorations": false,
         "shadow": true,
         "center": true,
+        "visible": false,
         "backgroundColor": "#141519"
       }
     ],

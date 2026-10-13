@@ -22,6 +22,8 @@ export interface Machine {
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
   windowsVersion?: string
+  /** How Settings → Apps started this exe; null or absent for the main window. */
+  headlessMode?: 'uninstall' | null
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
@@ -35,6 +37,7 @@ const norm = (path: string) =>
   path.replace(/\//g, '\\').replace(/\\{2,}/g, '\\').replace(/\\$/, '').toLowerCase()
 
 export const FAKE_EXE_PATH = 'C:\\Users\\Player\\Downloads\\Lucent.exe'
+const uninstallKey = (id: string) => norm(`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${id}`)
 
 export interface FakePlatform extends Platform {
   readonly elevationRequests: string[]
@@ -43,6 +46,8 @@ export interface FakePlatform extends Platform {
   readonly launched: string[]
   readonly clipboard: string | null
   readonly openedUrls: string[]
+  /** The folders the last exit was asked to remove; null while Lucent is running. */
+  readonly removedOnExit: string[] | null
   listDirectories(root: string): Promise<string[]>
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
@@ -71,6 +76,9 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   }
   for (const directory of machine.directories ?? []) addParents(directory)
   for (const [path, content] of Object.entries(machine.files ?? {})) { files.set(norm(path), content); addParents(path) }
+  // Like a real machine, the running exe exists.
+  const runningExe = machine.exePath ?? FAKE_EXE_PATH
+  if (!files.has(norm(runningExe))) { files.set(norm(runningExe), 'Lucent 0.1.0'); addParents(runningExe) }
   const registry = new Map<string, Map<string, string>>()
   for (const [key, values] of Object.entries(machine.registry ?? {})) {
     registry.set(norm(key), new Map(Object.entries(values).map(([name, v]) => [name.toLowerCase(), v])))
@@ -82,6 +90,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   let clipboard: string | null = null
   const openedUrls: string[] = []
   const elevationRequests: string[] = []
+  let removedOnExit: string[] | null = null
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
@@ -102,6 +111,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     launched,
     get clipboard() { return clipboard },
     openedUrls,
+    get removedOnExit() { return removedOnExit },
     async getWindowsVersion() { await gate; return machine.windowsVersion ?? 'Windows 11 24H2 (build 26100.2033)' },
     async copyText(text) { await gate; clipboard = text },
     async openUrl(url) { await gate; openedUrls.push(url) },
@@ -186,6 +196,25 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     },
     async exePath() { await gate; return machine.exePath ?? FAKE_EXE_PATH },
     async launchExe(path) { await gate; launched.push(path) },
+    async createShortcut(path, target) { await this.writeText(path, `Shortcut to ${target}`) },
+    async setUninstallEntry(id, values) {
+      await gate
+      const key = uninstallKey(id)
+      const entry = registry.get(key) ?? new Map<string, string>()
+      for (const [name, value] of Object.entries(values)) entry.set(name.toLowerCase(), String(value))
+      registry.set(key, entry)
+    },
+    async removeUninstallEntry(id) { await gate; registry.delete(uninstallKey(id)) },
+    async headlessMode() { await gate; return machine.headlessMode ?? null },
+    // The real port exits here; the fake removes the folders at once and keeps running.
+    async exitAndRemove(folders) {
+      await gate
+      for (const folder of folders.map(norm)) {
+        for (const path of [...files.keys()]) if (path.startsWith(folder + '\\')) files.delete(path)
+        for (const path of [...directories]) if (path === folder || path.startsWith(folder + '\\')) directories.delete(path)
+      }
+      removedOnExit = [...folders]
+    },
     async readText(path) {
       await gate
       const p = norm(path)

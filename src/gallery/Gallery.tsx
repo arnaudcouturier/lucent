@@ -7,6 +7,7 @@ import { crystalState } from '../core/crystal'
 import { createFakePlatform, type Machine } from '../platform/fake'
 import { MACHINES, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
+import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
@@ -30,6 +31,8 @@ interface GalleryState {
   label: string
   setup: () => Promise<Core>
   preview?: { activity: Activity; description: string }
+  /** The window Settings → Apps opens, instead of the main one. */
+  uninstallWindow?: boolean
 }
 
 const crystalPreview = (key: string, label: string, activity: Activity, description: string): GalleryState => ({
@@ -195,6 +198,23 @@ const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-f
   return core
 }
 
+/** Lucent deployed and in the Start menu, then opened from Settings → Apps. */
+const appUninstall = (stage: 'confirm' | 'game-running' | 'done') => async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const deployed = createCore(platform)
+  await deployed.scan()
+  await deployed.review()
+  await deployed.deploy()
+  m.exePath = `${await platform.envFolder('LocalAppData')}\\Lucent\\Lucent.exe`
+  m.headlessMode = 'uninstall'
+  if (stage === 'game-running') m.gameRunning = true
+  const core = createCore(platform)
+  await core.openAppUninstall()
+  if (stage === 'done') await core.uninstallApp(true)
+  return core
+}
+
 const STATES: GalleryState[] = [
   {
     key: 'scanning',
@@ -288,6 +308,9 @@ const STATES: GalleryState[] = [
     await core.uninstall()
     return core
   } },
+  { key: 'app-uninstall', label: 'Settings → Apps · Uninstall Lucent', setup: appUninstall('confirm'), uninstallWindow: true },
+  { key: 'app-uninstall-game-running', label: 'Settings → Apps · XIV running', setup: appUninstall('game-running'), uninstallWindow: true },
+  { key: 'app-uninstall-done', label: 'Settings → Apps · uninstalled', setup: appUninstall('done'), uninstallWindow: true },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
@@ -379,7 +402,7 @@ export function Gallery() {
                 </div>
               </Screen>
             </Window>
-          ) : <App />}
+          ) : state.uninstallWindow ? <UninstallWindow /> : <App />}
         </CoreContext.Provider>
       )}
       <div className="gallery-bar" role="toolbar" aria-label="State gallery">

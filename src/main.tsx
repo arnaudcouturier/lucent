@@ -7,6 +7,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createCore } from './core/core'
 import { App } from './ui/App'
+import { UninstallWindow } from './ui/UninstallWindow'
 import { inTauri } from './ui/shell'
 import { CoreContext } from './ui/useCore'
 
@@ -20,13 +21,15 @@ if (import.meta.env.DEV && params.has('gallery')) {
 } else {
   const platform = inTauri
     ? (await import('./platform/tauri')).createTauriPlatform()
-    : (await import('./platform/browser')).createBrowserPlatform(params.get('machine'))
+    : (await import('./platform/browser')).createBrowserPlatform(params.get('machine'), params.has('uninstall'))
   const core = createCore(platform)
-  void core.scan()
+  // Settings → Apps starts Lucent with --uninstall: the small uninstall window instead of the main one.
+  const uninstalling = await platform.headlessMode().catch(() => null) === 'uninstall'
+  void (uninstalling ? core.openAppUninstall() : core.scan())
   root.render(
     <StrictMode>
       <CoreContext.Provider value={core}>
-        <App />
+        {uninstalling ? <UninstallWindow /> : <App />}
       </CoreContext.Provider>
     </StrictMode>,
   )

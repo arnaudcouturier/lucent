@@ -84,6 +84,8 @@
   /* Layout */
   --window-width: 880px;
   --window-height: 580px;
+  --uninstall-width: 460px;
+  --uninstall-height: 340px;
   --rail-width: 248px;
   --titlebar-height: 40px;
 
