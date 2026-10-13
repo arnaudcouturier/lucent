@@ -480,7 +480,7 @@
 .hotkey span { color: var(--ink-2); }
 .health-card { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-5); }
 .health-card > svg { color: var(--accent); flex: none; }
-.health-card:is(.is-drift, .is-failed, .is-game-waiting) > svg { color: var(--caution); }
+.health-card:is(.is-drift, .is-folder-missing, .is-failed, .is-game-waiting) > svg { color: var(--caution); }
 .health-card h2 { font-size: 15px; font-weight: 500; margin: 0 0 var(--space-1); }
 .health-card p { color: var(--ink-2); margin: 0; }
 .health-body { flex: 1; min-width: 0; }

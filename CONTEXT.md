@@ -123,6 +123,10 @@ _Avoid_: broken, corruption
 Re-applying the deployment so that no drift remains.
 _Avoid_: fix, reinstall
 
+**Tier switch**:
+Planning the deployment again for the tier the current GPU matches, started by the user after a graphics card change. The profile stays when the new tier has it; Disabled and user changes stay.
+_Avoid_: re-tier, migrate
+
 **Disabled**:
 The state of a deployment whose files are present but inactive, so the game runs as if vanilla. It persists through repair, update and profile changes.
 _Avoid_: vanilla mode, paused, off

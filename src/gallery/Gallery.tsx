@@ -39,7 +39,7 @@ const crystalPreview = (key: string, label: string, activity: Activity, descript
   key: `crystal-${key}`, label: `Crystal · ${label}`, setup: scanned(MACHINES.steam), preview: { activity, description },
 })
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>> = {}): Activity => ({
-  kind: 'deployment', enabled: true, drift: null, update: null, operation: null, ...patch,
+  kind: 'deployment', enabled: true, drift: null, update: null, tierChange: null, operation: null, ...patch,
 })
 
 const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, includeReShade = true) => async () => {
@@ -132,6 +132,35 @@ const updateAvailable = (stage: 'update' | 'updating') => async () => {
     })
     void reopened.update()
   })
+  return reopened
+}
+
+/** The player swaps their graphics card after deploying. */
+const newGraphicsCard = async () => {
+  const m = machine(MACHINES.steam)
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  m.gpus = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
+/** The game folder is emptied or moved after deploying. */
+const missingGameFolder = async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  for (const file of await platform.listFiles(folder.path)) await platform.removeFile(`${folder.path}\\${file}`)
+  const reopened = createCore(platform)
+  await reopened.scan()
   return reopened
 }
 
@@ -296,6 +325,8 @@ const STATES: GalleryState[] = [
   } },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
+  { key: 'new-gpu', label: 'Main · New graphics card', setup: newGraphicsCard },
+  { key: 'folder-missing', label: 'Main · Game folder missing', setup: missingGameFolder },
   { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
   { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
   { key: 'versions', label: 'Main · Versions and rollback', setup: versionHistory },
