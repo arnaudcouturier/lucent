@@ -51,7 +51,9 @@ export async function versionChoices(platform: Platform, record: DeploymentRecor
   const { cache } = await dataPaths(platform, record.gameFolder)
   const saved = new Map((record.cachedVersions ?? []).map((v) => [v.content.id, v]))
   const published = new Map((manifest?.versions ?? []).filter((v) => onChannel(v, channel)).map((v) => [v.id, v]))
-  const ids = new Set([record.contentVersion, ...saved.keys(), ...published.keys(), ...settings.skippedContent])
+  // A skipped version from the other channel is still published, just not offered here: leaving Beta hides it.
+  const offChannel = new Set((manifest?.versions ?? []).filter((v) => !onChannel(v, channel)).map((v) => v.id))
+  const ids = new Set([record.contentVersion, ...saved.keys(), ...published.keys(), ...settings.skippedContent.filter((id) => !offChannel.has(id))])
   const present = new Map<string, boolean>()
   const choices: VersionChoice[] = []
   for (const id of [...ids].sort((a, b) => b.localeCompare(a))) {

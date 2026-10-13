@@ -31,7 +31,7 @@ export function CreditsScreen({ onBack }: { onBack: () => void }) {
   const [opening, setOpening] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
   const tier = state.deployment?.tier ?? (state.graphics.status === 'found' ? state.graphics.tier?.id ?? null : null)
-  const version = creditsVersion(state.manifest, state.deployment, tier)
+  const version = creditsVersion(state.manifest, state.deployment, tier, state.channel)
 
   const openLink = async (url: string) => {
     setOpening(url)

@@ -111,6 +111,17 @@ describe('switching to Beta', () => {
     expect(platform.downloads).not.toContain(betaFixtureUrl(OPTISCALER_NEXT_HASH))
   })
 
+  it('hides a Beta version skipped on Beta from Versions once the player leaves Beta', async () => {
+    const { platform, m } = await deployed()
+    Object.assign(m.remoteText!, betaContentHost().remoteText)
+    const core = await reopen(platform)
+    await core.setChannel('beta')
+    await core.skipUpdate()
+    expect(core.getState().versions).toContainEqual(expect.objectContaining({ id: BETA_CONTENT.id, skipped: true, unavailable: null }))
+    await core.setChannel('stable')
+    expect(core.getState().versions.map((v) => v.id)).toEqual([STABLE.id])
+  })
+
   it('announces the Beta content version on its own when only content is in beta', async () => {
     const { platform, m } = await deployed()
     Object.assign(m.remoteText!, betaContentHost().remoteText)

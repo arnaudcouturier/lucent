@@ -159,7 +159,7 @@ export const MACHINES = {
   existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
   /** Beta content and an app pre-release are published; turn on Beta channel in the ⋯ menu to be offered them. */
-  beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\SteamLibrary'], game: 'D:\SteamLibrary' }), vanillaGame(steamGameFolder('D:\SteamLibrary')), appBetaReleaseHost()),
+  beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>
 
 export type MachineName = keyof typeof MACHINES
