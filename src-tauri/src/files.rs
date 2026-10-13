@@ -160,7 +160,10 @@ pub async fn download_file(url: &str, to: &Path, progress: tauri::ipc::Channel<u
     commit(file, to, true)
 }
 
-pub fn is_game_running() -> Result<bool> {
+pub fn is_game_running() -> Result<bool> { is_process_running("ffxiv_dx11.exe") }
+
+/// True when any process runs an exe with this file name (case-insensitive).
+pub fn is_process_running(name: &str) -> Result<bool> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
     let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
@@ -172,7 +175,7 @@ pub fn is_game_running() -> Result<bool> {
         let mut running = false;
         while next.is_ok() {
             let len = entry.szExeFile.iter().position(|c| *c == 0).unwrap_or(entry.szExeFile.len());
-            if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case("ffxiv_dx11.exe") { running = true; break; }
+            if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(name) { running = true; break; }
             next = Process32NextW(snapshot, &mut entry);
         }
         let _ = CloseHandle(snapshot);
@@ -187,6 +190,15 @@ pub fn is_game_running() -> Result<bool> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn finds_the_running_test_exe_and_not_a_missing_one() {
+        let exe = std::env::current_exe().unwrap();
+        let name = exe.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(is_process_running(&name).unwrap());
+        assert!(is_process_running(&name.to_uppercase()).unwrap());
+        assert!(!is_process_running("lucent-no-such-process.exe").unwrap());
+    }
 
     #[test]
     fn copies_binary_files_atomically_and_hashes_their_bytes() {

@@ -1,7 +1,7 @@
 // The ⋯ menu in the title strip, shown once a deployment exists. Uninstall asks for confirmation first.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
-import { Bug, ClipboardCopy, Ellipsis, History, LoaderCircle, Trash2, UsersRound } from 'lucide-react'
+import { Bug, Check, ClipboardCopy, Ellipsis, History, LoaderCircle, Trash2, UsersRound, Wrench } from 'lucide-react'
 import { useCore } from './useCore'
 import { gameActionsAvailable } from '../core/gameAccess'
 
@@ -13,6 +13,7 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
   const focusLastOnOpen = useRef(false)
   const [state, core] = useCore()
   const disabled = state.busy || actionBusy
+  const { xivLauncher } = state
 
   const openMenu = (focusLast = false) => {
     focusLastOnOpen.current = focusLast
@@ -78,6 +79,9 @@ export function Menu({ onOpenCredits, onOpenVersions, returnFocusRef }: { onOpen
       </button>
       {open && <div className="menu" role="menu" aria-label="More actions" onKeyDown={onMenuKeyDown}>
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => { setOpen(false); onOpenVersions() }}><History size={14} strokeWidth={1.75} />Versions…</button>
+        {xivLauncher.status === 'found' && <button role="menuitemcheckbox" aria-checked={xivLauncher.autoRepair} tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.setAutoRepair(!xivLauncher.autoRepair))}>
+          <Wrench size={14} strokeWidth={1.75} />XIVLauncher auto-repair{xivLauncher.autoRepair && <Check size={14} strokeWidth={1.75} className="menu-check" aria-hidden />}
+        </button>}
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.copyDiagnostics())}><ClipboardCopy size={14} strokeWidth={1.75} />Copy diagnostics</button>
         <button role="menuitem" tabIndex={-1} disabled={disabled} onClick={() => void run(() => core.reportBug())}><Bug size={14} strokeWidth={1.75} />Report a bug</button>
         <button role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); onOpenCredits() }}><UsersRound size={14} strokeWidth={1.75} />Credits</button>

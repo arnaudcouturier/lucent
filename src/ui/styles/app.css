@@ -529,6 +529,7 @@
 .menu button > svg { flex: none; }
 .menu [role="separator"] { height: 1px; margin: 4px 8px; background: var(--line-strong); }
 .menu .is-danger { color: var(--danger); }
+.menu .menu-check { margin-left: auto; color: var(--accent); }
 @keyframes overlay-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 .confirm {
   width: 400px; padding: var(--space-5); border: 0; border-radius: var(--r-card);

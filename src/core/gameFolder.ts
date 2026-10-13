@@ -2,7 +2,7 @@
 import type { Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
 import { parseVdf, type Vdf } from './vdf'
-import { xivLauncherConfigPath } from './xivLauncher'
+import { xivLauncherGamePath } from './xivLauncher'
 
 export type GameFolderSource = 'xivlauncher' | 'steam' | 'square-enix' | 'default' | 'picked'
 
@@ -27,8 +27,8 @@ const attempt = async <T>(f: () => Promise<T>): Promise<T | null> => {
 }
 
 async function xivLauncherPaths(platform: Platform): Promise<string[]> {
-  const config = JSON.parse(await platform.readText(await xivLauncherConfigPath(platform)))
-  return typeof config.GamePath === 'string' ? [config.GamePath] : []
+  const path = await xivLauncherGamePath(platform)
+  return path ? [path] : []
 }
 
 /** The libraries in Steam's library list. Each is a block with a "path", or a bare path in the older format. */

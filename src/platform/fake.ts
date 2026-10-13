@@ -1,7 +1,7 @@
 // In-memory fake of the Platform port, with Windows semantics:
 // paths are case-insensitive and accept either slash, and a folder exists when a file lives under it.
 // Used by the core's tests, the state gallery and the app running in a browser.
-import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type LocalContent, type Platform, type RegistryHive } from '../core/platform'
+import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type HeadlessMode, type LocalContent, type Platform, type RegistryHive } from '../core/platform'
 import { assertGamePath } from '../shared/manifest'
 
 /** A machine to fake: its files, registry and well-known folders. */
@@ -15,6 +15,10 @@ export interface Machine {
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
   gameRunning?: boolean
+  /** Exe names of other running processes, such as `XIVLauncher.exe`. */
+  processes?: string[]
+  /** The headless run this process was started for. */
+  headlessMode?: HeadlessMode | null
   readOnlyDirectories?: string[]
   elevated?: boolean
   elevationCancelled?: boolean
@@ -43,6 +47,9 @@ export interface FakePlatform extends Platform {
   readonly launched: string[]
   readonly clipboard: string | null
   readonly openedUrls: string[]
+  /** Every Windows notification shown, in order. */
+  readonly notifications: { title: string; body: string }[]
+  readonly exited: boolean
   listDirectories(root: string): Promise<string[]>
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
@@ -81,6 +88,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const launched: string[] = []
   let clipboard: string | null = null
   const openedUrls: string[] = []
+  const notifications: { title: string; body: string }[] = []
+  let exited = false
   const elevationRequests: string[] = []
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
@@ -102,6 +111,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     launched,
     get clipboard() { return clipboard },
     openedUrls,
+    notifications,
+    get exited() { return exited },
     async getWindowsVersion() { await gate; return machine.windowsVersion ?? 'Windows 11 24H2 (build 26100.2033)' },
     async copyText(text) { await gate; clipboard = text },
     async openUrl(url) { await gate; openedUrls.push(url) },
@@ -171,6 +182,14 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await this.writeText(to, text)
     },
     async isGameRunning() { await gate; return machine.gameRunning ?? false },
+    async isProcessRunning(exeName) {
+      await gate
+      const running = [...(machine.processes ?? []), ...(machine.gameRunning ? ['ffxiv_dx11.exe'] : [])]
+      return running.some((name) => name.toLowerCase() === exeName.toLowerCase())
+    },
+    async getHeadlessMode() { await gate; return machine.headlessMode ?? null },
+    async notify(title, body) { await gate; notifications.push({ title, body }) },
+    async exit() { exited = true },
     async isDirectoryWritable(path, targets = []) {
       await gate
       for (const target of targets) assertGamePath(target)

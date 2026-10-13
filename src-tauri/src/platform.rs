@@ -451,6 +451,48 @@ pub fn is_elevated() -> Result<bool> {
     }
 }
 
+/// `check` or `repair` when XIVLauncher started Lucent with a headless flag.
+pub fn headless_mode() -> Option<&'static str> { headless_mode_from(std::env::args_os().skip(1)) }
+
+fn headless_mode_from<I: IntoIterator<Item = std::ffi::OsString>>(args: I) -> Option<&'static str> {
+    args.into_iter().find_map(|arg| match arg.to_str()? {
+        "--headless-check" => Some("check"),
+        "--headless-repair" => Some("repair"),
+        _ => None,
+    })
+}
+
+const AUMID: &str = "io.github.arnaudcouturier.lucent";
+
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
+}
+
+/// Shows a Windows toast from Lucent. An unpackaged exe needs its AppUserModelID registered first.
+pub fn notify(title: &str, body: &str) -> Result<()> {
+    use windows::Data::Xml::Dom::XmlDocument;
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+    let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
+        .create_subkey(format!(r"Software\Classes\AppUserModelId\{AUMID}"))
+        .map_err(|e| PlatformError::io(e, None))?;
+    key.set_value("DisplayName", &"Lucent").map_err(|e| PlatformError::io(e, None))?;
+    // Best effort: it only improves how Windows groups the toast with the app.
+    // SAFETY: the HSTRING outlives the call.
+    unsafe { let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(AUMID)); }
+    let xml = format!(
+        "<toast><visual><binding template=\"ToastText02\"><text id=\"1\">{}</text><text id=\"2\">{}</text></binding></visual></toast>",
+        xml_escape(title), xml_escape(body),
+    );
+    let show = || -> windows::core::Result<()> {
+        let document = XmlDocument::new()?;
+        document.LoadXml(&HSTRING::from(xml))?;
+        let toast = ToastNotification::CreateToastNotification(&document)?;
+        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID))?.Show(&toast)
+    };
+    show().map_err(win32_error)
+}
+
 pub fn elevation_resume_path() -> Option<String> {
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -566,6 +608,28 @@ mod tests {
         assert!(acl(dir.path(), &["/remove:d", "*S-1-1-0"]).status.success());
         assert!(!result.unwrap());
         assert_eq!(fs::read_to_string(file).unwrap(), "Passes = 2");
+    }
+
+    #[test]
+    fn parses_headless_flags() {
+        let parse = |args: &[&str]| headless_mode_from(args.iter().map(std::ffi::OsString::from));
+        assert_eq!(parse(&["--headless-check"]), Some("check"));
+        assert_eq!(parse(&["--headless-repair"]), Some("repair"));
+        assert_eq!(parse(&[]), None);
+        assert_eq!(parse(&["--lucent-resume", r"C:\resume.json"]), None);
+        assert_eq!(parse(&["--lucent-resume", "x.json", "--headless-repair"]), Some("repair"));
+        assert_eq!(parse(&["--headless-checks", "headless-check"]), None);
+    }
+
+    #[test]
+    fn escapes_toast_xml() {
+        assert_eq!(xml_escape(r#"a & <b> "c" 'd'"#), "a &amp; &lt;b&gt; &quot;c&quot; &apos;d&apos;");
+    }
+
+    #[test]
+    #[ignore = "shows a real toast"]
+    fn shows_a_toast() {
+        notify("Lucent test", "Toast smoke test <ok> & fine").unwrap();
     }
 
     #[test]

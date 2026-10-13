@@ -47,6 +47,10 @@ export function createTauriPlatform(): Platform {
     requestElevation: (resumePath) => call('platform_request_elevation', { resumePath }),
     exePath: () => call<string>('platform_exe_path', {}),
     launchExe: (path) => call('platform_launch_exe', { path }),
+    isProcessRunning: (exeName) => call<boolean>('platform_is_process_running', { exeName }),
+    getHeadlessMode: () => call('platform_headless_mode', {}),
+    notify: (title, body) => call('platform_notify', { title, body }),
+    exit: () => call('platform_exit', {}),
     downloadFile: (url, to, progress) => {
       const channel = new Channel<number>()
       channel.onmessage = progress

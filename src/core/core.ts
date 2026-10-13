@@ -4,7 +4,7 @@ import type { Platform } from './platform'
 import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder'
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
-import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
+import { scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
 import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
@@ -106,6 +106,8 @@ export interface Core {
   skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
   uninstall(): Promise<void>
+  /** Adds or removes XIVLauncher's add-on entries that check on game launch and repair on game close. */
+  setAutoRepair(enabled: boolean): Promise<void>
   copyDiagnostics(): Promise<void>
   reportBug(): Promise<void>
   openLink(url: string): Promise<void>
@@ -316,6 +318,19 @@ export function createCore(platform: Platform): Core {
         if (link.protocol !== 'https:' || /[\u0000-\u001f]/.test(url)) throw new Error('Source links must use HTTPS.')
         await platform.openUrl(link.href)
       } catch (error) { set({ error: `Could not open the link. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+    },
+    async setAutoRepair(enabled) {
+      const { xivLauncher, deployment } = state
+      if (state.busy || xivLauncher.status !== 'found' || !deployment) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        // The entries run elevated when the game folder needs it; Lucent only ever elevates for that reason.
+        const runAsAdmin = enabled && (await platform.isElevated()
+          || !await platform.isDirectoryWritable(joinPath(deployment.gameFolder, 'game'), Object.keys(deployment.files)))
+        await setAutoRepair(platform, xivLauncher.configPath, { enabled, exePath: await platform.exePath(), runAsAdmin })
+        set({ xivLauncher: { ...xivLauncher, autoRepair: enabled } })
+      } catch (error) { set({ error: `Could not change auto-repair. ${message(error)}` }) }
       finally { set({ busy: false }) }
     },
     async reportBug() {

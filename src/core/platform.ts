@@ -88,6 +88,8 @@ export interface Platform {
   /** Streams to a temporary file and atomically commits it when complete. */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
+  /** Whether any process with this exe name (such as `XIVLauncher.exe`) is running, ignoring case. */
+  isProcessRunning(exeName: string): Promise<boolean>
   /** Probes the directory and the given relative write targets without changing existing files. */
   isDirectoryWritable(path: string, targets?: string[]): Promise<boolean>
   isElevated(): Promise<boolean>
@@ -99,4 +101,16 @@ export interface Platform {
   exePath(): Promise<string>
   /** Starts the exe at `path`; the real port then exits this process so the new one takes over. */
   launchExe(path: string): Promise<void>
+  /** The headless run this process was started for (by a XIVLauncher add-on), or null for the window. */
+  getHeadlessMode(): Promise<HeadlessMode | null>
+  /** Shows a Windows notification from Lucent. */
+  notify(title: string, body: string): Promise<void>
+  /** Ends a headless run; the real port exits this process. */
+  exit(): Promise<void>
 }
+
+/** `check` runs when the game launches; `repair` runs after it closes. */
+export type HeadlessMode = 'check' | 'repair'
+
+/** The command-line flags XIVLauncher's add-on entries pass to start a headless run. */
+export const HEADLESS_FLAGS: Record<HeadlessMode, string> = { check: '--headless-check', repair: '--headless-repair' }

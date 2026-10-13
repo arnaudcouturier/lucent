@@ -97,6 +97,14 @@ async fn platform_download_file(url: String, to: PathBuf, progress: tauri::ipc::
 #[tauri::command]
 async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_game_running() }
 #[tauri::command]
+async fn platform_is_process_running(exe_name: String) -> Result<bool, PlatformError> { files::is_process_running(&exe_name) }
+#[tauri::command]
+async fn platform_headless_mode() -> Option<&'static str> { platform::headless_mode() }
+#[tauri::command]
+async fn platform_notify(title: String, body: String) -> Result<(), PlatformError> { platform::notify(&title, &body) }
+#[tauri::command]
+async fn platform_exit(app: tauri::AppHandle) { app.exit(0) }
+#[tauri::command]
 async fn platform_is_directory_writable(path: PathBuf, targets: Vec<String>) -> Result<bool, PlatformError> { platform::game_write_access(&path, &targets) }
 #[tauri::command]
 async fn platform_is_elevated() -> Result<bool, PlatformError> { platform::is_elevated() }
@@ -112,6 +120,21 @@ async fn platform_launch_exe(path: PathBuf) -> Result<(), PlatformError> { platf
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            // The window is built here, not auto-created from the config, so a headless run
+            // (XIVLauncher hooks) never shows or flashes one; the webview still loads and works.
+            let headless = platform::headless_mode().is_some();
+            if headless {
+                // A stuck run would stay hidden, and XIVLauncher skips an add-on whose exe is still running.
+                std::thread::spawn(|| { std::thread::sleep(std::time::Duration::from_secs(30 * 60)); std::process::exit(1) });
+            }
+            let config = app.config().app.windows.first().expect("main window config").clone();
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+                .visible(!headless)
+                .skip_taskbar(headless)
+                .build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             platform_read_text,
             platform_read_text_tail,
@@ -127,7 +150,8 @@ pub fn run() {
             platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
             platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
             platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe,
-            platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation
+            platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation,
+            platform_is_process_running, platform_headless_mode, platform_notify, platform_exit
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");
