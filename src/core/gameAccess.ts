@@ -72,7 +72,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   return { localAppData, request }
 }
 
-/** One UAC request per core lifetime, exclusively after a denied game-folder probe. */
+/** UAC only after a denied game-folder probe; a cancelled prompt doesn't count, so the player can retry. */
 export function gameWriteAccess(platform: Platform, observe: (running: boolean) => void) {
   let requested = false
   return async (request: GameWriteRequest, targets: string[]): Promise<boolean> => {
@@ -84,7 +84,7 @@ export function gameWriteAccess(platform: Platform, observe: (running: boolean) 
     await platform.writeText(path, JSON.stringify({ schemaVersion: 1, request }))
     requested = true
     try { await platform.requestElevation(path) }
-    catch (error) { await platform.removeFile(path); throw error }
+    catch (error) { requested = false; await platform.removeFile(path); throw error }
     return false
   }
 }

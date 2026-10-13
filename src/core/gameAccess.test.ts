@@ -153,7 +153,7 @@ it('continues recovery after elevation before doing any other startup work', asy
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
 })
 
-it('keeps Review and the game folder intact when UAC is cancelled, and asks only once', async () => {
+it('keeps Review and the game folder intact when UAC is cancelled, and asks again on retry', async () => {
   const m: Machine = { ...fixture(), readOnlyDirectories: [GAME], elevationCancelled: true }
   const platform = createFakePlatform(m)
   const core = createCore(platform)
@@ -164,7 +164,7 @@ it('keeps Review and the game folder intact when UAC is cancelled, and asks only
   expect(core.getState()).toMatchObject({ activity: { kind: 'review' }, busy: false, recoveryRequired: false, includeReShade: false })
   expect(core.getState().error).toMatch(/cancelled/i)
   await core.deploy()
-  expect(platform.elevationRequests).toHaveLength(1)
+  expect(platform.elevationRequests).toHaveLength(2)
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
   expect(platform.downloads).toHaveLength(0)
 })
