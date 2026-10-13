@@ -63,7 +63,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
   - The pre-update file is always backed up. The merged file follows the new version's layout and comments; keys the new version dropped are removed (they remain in the backup).
 - A whole-file replace on every update was rejected: ReShade stores the selected preset and keybinds in `ReShade.ini`, so every update would reset them.
 - **Performance profiles** follow the same rule. A user change to a profile setting shows the profile as **Custom (based on X)** until the user picks a profile or a content version changes that setting.
-- Shipped presets are compared by hash; a user-edited one is saved as `<name> (my edits).ini` before ours is written.
+- Shipped presets are compared by hash; a user-edited one is kept when Lucent's version is unchanged, or saved as `<name> (my edits).ini` before Lucent's changed version is written.
 - User-owned and paid shaders (e.g. iMMERSE Pro: RTGI, RELIGHT, REGRADE) are never shipped and never touched.
 - Uninstalling Lucent restores the game folder to vanilla (checkbox on by default). Nothing left behind.
 
