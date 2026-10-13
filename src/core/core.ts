@@ -15,6 +15,7 @@ import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
+import { gameWriteAccess, takeElevationResume, type GameWriteRequest } from './gameAccess'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -42,6 +43,8 @@ export type Activity =
 
 export interface State {
   activity: Activity
+  /** Null when the process check has not succeeded; game writes stay unavailable. */
+  gameRunning: boolean | null
   /** App releases are available even before a deployment exists. */
   appUpdate: AppUpdate | null
   /** Null while idle; otherwise the app download/replacement progress from 0 to 1. */
@@ -73,6 +76,8 @@ export interface Core {
   subscribe(listener: () => void): () => void
   /** Scan: finds the game folder, graphics card, manifest tier and XIVLauncher. */
   scan(): Promise<void>
+  /** Refreshes the process state without resetting the player's screen or choices. */
+  refreshGameRunning(): Promise<void>
   /** Lets the player pick the game folder, whether or not Scan found one. */
   chooseGameFolder(): Promise<void>
   continueSetup(): Promise<void>
@@ -104,7 +109,7 @@ const CHANNEL: Channel = 'stable'
 
 export function createCore(platform: Platform): Core {
   let state: State = {
-    activity: { kind: 'scan' }, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
+    activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
     plan: null, existingSetups: [], deployment: null, deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
@@ -115,13 +120,25 @@ export function createCore(platform: Platform): Core {
   }
 
   const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+  const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
+  const prepareWrite = async (request: GameWriteRequest) => {
+    const ready = await access(request)
+    if (!ready) set({ notice: 'Lucent is reopening with administrator access to continue your change.' })
+    return ready
+  }
+  class ElevationPending extends Error {}
+  let resumeContentVersion: string | null = null
   const recover = async () => {
     try {
-      const recovered = await recoverDeployments(platform)
+      const recovered = await recoverDeployments(platform, async (record) => {
+        if (!await prepareWrite({ kind: 'recover', gameFolder: record.gameFolder })) throw new ElevationPending()
+      })
       const notice = recovered.some((r) => r.uninstalling) ? 'Lucent finished uninstalling. Your game folder is as it was before.'
         : recovered.length ? 'Lucent found an unfinished deployment and restored the game folder to how it was before. You can try again.' : null
       set({ recoveryRequired: false, ...(notice ? { notice } : {}) })
+      return true
     } catch (error) {
+      if (error instanceof ElevationPending) return false
       set({ recoveryRequired: true, error: `Recovery could not finish. ${failureReason(error)} Try recovery again once the problem is resolved.` })
       throw error
     }
@@ -129,7 +146,10 @@ export function createCore(platform: Platform): Core {
   const signatures = () => state.manifest.status === 'ready' ? state.manifest.manifest.existingSetups : []
   const restoreDeployment = async (folder: GameFolder) => {
     let record = await readDeployment(platform, folder.path)
-    if (record?.status === 'applying') { await undoDeployment(platform, record); record = null }
+    if (record?.status === 'applying') {
+      if (!await prepareWrite({ kind: 'recover', gameFolder: record.gameFolder })) return
+      await undoDeployment(platform, record); record = null
+    }
     const files = record?.status === 'complete' ? [] : await platform.listFiles(joinPath(folder.path, 'game'))
     set({ existingSetups: detectExistingSetups(signatures(), files) })
     if (record?.status === 'complete') {
@@ -189,7 +209,10 @@ export function createCore(platform: Platform): Core {
   }
   const contentForTier = (): ContentVersion => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Finish Scan before continuing.')
-    const content = newestContentForTier()
+    const tierId = state.graphics.tier.id
+    const content = resumeContentVersion
+      ? state.manifest.manifest.versions.find((v) => v.id === resumeContentVersion && v.tiers[tierId])
+      : newestContentForTier()
     if (!content) throw new Error('No content is published for this tier yet.')
     if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before installing this content version.')
     return content
@@ -206,11 +229,20 @@ export function createCore(platform: Platform): Core {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    async refreshGameRunning() {
+      try {
+        const gameRunning = await platform.isGameRunning()
+        if (state.gameRunning !== gameRunning) set({ gameRunning })
+      } catch { if (state.gameRunning !== null) set({ gameRunning: null }) }
+    },
     async scan() {
       if (state.busy) return
       set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      let resume: GameWriteRequest | null = null
       try {
-        await recover()
+        resume = await takeElevationResume(platform)
+        await core.refreshGameRunning()
+        if (!await recover()) return
         // Recovery precedes all startup work, including cleanup of the last app update.
         await cleanupOldExe(platform)
         const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
@@ -218,19 +250,46 @@ export function createCore(platform: Platform): Core {
         ])
         if (graphics.status === 'found' && manifest.status === 'ready') graphics.tier = matchTier(graphics.adapter, manifest.manifest)
         set({ gameFolder: found ? { status: 'found', ...found } : { status: 'not-found' }, graphics, manifest, xivLauncher, appUpdate })
-        if (found) await restoreDeployment(found)
+        const folder = resume ? await checkPickedFolder(platform, resume.gameFolder) : found
+        if (resume && !folder) throw new Error('The game folder from the administrator request no longer contains XIV.')
+        if (folder) {
+          set({ gameFolder: { status: 'found', ...folder } })
+          await restoreDeployment(folder)
+        }
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
           if (content) prepareProfiles(content)
         }
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
+      if (resume && !state.error && !state.recoveryRequired) {
+        try {
+          if (resume.kind === 'deploy') {
+            resumeContentVersion = resume.contentVersion
+            prepareProfiles(contentForTier())
+            set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade })
+            await core.review(resume.includeReShade)
+            if (!state.error) await core.deploy()
+          } else if (resume.kind === 'profile') await core.selectProfile(resume.profile)
+          else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
+          else if (resume.kind === 'repair') await core.repair()
+          else if (resume.kind === 'uninstall') await core.uninstall()
+          else if (resume.kind === 'update' && state.activity.kind === 'deployment' && state.manifest.status === 'ready') {
+            const version = resume.contentVersion
+            const content = state.manifest.manifest.versions.find((v) => v.id === version)
+            if (!content) throw new Error('The content version from the administrator request is no longer published.')
+            set({ activity: { ...state.activity, update: { version: content.id, changelog: content.changelog, downloadSize: 0 } } })
+            await core.update()
+          }
+        } catch (error) { set({ error: message(error) }) }
+        finally { resumeContentVersion = null }
+      }
     },
     async chooseGameFolder() {
       if (state.busy || state.activity.kind !== 'scan') return
       set({ busy: true })
       try {
-        await recover()
+        if (!await recover()) return
         const picked = await platform.pickFolder({ title: 'Choose the game folder' })
         if (picked === null) return
         const folder = await checkPickedFolder(platform, picked)
@@ -253,6 +312,7 @@ export function createCore(platform: Platform): Core {
       if (state.activity.kind !== 'deployment' || !state.deployment) return
       set({ busy: true, error: null })
       try {
+        if (!await prepareWrite({ kind: 'profile', gameFolder: state.deployment.gameFolder, profile })) return
         await refreshHealth(state.deployment)
         const deployment = await changePerformanceProfile(platform, state.deployment.gameFolder, profile)
         set({ deployment, selectedProfile: profile })
@@ -266,6 +326,7 @@ export function createCore(platform: Platform): Core {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
       set({ busy: true, error: null })
       try {
+        if (!await prepareWrite({ kind: 'enabled', gameFolder: state.deployment.gameFolder, enabled })) return
         await refreshHealth(state.deployment)
         const deployment = await setDeploymentEnabled(platform, state.deployment.gameFolder, enabled)
         set({ deployment })
@@ -282,6 +343,7 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'repair' } })
       let record = deployment
       try {
+        if (!await prepareWrite({ kind: 'repair', gameFolder: record.gameFolder })) return
         const drift = await refreshHealth(record, true)
         if (drift) {
           const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
@@ -305,6 +367,7 @@ export function createCore(platform: Platform): Core {
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !activity.update || !deployment || manifest.status !== 'ready') return
       set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'update' } })
       try {
+        if (!await prepareWrite({ kind: 'update', gameFolder: deployment.gameFolder, contentVersion: activity.update.version })) return
         await refreshHealth(deployment)
         const content = manifest.manifest.versions.find((v) => v.id === activity.update!.version)
         const tier = manifest.manifest.tiers.find((t) => t.id === deployment.tier)
@@ -375,9 +438,12 @@ export function createCore(platform: Platform): Core {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'review' || !state.plan || state.plan.blockedPaths.length) return
       set({ busy: true, error: null, notice: null, activity: { kind: 'deploying', progress: 0 } })
       try {
-        await recover()
+        if (!await recover()) { set({ activity: { kind: 'review' } }); return }
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
+        if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile })) {
+          set({ activity: { kind: 'review' } }); return
+        }
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source,
           (progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))
         const hotkeys = []
@@ -393,7 +459,7 @@ export function createCore(platform: Platform): Core {
           error: state.recoveryRequired ? state.error : error instanceof DeploymentError ? error.message : `${failureReason(error)} The game folder has not been changed.`,
         })
       }
-      set({ busy: false })
+      finally { set({ busy: false }) }
     },
     finish() {
       if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift, null) })
@@ -403,6 +469,7 @@ export function createCore(platform: Platform): Core {
       const folder = state.gameFolder
       set({ busy: true, error: null, notice: null })
       try {
+        if (!await prepareWrite({ kind: 'uninstall', gameFolder: state.deployment.gameFolder })) { set({ busy: false }); return }
         await uninstallDeployment(platform, state.deployment.gameFolder)
       } catch (error) {
         const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired

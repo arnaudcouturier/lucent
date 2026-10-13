@@ -212,6 +212,14 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'game-running', label: 'Main · XIV running', async setup() {
+    const m = machine(MACHINES.steam)
+    const core = await workflow('healthy', m)()
+    m.gameRunning = true
+    await core.refreshGameRunning()
+    return core
+  } },
+  { key: 'review-game-running', label: 'Review · XIV running', setup: workflow('review', machine(MACHINES.steam, { gameRunning: true })) },
   { key: 'disabled', label: 'Main · Disabled', async setup() {
     const core = await workflow('healthy')()
     await core.setEnabled(false)

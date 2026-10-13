@@ -37,6 +37,10 @@ export function createTauriPlatform(): Platform {
     hashFile: (path) => call('platform_hash_file', { path }),
     resolveGamePath: (root, relative) => call('platform_resolve_game_path', { root, relative }),
     isGameRunning: () => call('platform_is_game_running', {}),
+    isDirectoryWritable: (path) => call('platform_is_directory_writable', { path }),
+    isElevated: () => call('platform_is_elevated', {}),
+    getElevationResumePath: () => call('platform_elevation_resume_path', {}),
+    requestElevation: (resumePath) => call('platform_request_elevation', { resumePath }),
     exePath: () => call<string>('platform_exe_path', {}),
     launchExe: (path) => call('platform_launch_exe', { path }),
     downloadFile: (url, to, progress) => {

@@ -4,9 +4,9 @@ import { FlowError } from './DeploymentScreens'
 
 /** The Profile screen's title already names the choice, so only the main screen shows a legend. */
 export function ProfileSelector({ legend = true }: { legend?: boolean }) {
-  const [{ profiles, selectedProfile, busy, recoveryRequired }, core] = useCore()
+  const [{ profiles, selectedProfile, busy, recoveryRequired, gameRunning, activity }, core] = useCore()
   if (!profiles.length) return null
-  return <fieldset className="profile-selector" disabled={busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
+  return <fieldset className="profile-selector" disabled={busy || recoveryRequired || (activity.kind === 'deployment' && gameRunning !== false)} aria-label={legend ? undefined : 'Performance profile'}>
     {legend && <legend>Performance profile</legend>}
     <div className="card profile-rows">{profiles.map((profile) => <label className={`option-row profile-row ${selectedProfile === profile.id ? 'is-selected' : ''}`} key={profile.id}>
       <input type="radio" name="performance-profile" value={profile.id} checked={selectedProfile === profile.id} onChange={() => void core.selectProfile(profile.id)} />

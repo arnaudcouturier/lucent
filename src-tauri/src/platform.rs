@@ -21,6 +21,7 @@ pub enum ErrorKind {
     DiskFull,
     Network,
     HashMismatch,
+    Cancelled,
     Unknown,
 }
 
@@ -193,10 +194,115 @@ pub fn launch_exe(path: &Path) -> Result<()> {
     std::process::exit(0)
 }
 
+/// A create/delete probe distinguishes access denial from a full disk or locked folder.
+pub fn is_directory_writable(path: &Path) -> Result<bool> {
+    if crate::files::is_game_running()? {
+        return Err(PlatformError::new(ErrorKind::Locked, "Close XIV before changing the game folder.", Some(path)));
+    }
+    match tempfile::Builder::new().prefix(".lucent-access-").tempfile_in(path) {
+        Ok(file) => { file.close().map_err(|e| PlatformError::io(e, Some(path)))?; Ok(true) }
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(false),
+        Err(e) => Err(PlatformError::io(e, Some(path))),
+    }
+}
+
+pub fn is_elevated() -> Result<bool> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
+    // SAFETY: the token belongs to this process; the output buffer has the exact TOKEN_ELEVATION size.
+    // Its handle is closed even when GetTokenInformation fails.
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).map_err(error)?;
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut size = 0;
+        let result = GetTokenInformation(token, TokenElevation, Some((&mut elevation as *mut TOKEN_ELEVATION).cast()), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut size);
+        let _ = CloseHandle(token);
+        result.map_err(error)?;
+        Ok(elevation.TokenIsElevated != 0)
+    }
+}
+
+pub fn elevation_resume_path() -> Option<String> {
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--lucent-resume" { return args.next().map(|path| path.to_string_lossy().into_owned()); }
+    }
+    None
+}
+
+fn elevation_arguments(path: &Path) -> Result<String> {
+    let path = path.to_str().ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The resume path is not UTF-8.", Some(path)))?;
+    if path.contains(['"', '\0']) || !Path::new(path).is_absolute() || !path.ends_with(".json") {
+        return Err(PlatformError::new(ErrorKind::Unknown, "Invalid administrator resume path.", Some(Path::new(path))));
+    }
+    Ok(format!("--lucent-resume \"{path}\""))
+}
+
+/// Uses Windows UAC rather than a shell. Cancellation leaves the current app running.
+pub fn request_elevation(resume_path: &Path) -> Result<()> {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::Foundation::{CloseHandle, RPC_E_CHANGED_MODE};
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS};
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let exe = wide(&exe_path()?);
+    let args = wide(&elevation_arguments(resume_path)?);
+    // SAFETY: all UTF-16 buffers stay alive until the synchronous shell call returns.
+    // COM is uninitialized only if this call initialized it; the child-process handle is closed.
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return Err(PlatformError::new(ErrorKind::Unknown, initialized.to_string(), None));
+        }
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS,
+            lpVerb: w!("runas"), lpFile: PCWSTR(exe.as_ptr()), lpParameters: PCWSTR(args.as_ptr()),
+            nShow: SW_SHOWNORMAL.0, ..Default::default()
+        };
+        let result = ShellExecuteExW(&mut info);
+        if initialized.is_ok() { CoUninitialize(); }
+        result.map_err(|e| {
+            let cancelled = e.code().0 as u32 & 0xffff == 1223;
+            let message = if cancelled { "Administrator access was cancelled.".to_owned() } else { e.to_string() };
+            PlatformError::new(if cancelled { ErrorKind::Cancelled } else { ErrorKind::AccessDenied }, message, Some(resume_path))
+        })?;
+        if !info.hProcess.is_invalid() { let _ = CloseHandle(info.hProcess); }
+    }
+    std::process::exit(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn writable_folder_probe_leaves_no_files() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(is_directory_writable(dir.path()).unwrap());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn non_writable_folder_probe_reports_access_denial() {
+        use std::os::windows::process::CommandExt;
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("protected-game");
+        fs::create_dir(&folder).unwrap();
+        // Everyone is denied file creation on this disposable fixture only, including an elevated runner.
+        let acl = |args: &[&str]| std::process::Command::new("icacls")
+            .arg(&folder).args(args).creation_flags(0x08000000).output().unwrap();
+        assert!(acl(&["/deny", "*S-1-1-0:(WD,AD)"]).status.success());
+        let result = is_directory_writable(&folder);
+        assert!(acl(&["/remove:d", "*S-1-1-0"]).status.success());
+        assert!(!result.unwrap());
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 0);
+    }
 
     #[test]
     fn names_the_running_exe() {

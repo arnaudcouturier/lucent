@@ -10,6 +10,7 @@ export type PlatformErrorKind =
   | 'disk-full'
   | 'network'
   | 'hash-mismatch'
+  | 'cancelled'
   | 'unknown' // anything the port can't classify; the message says what happened
 
 export class PlatformError extends Error {
@@ -80,6 +81,13 @@ export interface Platform {
   /** Streams to a temporary file and atomically commits it when complete. */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
+  /** Probes with a temporary file that is removed before returning. */
+  isDirectoryWritable(path: string): Promise<boolean>
+  isElevated(): Promise<boolean>
+  /** The one-use resume file passed to an elevated relaunch, if any. */
+  getElevationResumePath(): Promise<string | null>
+  /** Shows Windows UAC, starts this exe with the resume file, then exits on success. */
+  requestElevation(resumePath: string): Promise<void>
   /** The running Lucent exe, which an app update renames aside and replaces. */
   exePath(): Promise<string>
   /** Starts the exe at `path`; the real port then exits this process so the new one takes over. */

@@ -5,6 +5,7 @@ import { disabledName, fileKey, planDeployment, type DeploymentScan, type Plan, 
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { mergeIni, readIni } from './ini'
+import { guardGameWrites, requireGameStopped } from './gameAccess'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -55,6 +56,7 @@ export function failureReason(error: unknown): string {
       case 'disk-full': return 'There isn’t enough free disk space. Free some space and try again.'
       case 'locked': return 'A file is in use. Close XIV and any apps using the game folder, then try again.'
       case 'access-denied': return 'Windows denied access to a required file. Check folder permissions and try again.'
+      case 'cancelled': return error.message
     }
   }
   return error instanceof Error ? error.message : String(error)
@@ -140,7 +142,7 @@ const discardCheckpoints = (platform: Platform, recordPath: string, checkpoints:
   checkpoints && platform.removeFile(checkpointsPath(recordPath, checkpoints.id)).catch(() => {})
 
 /** Recovery precedes Scan and does not depend on which folder a launcher currently points at. */
-export async function recoverDeployments(platform: Platform): Promise<DeploymentRecord[]> {
+export async function recoverDeployments(platform: Platform, beforeRecovery?: (record: DeploymentRecord) => Promise<void>): Promise<DeploymentRecord[]> {
   const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
   if (!await maybeStat(platform, directory)) return []
   const recovered: DeploymentRecord[] = []
@@ -154,6 +156,7 @@ export async function recoverDeployments(platform: Platform): Promise<Deployment
     }
     const record = await readDeployment(platform, value.gameFolder)
     if (record?.status === 'applying') {
+      await beforeRecovery?.(record)
       await undoDeployment(platform, record)
       recovered.push(record)
     }
@@ -190,7 +193,7 @@ async function undoDirectories(platform: Platform, gameFolder: string, created: 
 }
 
 export async function undoDeployment(platform: Platform, record: DeploymentRecord): Promise<void> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before recovering the unfinished deployment.')
+  platform = await guardGameWrites(platform, record.gameFolder)
   const paths = await dataPaths(platform, record.gameFolder)
   const root = joinPath(record.gameFolder, 'game')
   const start = record.changeStart ?? 0
@@ -246,7 +249,7 @@ export async function deployContent(
   platform: Platform, gameFolder: string, content: ContentVersion, signatures: ExistingSetupSignature[], tier: Tier, includeReShade: boolean, profile: ProfileId | null,
   graphics: GpuAdapter, source: ContentSource, report: (progress: DeploymentProgress) => void,
 ): Promise<DeploymentRecord> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
+  platform = await guardGameWrites(platform, gameFolder)
   const previous = await readDeployment(platform, gameFolder)
   if (previous && previous.status !== 'rolled-back') throw new Error('This game folder already has a deployment. Reopen Lucent to inspect it.')
   const scan = await scanDeployment(platform, gameFolder, content, null, signatures)
@@ -257,7 +260,7 @@ export async function deployContent(
   // An existing setup's log is backed up like its other files, so the one the mods write later is Lucent's to remove.
   const takenOver = new Set(plan.takenOver.map(fileKey))
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before installing.')
+  await requireGameStopped(platform)
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
     includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [],
@@ -271,7 +274,7 @@ export async function deployContent(
   await discardCheckpoints(platform, paths.record, previous?.undoCheckpoints)
   try {
     // An existing setup's files are the only files Lucent takes over without having written them.
-    await applySteps({ platform, record, save, report, owned: takenOver, during: 'installation' }, plan.steps)
+    await applySteps({ platform, record, save, report, owned: takenOver }, plan.steps)
     record.files = await stampFiles(platform, record, plan.expectedFiles, report)
     record.ownedConfigs = await readOwnedConfigs(platform, gameFolder, plan)
     // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
@@ -311,11 +314,10 @@ interface Execution {
   /** Game-folder paths Lucent may overwrite or remove; every other existing file is the player's. */
   owned: Set<string>
   /** Names the command in the message when XIV starts partway. */
-  during: string
 }
 
 /** Applies planned steps through the journal: each intent and its verified backup are durable before the step. */
-async function applySteps({ platform, record, save, report, owned, during }: Execution, steps: PlanStep[]) {
+async function applySteps({ platform, record, save, report, owned }: Execution, steps: PlanStep[]) {
   const { gameFolder } = record
   const { backups, cache } = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
@@ -357,7 +359,7 @@ async function applySteps({ platform, record, save, report, owned, during }: Exe
     record.journal.push({ step, before, after })
     await save()
     report({ phase: 'applying', progress: 0.4 + (i + 0.5) / steps.length * 0.4, file: relatives[0] })
-    if (await platform.isGameRunning()) throw new PlatformError('locked', `XIV started during ${during}. Close it before retrying.`)
+    await requireGameStopped(platform)
     // Resolve again after the durable journal write, immediately before the mutation.
     if (step.kind === 'carry') await platform.copyFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), false, parentPath(gameFolder))
     else if (step.kind === 'copy') await platform.copyFile(joinPath(cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
@@ -465,7 +467,7 @@ function writtenPath(step: PlanStep): string | null {
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
 ): Promise<DeploymentRecord> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before updating.')
+  platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before updating it.')
   // No existing-setup signatures: without a Review to explain a takeover, a setup that appeared since blocks the update instead.
@@ -474,7 +476,7 @@ export async function updateDeployment(
   if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before updating.')
+  await requireGameStopped(platform)
   // `record` journals the update while it applies; `updated` replaces it once the new version is in place.
   const updated = structuredClone(record)
   record.status = 'applying'
@@ -562,7 +564,7 @@ export async function updateDeployment(
       }
       steps = withPreserved
     }
-    await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)), during: 'the update' }, steps)
+    await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)) }, steps)
     const files = await stampFiles(platform, record, expectedFiles, report)
     for (const kept of keptPresets) {
       const path = await platform.resolveGamePath(root, kept.path)
@@ -609,7 +611,7 @@ async function cacheFile(platform: Platform, cache: string, file: ContentVersion
 export async function repairDeployment(
   platform: Platform, gameFolder: string, drifted: string[], content: ContentVersion | null, source: ContentSource | null, report: (progress: DeploymentProgress) => void,
 ): Promise<DeploymentRecord> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before repairing.')
+  platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before repairing it.')
   const paths = await dataPaths(platform, gameFolder)
@@ -631,7 +633,7 @@ export async function repairDeployment(
     if (!file || !source) throw new PlatformError('network', 'Lucent couldn’t download a content file for the repair.')
     await cacheFile(platform, paths.cache, file, source, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / assets.length * 0.4, file: null }))
   }
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before repairing.')
+  await requireGameStopped(platform)
   // `record` journals the repair while it applies; `repaired` replaces it once every file is back.
   const repaired = structuredClone(record)
   record.status = 'applying'
@@ -653,7 +655,7 @@ export async function repairDeployment(
       }
       record.journal.push({ step: { kind: 'copy', file: sha256, to: relative }, before: { [relative]: before }, after: { [relative]: sha256 } })
       await save()
-      if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during the repair. Close it before retrying.')
+      await requireGameStopped(platform)
       const target = await platform.resolveGamePath(root, relative)
       if (config !== null) await platform.writeText(target, config, parentPath(gameFolder))
       else await platform.copyFile(joinPath(paths.cache, sha256), target, before !== null, parentPath(gameFolder))
@@ -674,7 +676,7 @@ export async function repairDeployment(
 
 /** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */
 export async function uninstallDeployment(platform: Platform, gameFolder: string): Promise<void> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before uninstalling.')
+  platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('There is no deployment to uninstall.')
   const { record: path } = await dataPaths(platform, gameFolder)
@@ -689,7 +691,7 @@ export async function uninstallDeployment(platform: Platform, gameFolder: string
 
 /** Uses the deployed recipe, so a newer manifest cannot change an older deployment's profiles. */
 export async function changePerformanceProfile(platform: Platform, gameFolder: string, profileId: ProfileId): Promise<DeploymentRecord> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before changing the performance profile.')
+  platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing its performance profile.')
   const profile = record.recipe.performanceProfiles?.find((p) => p.id === profileId)
@@ -725,7 +727,7 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
         if (await platform.hashFile(backup) !== before) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${config}`)
         record.journal.push({ step: { kind: 'ini_set', ...setting, file: config }, before: { [config]: before }, after: { [config]: after } })
         await save()
-        if (await platform.isGameRunning()) throw new PlatformError('locked', 'XIV started during the profile change. Close it before retrying.')
+        await requireGameStopped(platform)
         if (await platform.hashFile(await platform.resolveGamePath(root, config)) !== before) throw new Error(`The config changed during the profile change: ${config}. Try again.`)
         await platform.writeText(await platform.resolveGamePath(root, config), afterText, parentPath(gameFolder))
       }
@@ -752,7 +754,7 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
  * undoes only this toggle.
  */
 export async function setDeploymentEnabled(platform: Platform, gameFolder: string, enabled: boolean): Promise<DeploymentRecord> {
-  if (await platform.isGameRunning()) throw new PlatformError('locked', 'Close XIV before changing whether Lucent is Enabled.')
+  platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing whether Lucent is Enabled.')
   if (record.enabled === enabled) return record
@@ -770,7 +772,7 @@ export async function setDeploymentEnabled(platform: Platform, gameFolder: strin
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   await save()
   try {
-    await applySteps({ platform, record, save, report: () => {}, owned: new Set(Object.keys(record.files).map(fileKey)), during: 'the Enabled change' }, steps)
+    await applySteps({ platform, record, save, report: () => {}, owned: new Set(Object.keys(record.files).map(fileKey)) }, steps)
     for (const { from, to } of renames) {
       const deployedPath = Object.keys(changed.files).find((p) => fileKey(p) === fileKey(from))
       if (!deployedPath) throw new Error(`The deployment does not own its entry file: ${from}`)

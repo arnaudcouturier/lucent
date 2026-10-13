@@ -7,12 +7,12 @@ import { Path } from './Path'
 import { ProfileSelector } from './Profiles'
 
 export function FlowError() {
-  const [{ error, notice, recoveryRequired, activity, busy, plan }, core] = useCore()
+  const [{ error, notice, recoveryRequired, activity, busy, plan, gameRunning }, core] = useCore()
   return error ? <div className="card health-card is-failed" role="alert"><TriangleAlert size={16} strokeWidth={1.75} /><div className="scan-notice">
     <h2>{recoveryRequired ? 'Recovery needs attention' : activity.kind === 'review' ? 'Deployment didn’t finish' : 'Couldn’t continue'}</h2>
     <p>{error}</p>
     {(activity.kind === 'scan' || recoveryRequired) && <button className="btn" disabled={busy} onClick={() => void core.scan()}>{recoveryRequired ? 'Try recovery again' : 'Scan again'}</button>}
-    {activity.kind === 'review' && <button className="btn" disabled={busy || !plan || !!plan.blockedPaths.length} onClick={() => void core.deploy()}>Try again</button>}
+    {activity.kind === 'review' && <button className="btn" disabled={busy || gameRunning !== false || !plan || !!plan.blockedPaths.length} onClick={() => void core.deploy()}>Try again</button>}
   </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
 }
 
@@ -23,7 +23,7 @@ function sizeLabel(bytes: number) {
 }
 
 export function ReviewScreen() {
-  const [{ plan, gameFolder, graphics, busy, error }, core] = useCore()
+  const [{ plan, gameFolder, graphics, busy, error, gameRunning }, core] = useCore()
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   return <Screen title="Review" sub="Here’s what Lucent will put in your game folder.">
@@ -41,10 +41,11 @@ export function ReviewScreen() {
     {!!plan.existingSetups.length && <p className="screen-note">Files backed up include your existing setup: {new Intl.ListFormat('en').format(plan.existingSetups.map((s) => s.label))}. Uninstall brings it back.</p>}
     <p className="screen-note">{plan.includeReShade ? 'All presets are included. You choose a look in game; none is active by default.' : 'ReShade, shaders and presets will be left out.'}</p>
     {!!plan.blockedPaths.length && <p className="callout" role="alert"><TriangleAlert size={14} /><span>These user files would be replaced: {plan.blockedPaths.join(', ')}. Move them aside before installing, then run Scan again.</span></p>}
+    <StatusCard />
     <FlowError />
     <footer className="screen-actions">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
-      {!error && <button className="btn is-primary" disabled={busy || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
+      {!error && <button className="btn is-primary" disabled={busy || gameRunning !== false || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
     </footer>
   </Screen>
 }
@@ -94,10 +95,10 @@ export function MainScreen() {
 
 /** The master switch: Disabled leaves the deployment's files in place but inactive. */
 function EnabledRow() {
-  const [{ activity, busy, recoveryRequired }, core] = useCore()
+  const [{ activity, busy, recoveryRequired, gameRunning }, core] = useCore()
   if (activity.kind !== 'deployment') return null
   return <label className="card option-row enabled-row">
-    <input type="checkbox" role="switch" checked={activity.enabled} disabled={busy || recoveryRequired} onChange={(e) => void core.setEnabled(e.target.checked)} />
+    <input type="checkbox" role="switch" checked={activity.enabled} disabled={busy || recoveryRequired || gameRunning !== false} onChange={(e) => void core.setEnabled(e.target.checked)} />
     <span><strong>Enabled</strong><small>{activity.enabled ? 'Lucent is active in game.' : 'Files stay in place, but the game runs as if vanilla.'}</small></span>
   </label>
 }
@@ -109,6 +110,10 @@ export function StatusCard() {
   const [state, core] = useCore()
   const card = statusCard(state)
   if (!card) return null
+  if (card.kind === 'game-running' || card.kind === 'game-check-failed') return <div className="card health-card is-game-waiting" role="status">
+    <TriangleAlert size={20} />
+    <div className="health-body"><h2>{card.kind === 'game-running' ? 'XIV is running' : 'Couldn’t check XIV'}</h2><p>{card.kind === 'game-running' ? 'Changes wait until you close the game. Your actions will return automatically.' : 'Changes wait until Lucent can check whether the game is running. It will try again automatically.'}</p></div>
+  </div>
   if (card.kind === 'busy') return <div className="card health-card is-busy" role="status">
     <LoaderCircle size={20} className="spin" />
     <div className="health-body"><h2>{OPERATION_LABEL[card.operation]}…</h2>
@@ -118,7 +123,7 @@ export function StatusCard() {
     <TriangleAlert size={20} />
     <div className="health-body"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
       <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
-    <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
+    <button className="btn is-primary" disabled={state.busy || state.recoveryRequired || state.gameRunning !== false} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
   </div>
   if (card.kind === 'app-update' || card.kind === 'update') {
     const app = card.kind === 'app-update'
@@ -131,7 +136,7 @@ export function StatusCard() {
         <p className="update-size">{size ? `${sizeLabel(size)} to download` : 'Nothing to download'}. {app ? 'Lucent will reopen when the update is ready.' : 'Your profile and Enabled stay as they are.'}</p>
         <footer className="update-actions">
           <button className="btn is-ghost" disabled={state.busy} onClick={() => void (app ? core.skipAppUpdate() : core.skipUpdate())}>Skip</button>
-          <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
+          <button className="btn is-primary" disabled={state.busy || state.recoveryRequired || (!app && state.gameRunning !== false)} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
         </footer></div>
     </div>
   }

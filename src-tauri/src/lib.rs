@@ -67,6 +67,14 @@ async fn platform_download_file(url: String, to: PathBuf, progress: tauri::ipc::
 #[tauri::command]
 async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_game_running() }
 #[tauri::command]
+async fn platform_is_directory_writable(path: PathBuf) -> Result<bool, PlatformError> { platform::is_directory_writable(&path) }
+#[tauri::command]
+async fn platform_is_elevated() -> Result<bool, PlatformError> { platform::is_elevated() }
+#[tauri::command]
+async fn platform_elevation_resume_path() -> Option<String> { platform::elevation_resume_path() }
+#[tauri::command]
+async fn platform_request_elevation(resume_path: PathBuf) -> Result<(), PlatformError> { platform::request_elevation(&resume_path) }
+#[tauri::command]
 async fn platform_exe_path() -> Result<String, PlatformError> { platform::exe_path() }
 #[tauri::command]
 async fn platform_launch_exe(path: PathBuf) -> Result<(), PlatformError> { platform::launch_exe(&path) }
@@ -84,7 +92,8 @@ pub fn run() {
             platform_dev_content,
             platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
             platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
-            platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe
+            platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe,
+            platform_is_directory_writable, platform_is_elevated, platform_elevation_resume_path, platform_request_elevation
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");
