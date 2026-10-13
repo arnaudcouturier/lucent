@@ -4,8 +4,8 @@ import type { ProfileId } from '../shared/manifest'
 import type { State } from './core'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
-export const gameActionsAvailable = (state: Pick<State, 'busy' | 'recoveryRequired' | 'gameRunning'>) =>
-  !state.busy && !state.recoveryRequired && state.gameRunning === false
+export const gameActionsAvailable = (state: Pick<State, 'busy' | 'recoveryRequired' | 'gameRunning' | 'gameFolder'>) =>
+  !state.busy && !state.recoveryRequired && state.gameRunning === false && state.gameFolder.status !== 'missing'
 
 export async function requireGameStopped(platform: Platform, observe?: (running: boolean) => void): Promise<void> {
   const running = await platform.isGameRunning()
@@ -40,6 +40,7 @@ export type GameWriteRequest = { gameFolder: string } & (
   | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null }
   | { kind: 'repair' | 'uninstall' | 'recover' }
   | { kind: 'update'; contentVersion: string }
+  | { kind: 'tier'; tier: string; contentVersion: string }
   | { kind: 'profile'; profile: ProfileId }
   | { kind: 'enabled'; enabled: boolean }
 )
@@ -64,8 +65,9 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   const value = JSON.parse(text) as { schemaVersion?: unknown; request?: GameWriteRequest }
   const request = value?.request
   if (value?.schemaVersion !== 1 || !request || typeof request.gameFolder !== 'string'
-    || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'profile', 'enabled'].includes(request.kind)
-    || ((request.kind === 'deploy' || request.kind === 'update') && typeof request.contentVersion !== 'string')
+    || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'tier', 'profile', 'enabled'].includes(request.kind)
+    || ((request.kind === 'deploy' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
+    || (request.kind === 'tier' && typeof request.tier !== 'string')
     || (request.kind === 'deploy' && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !['fidelity', 'balanced', 'performance'].includes(request.profile))))
     || (request.kind === 'profile' && !['fidelity', 'balanced', 'performance'].includes(request.profile))
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')

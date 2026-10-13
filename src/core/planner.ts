@@ -5,6 +5,9 @@ import type { ExistingSetup } from './existingSetup'
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
 /** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
 export const disabledName = (path: string) => `${path}.disabled`
+/** A deployment keeps its profile where the tier still offers it; otherwise the tier's default applies. */
+export const keptProfile = (content: ContentVersion, tier: Tier, profile: ProfileId | null | undefined): ProfileId | null =>
+  content.tiers[tier.id]?.performanceProfiles?.some((p) => p.id === profile) ? profile! : null
 export interface DeploymentScan {
   files: Record<string, FileStat>
   ownedFiles: string[]

@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Check, CircleCheck, Download, LoaderCircle, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
+import { ArrowDownToLine, Check, CircleCheck, Cpu, Download, FolderX, LoaderCircle, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import type { DeploymentPhase } from '../core/deployment'
 import { statusCard, type StatusCard as Card } from '../core/statusCard'
 import { Screen } from './Window'
@@ -107,7 +107,7 @@ function EnabledRow() {
   </label>
 }
 
-const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', 'app-update': 'Updating Lucent' } as const
+const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', tier: 'Switching tier', 'app-update': 'Updating Lucent' } as const
 
 /** Renders exactly the one state the core's priority function picks. */
 export function StatusCard() {
@@ -130,6 +130,17 @@ function StatusCardContent({ card }: { card: Card }) {
     <LoaderCircle size={20} className="spin" />
     <div className="health-body"><h2>{OPERATION_LABEL[card.operation]}…</h2>
       <progress max={1} value={card.progress} aria-label={`${OPERATION_LABEL[card.operation]} progress`} /></div>
+  </div>
+  if (card.kind === 'folder-missing') return <div className="health-card is-folder-missing" role="alert">
+    <FolderX size={20} />
+    <div className="health-body"><h2>Game folder not found</h2><p>The folder Lucent deployed to is gone or has moved.</p><Path path={card.path} /></div>
+    <button className="btn is-primary" disabled={state.busy} onClick={() => void core.findGameFolder()}><Search size={14} />Find it</button>
+  </div>
+  if (card.kind === 'switch-tier') return <div className="health-card is-tier" role="status">
+    <Cpu size={20} />
+    <div className="health-body"><h2>New graphics card</h2><p>Your {card.gpu} matches the {card.to} tier. Lucent is set up for {card.from}.</p>
+      <p className="update-size">Enabled and your own changes stay as they are, and so does your profile if {card.to} offers it.</p></div>
+    <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.switchTier()}><Cpu size={14} />Switch tier</button>
   </div>
   if (card.kind === 'drift') return <div className="health-card is-drift" role="alert">
     <TriangleAlert size={20} />

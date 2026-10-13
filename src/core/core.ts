@@ -5,8 +5,8 @@ import { checkPickedFolder, findGameFolder, type GameFolder } from './gameFolder
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
-import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { disabledName, fileKey, planDeployment, stepWritePaths, type Plan } from './planner'
+import { changePerformanceProfile, dataPaths, deployContent, DeploymentError, failureReason, lostDeployment, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -14,7 +14,7 @@ export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
-import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
+import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
@@ -27,7 +27,17 @@ export interface ContentUpdate {
   downloadSize: number
 }
 
-export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' }
+/** `missing`: no game folder was found, and the one Lucent last deployed to no longer holds the game. */
+export type GameFolderState = { status: 'idle' } | { status: 'scanning' } | ({ status: 'found' } & GameFolder) | { status: 'not-found' } | { status: 'missing'; path: string }
+
+/** The graphics card now matches another tier than the deployed one, and that tier has content to switch to. */
+export interface TierChange {
+  gpu: string
+  /** The deployed tier's label. */
+  from: string
+  /** The new tier's label. */
+  to: string
+}
 
 /** Activity reported by the core. Later workflow commands will advance this beyond Scan. */
 export type Activity =
@@ -40,7 +50,9 @@ export type Activity =
       drift: Drift | null
       /** The content version to announce, or null when there's none. */
       update: ContentUpdate | null
-      operation: 'repair' | 'update' | 'rollback' | null
+      /** Null when the graphics card still matches the deployed tier, or the new tier has no content yet. */
+      tierChange: TierChange | null
+      operation: 'repair' | 'update' | 'rollback' | 'tier' | null
     }
 
 export interface State {
@@ -83,6 +95,8 @@ export interface Core {
   refreshGameRunning(): Promise<void>
   /** Lets the player pick the game folder, whether or not Scan found one. */
   chooseGameFolder(): Promise<void>
+  /** Find it: scans again for a missing game folder; if it's still gone, Scan offers the folder picker. */
+  findGameFolder(): Promise<void>
   continueSetup(): Promise<void>
   selectProfile(profile: ProfileId): Promise<void>
   review(includeReShade?: boolean): Promise<void>
@@ -94,6 +108,8 @@ export interface Core {
   setEnabled(enabled: boolean): Promise<void>
   /** Re-applies the deployment so that no drift remains, then checks its health again. */
   repair(): Promise<void>
+  /** Plans the deployment again for the graphics card's new tier, keeping the profile it still has, Disabled and user changes. */
+  switchTier(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
   update(): Promise<void>
   /** Applies a version from Versions, including cached rollback targets and skipped versions. */
@@ -152,15 +168,17 @@ export function createCore(platform: Platform): Core {
     if (request.kind === 'profile') return record.recipe.performanceProfiles?.find((p) => p.id === request.profile)?.settings
       .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))).map((s) => s.file) ?? []
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
-    if (request.kind === 'update') {
-      const { content, tier } = versionSource(record, request.contentVersion)
-      const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
-      return planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled).steps.flatMap(stepWritePaths)
+    if (request.kind === 'update' || request.kind === 'tier') {
+      const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
+      if (!target || target.content.id !== request.contentVersion) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
+      const scan = await scanDeployment(platform, record.gameFolder, target.content, record, [])
+      return planDeployment(target.content, target.tier, record.includeReShade, scan, keptProfile(target.content, target.tier, record.profile), record.enabled).steps.flatMap(stepWritePaths)
     }
     return [...record.journal.slice(request.kind === 'recover' ? record.changeStart ?? 0 : 0).flatMap((entry) => Object.keys(entry.before)),
       ...(record.createdDirectories ?? []), ...(request.kind === 'uninstall' || record.uninstalling ? record.generatedFiles ?? [] : [])]
   }
   const prepareWrite = async (request: GameWriteRequest, targets?: string[]) => {
+    if (state.gameFolder.status === 'missing') throw new Error('The game folder is missing. Find it before changing your setup.')
     await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
     const ready = await access(request, [...new Set(targets ?? await writeTargets(request))])
     if (!ready) set({ notice: 'Lucent is reopening with administrator access to continue your change.' })
@@ -168,6 +186,8 @@ export function createCore(platform: Platform): Core {
   }
   class ElevationPending extends Error {}
   let resumeContentVersion: string | null = null
+  /** While Find it scans, a deployment whose folder is gone isn't shown in place of first-run Scan. */
+  let findingFolder = false
   const recover = async () => {
     try {
       const recovered = await recoverDeployments(platform, async (record) => {
@@ -214,7 +234,22 @@ export function createCore(platform: Platform): Core {
     }
   }
   const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
-    ({ kind: 'deployment', enabled: record.enabled, drift, update, operation: null })
+    ({ kind: 'deployment', enabled: record.enabled, drift, update, tierChange: tierChange(record), operation: null })
+  /** The graphics card's tier and the content to plan it with: the deployed version when it has that tier, else the newest. */
+  const tierSwitchTarget = (record: DeploymentRecord): { tier: Tier; content: ContentVersion } | null => {
+    const { graphics, manifest } = state
+    if (graphics.status !== 'found' || !graphics.tier || graphics.tier.id === record.tier || manifest.status !== 'ready') return null
+    const tier = graphics.tier
+    const candidates = manifest.manifest.versions.filter((v) => v.tiers[tier.id] && onChannel(v, CHANNEL) && !needsNewerApp(v.minAppVersion, APP_VERSION))
+    const content = candidates.find((v) => v.id === record.contentVersion) ?? candidates.sort((a, b) => b.id.localeCompare(a.id))[0]
+    return content ? { tier, content } : null
+  }
+  const tierChange = (record: DeploymentRecord): TierChange | null => {
+    const target = tierSwitchTarget(record)
+    if (!target || state.graphics.status !== 'found' || state.manifest.status !== 'ready') return null
+    const from = state.manifest.manifest.tiers.find((t) => t.id === record.tier)?.label ?? record.cachedVersions?.[0]?.tier.label ?? record.tier
+    return { gpu: state.graphics.adapter.name, from, to: target.tier.label }
+  }
   /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
   const announceApp = async (): Promise<AppUpdate | null> => {
     const { skippedApp } = await readSettings(platform)
@@ -337,6 +372,7 @@ export function createCore(platform: Platform): Core {
     },
     async scan() {
       if (state.busy) return
+      const missing = !findingFolder
       set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, versions: [], profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
@@ -356,6 +392,9 @@ export function createCore(platform: Platform): Core {
         if (folder) {
           set({ gameFolder: { status: 'found', ...folder } })
           await restoreDeployment(folder)
+        } else if (missing && !resume) {
+          const lost = await lostDeployment(platform)
+          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: lost.recipe.performanceProfiles ?? [], selectedProfile: lost.profile ?? null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
         }
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
@@ -376,9 +415,16 @@ export function createCore(platform: Platform): Core {
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall()
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
+          else if (resume.kind === 'tier') await core.switchTier()
         } catch (error) { set({ error: message(error) }) }
         finally { resumeContentVersion = null }
       }
+    },
+    async findGameFolder() {
+      if (state.gameFolder.status !== 'missing') return
+      // Find it looks past the missing folder, so a folder that's still gone leads to Scan and its folder picker.
+      findingFolder = true
+      try { await core.scan() } finally { findingFolder = false }
     },
     async chooseGameFolder() {
       if (state.busy || state.activity.kind !== 'scan') return
@@ -460,6 +506,32 @@ export function createCore(platform: Platform): Core {
     },
     async update() {
       if (state.activity.kind === 'deployment' && state.activity.update) await core.applyVersion(state.activity.update.version)
+    },
+    async switchTier() {
+      const { activity, deployment, graphics, manifest } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found' || manifest.status !== 'ready') return
+      const target = tierSwitchTarget(deployment)
+      if (!target) return
+      set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'tier' } })
+      try {
+        if (!await prepareWrite({ kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id })) return
+        await refreshHealth(deployment)
+        const record = await updateDeployment(platform, deployment.gameFolder, target.content, target.tier, manifest.source, (progress) => set({ deploymentProgress: progress }), graphics.adapter)
+        set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
+        try { await finishSelection(record) }
+        catch (error) { set({ notice: `Lucent switched to ${target.tier.label}. It will finish saving your version choice when you reopen it. ${message(error)}` }) }
+        await pruneCache(record)
+      } catch (error) {
+        set(error instanceof DeploymentError
+          ? { error: error.message, recoveryRequired: error.recoveryRequired }
+          : { error: `${failureReason(error)} The game folder has not been changed.` })
+      }
+      finally {
+        await refreshHealthAfter(true)
+        await refreshAnnouncement()
+        if (state.activity.kind === 'deployment' && state.deployment) set({ activity: { ...state.activity, operation: null, tierChange: tierChange(state.deployment) } })
+        set({ busy: false, deploymentProgress: null })
+      }
     },
     async applyVersion(version) {
       const { activity, deployment, manifest } = state

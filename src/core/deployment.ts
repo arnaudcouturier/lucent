@@ -1,12 +1,13 @@
 import { assertGamePath, validateManifest, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanStep } from './planner'
+import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { mergeIni, readIni } from './ini'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
+import { isGameFolder } from './gameFolder'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -177,6 +178,24 @@ export async function recoverDeployments(platform: Platform, beforeRecovery?: (r
     }
   }
   return recovered
+}
+
+/** The most recently saved complete deployment whose game folder no longer holds the game. A damaged record is left to recovery. */
+export async function lostDeployment(platform: Platform): Promise<DeploymentRecord | null> {
+  const directory = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'deployments')
+  if (!await maybeStat(platform, directory)) return null
+  let lost: { record: DeploymentRecord; savedMs: number } | null = null
+  for (const relative of await platform.listFiles(directory)) {
+    if (!relative.endsWith('record.json')) continue
+    const path = joinPath(directory, relative)
+    try {
+      const record = await readDeployment(platform, (JSON.parse(await platform.readText(path)) as DeploymentRecord).gameFolder)
+      if (record?.status !== 'complete' || await isGameFolder(platform, record.gameFolder)) continue
+      const savedMs = (await platform.stat(path)).modifiedMs
+      if (!lost || savedMs > lost.savedMs) lost = { record, savedMs }
+    } catch { /* Not a deployment to point the player at. */ }
+  }
+  return lost?.record ?? null
 }
 
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {
@@ -478,17 +497,19 @@ function writtenPath(step: PlanStep): string | null {
  * files the cache lacks, applies the recipe, and deletes the files the version no longer deploys, all through the journal.
  * Owned configs are merged key by key (see `mergeIni`) and backed up first; an edited shipped preset is kept when
  * Lucent's version is unchanged, or saved as "(my edits)" when it changed too. Enabled or Disabled, and the
- * performance profile, are kept. A failure or interruption undoes only the update.
+ * performance profile where the tier still has it, are kept. Given another tier and `graphics`, it switches the deployment
+ * to that tier's recipe the same way. A failure or interruption undoes only the update.
  */
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
+  graphics?: GpuAdapter,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before updating it.')
   // No existing-setup signatures: without a Review to explain a takeover, a setup that appeared since blocks the update instead.
   const scan = await scanDeployment(platform, gameFolder, content, record, [])
-  const plan = planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled)
+  const plan = planDeployment(content, tier, record.includeReShade, scan, keptProfile(content, tier, record.profile), record.enabled)
   if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
@@ -591,9 +612,12 @@ export async function updateDeployment(
     const generated = record.generatedFiles ?? []
     const present = new Set(Object.keys(scan.files).map(fileKey))
     Object.assign(updated, {
+      tier: tier.id, graphics: graphics ?? record.graphics,
       contentVersion: content.id, includeReShade: plan.includeReShade, profile: plan.profile, recipe: plan.recipe,
-      cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...(record.cachedVersions ?? []).filter((v) => v.content.id !== content.id)].slice(0, 3),
-      pinned: content.id < record.contentVersion,
+      // Another tier's recipes can't be rolled back to on this graphics card.
+      cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...(record.cachedVersions ?? []).filter((v) => v.content.id !== content.id && v.tier.id === tier.id)].slice(0, 3),
+      // A tier switch on the same content version keeps the player's pin.
+      pinned: content.id === record.contentVersion ? record.pinned : content.id < record.contentVersion,
       pendingSelection: { skip: content.id < record.contentVersion ? record.contentVersion : null },
       journal: record.journal, createdDirectories: record.createdDirectories,
       files, ownedConfigs,

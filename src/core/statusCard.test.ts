@@ -53,3 +53,19 @@ it('adds a known-broken caution to a pinned deployment card only for its content
   expect(statusCard({ ...state, deployment: { ...state.deployment!, pinned: false } })).toEqual({ kind: 'disabled' })
   expect(statusCard({ ...state, activity: { ...deployment({ drift }).activity } })).toMatchObject({ kind: 'drift', caution: expect.stringContaining('known broken') })
 })
+
+const tierChange = { gpu: 'AMD Radeon RX 7900 XTX', from: 'RTX 30/40', to: 'Radeon' }
+const appUpdate = { version: '0.2.0', notes: ['Faster scans.'], downloadUrl: 'https://example.invalid/Lucent.exe', sha256: 'a'.repeat(64), size: 9, prerelease: false }
+
+it('shows a missing game folder below the running game but ahead of drift and a tier switch', () => {
+  const state = { ...deployment({ drift, tierChange }), gameFolder: { status: 'missing', path: 'D:\XIV' } } as State
+  expect(statusCard(state)).toEqual({ kind: 'folder-missing', path: 'D:\XIV' })
+  expect(statusCard({ ...state, gameRunning: true })).toEqual({ kind: 'game-running' })
+})
+
+it('offers Switch tier below drift but ahead of updates and Disabled', () => {
+  const update = { version: '2026.11.02', changelog: [], downloadSize: 12 }
+  expect(statusCard(deployment({ drift, tierChange }))).toMatchObject({ kind: 'drift' })
+  expect(statusCard({ ...deployment({ enabled: false, update, tierChange }), appUpdate } as State)).toEqual({ kind: 'switch-tier', ...tierChange })
+  expect(statusCard({ ...deployment({ tierChange, operation: 'tier' }), deploymentProgress: { phase: 'applying', progress: 0.5, file: null } })).toEqual({ kind: 'busy', operation: 'tier', progress: 0.5 })
+})
