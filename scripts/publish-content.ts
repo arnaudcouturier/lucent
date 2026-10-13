@@ -100,7 +100,7 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         if (!recipe.ownedConfigs.some((p) => fileKey(p.path) === fileKey(key.file))) throw new Error(`Reset key must target an owned config: ${key.file}`)
       }
       for (const includeReShade of tier.requiresReShade ? [true] : [true, false]) {
-        const plan = planDeployment(content, tier, includeReShade, { files: {}, ownedFiles: [], cachedFiles: [] })
+        const plan = planDeployment(content, tier, includeReShade, { files: [], ownedFiles: [], cachedFiles: [] })
         const deployed = new Map<string, { hash: string; component: Component; settings: IniSetting[] }>()
         for (const [index, step] of recipe.recipe.entries()) {
           if (step.when && !includeReShade) continue

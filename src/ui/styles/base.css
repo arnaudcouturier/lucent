@@ -46,7 +46,13 @@ html.is-browser #root {
   display: grid;
   place-items: center;
 }
+/* The window can be resized from its corner, as it can on the desktop. */
 html.is-browser .window {
+  width: var(--window-width);
+  height: var(--window-height);
+  max-width: 100vw;
+  max-height: 100vh;
+  resize: both;
   border-radius: var(--r-window);
   box-shadow: var(--ring-overlay);
 }

@@ -1,5 +1,4 @@
 import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
-import type { FileStat } from './platform'
 import type { ExistingSetup } from './existingSetup'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
@@ -9,7 +8,8 @@ export const disabledName = (path: string) => `${path}.disabled`
 export const keptProfile = (content: ContentVersion, tier: Tier, profile: ProfileId | null | undefined): ProfileId | null =>
   content.tiers[tier.id]?.performanceProfiles?.some((p) => p.id === profile) ? profile! : null
 export interface DeploymentScan {
-  files: Record<string, FileStat>
+  /** Every file in the game folder, relative to it. */
+  files: string[]
   ownedFiles: string[]
   cachedFiles: string[]
   existingSetups?: ExistingSetup[]
@@ -29,8 +29,13 @@ export interface Plan {
   steps: PlanStep[]
   files: ContentFile[]
   filesToDownload: ContentFile[]
+  /** Every file from before the plan that it overwrites or removes; each is backed up first. */
   filesToBackup: string[]
-  blockedPaths: string[]
+  /**
+   * Files from before the plan that no existing setup claims but that it overwrites or removes, such as a DLSS DLL or a license file.
+   * A first deployment backs them up and replaces them like the rest, since Scan lists them; an update refuses instead.
+   */
+  unclaimedPaths: string[]
   existingSetups: ExistingSetup[]
   /** Existing-setup files the deployment backs up and removes, so it may write over them. */
   takenOver: string[]
@@ -57,7 +62,7 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   // The profile applies after the recipe but stays out of the saved recipe: the record names it on its own.
   const contentSteps: Step[] = [...recipeSteps, ...(selected?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s }))]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
-  const initial = new Set(Object.keys(scan.files).map(fileKey))
+  const initial = new Set(scan.files.map(fileKey))
   const owned = new Set(scan.ownedFiles.map(fileKey))
   const existingSetups = scan.existingSetups ?? []
   const { carries, takenOver } = takeOver(existingSetups, contentSteps, initial)
@@ -66,11 +71,11 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const present = new Map([...initial].map((p) => [p, null as string | null]))
   const touched = new Map<string, string>()
   const backups = new Map<string, string>()
-  const blocked = new Map<string, string>()
+  const unclaimed = new Map<string, string>()
   const modify = (path: string) => {
     assertGamePath(path)
     const key = fileKey(path)
-    if (present.has(key) && !owned.has(key)) blocked.set(key, path)
+    if (present.has(key) && !owned.has(key)) unclaimed.set(key, path)
     if (initial.has(key)) backups.set(key, path)
     touched.set(key, path)
     owned.add(key)
@@ -128,7 +133,7 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
     contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null, steps, files, filesToDownload,
-    filesToBackup: [...backups.values()], blockedPaths: [...blocked.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
+    filesToBackup: [...backups.values()], unclaimedPaths: [...unclaimed.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),
   }
@@ -161,4 +166,23 @@ function takeOver(setups: ExistingSetup[], steps: Step[], initial: Set<string>) 
     carries.push({ kind: 'carry', from, to })
   }
   return { carries, takenOver: [...removed.values()] }
+}
+
+/** What a first deployment does to the files already in the game folder, as Scan lists them. */
+export interface FolderChanges {
+  /** Where the originals are kept, readable: each backed-up file sits at its own path inside this folder. */
+  backupFolder: string
+  /** Every file from before the deployment, backed up, then replaced or removed. */
+  backedUp: { path: string; removed: boolean }[]
+  /** An existing setup's presets, kept as user files under the path each one gets. */
+  carried: { from: string; to: string }[]
+}
+
+export function folderChanges(plan: Plan, backupFolder: string): FolderChanges {
+  const remaining = new Set(plan.expectedFiles.map((f) => fileKey(f.path)))
+  return {
+    backupFolder,
+    backedUp: plan.filesToBackup.map((path) => ({ path, removed: !remaining.has(fileKey(path)) })),
+    carried: plan.steps.flatMap((s) => s.kind === 'carry' ? [{ from: s.from, to: s.to }] : []),
+  }
 }

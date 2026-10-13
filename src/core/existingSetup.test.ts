@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
 import { EXISTING_SETUPS, existingSetup, graphicsCard, machine, vanillaGame, xivLauncher, type ExistingSetupFixture } from '../platform/fixtures'
@@ -108,7 +108,28 @@ describe('Review', () => {
     const core = createCore(createFakePlatform(setupMachine(kind)))
     await core.scan()
     await core.review(true)
-    expect(core.getState().plan).toMatchObject({ blockedPaths: [], counts: { backedUp } })
+    expect(core.getState().plan).toMatchObject({ unclaimedPaths: [], counts: { backedUp } })
+  })
+
+  it.each(KINDS)('backs up exactly the files of %s that Scan listed, and keeps the presets it listed', async (kind) => {
+    const core = createCore(createFakePlatform(setupMachine(kind)))
+    await core.scan()
+    const listed = core.getState().folderChanges!
+    await core.review(true)
+    const plan = core.getState().plan!
+    expect(keys(listed.backedUp.map((f) => f.path))).toEqual(keys(plan.filesToBackup))
+    expect(listed.carried).toEqual(plan.steps.flatMap((s) => s.kind === 'carry' ? [{ from: s.from, to: s.to }] : []))
+  })
+
+  it('lists on Scan what Include ReShade on the Profile step leaves out', async () => {
+    const core = createCore(createFakePlatform(setupMachine('reshade')))
+    await core.scan()
+    const withReShade = core.getState().folderChanges!.backedUp.length
+    await core.continueSetup()
+    core.setIncludeReShade(false)
+    await vi.waitFor(() => expect(core.getState().folderChanges!.backedUp.length).toBeLessThan(withReShade))
+    await core.review()
+    expect(core.getState().plan).toMatchObject({ includeReShade: false, counts: { backedUp: core.getState().folderChanges!.backedUp.length } })
   })
 })
 
@@ -141,6 +162,19 @@ describe('Deploying over an existing setup', () => {
     const theirs = 'Their example shader'
     const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(theirs)))].map((b) => b.toString(16).padStart(2, '0')).join('')
     expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${hash}`)).toBe(theirs)
+  })
+
+  it('keeps a readable copy of each original at its own path until uninstall brings them back', async () => {
+    const platform = createFakePlatform(setupMachine('reshade'))
+    const before = await snapshot(platform)
+    const core = await deployed(platform)
+    const readable = `${(await dataPaths(platform, ROOT)).readableBackups}\\XIV\\game`
+    const copies = await platform.listFiles(readable)
+    expect(keys(copies)).toEqual(keys(['ReShade.ini', 'dxgi.dll', 'ReShadePreset.ini', 'reshade-presets/Example.ini', 'reshade-shaders/Shaders/Example.fx']))
+    for (const path of copies) expect(await platform.readText(`${readable}\\${path}`)).toBe(before[key(path)])
+    await core.uninstall()
+    expect(await snapshot(platform)).toMatchObject(before)
+    expect(await platform.stat(readable).then(() => true, () => false)).toBe(false)
   })
 
   it('removes an existing ReShade even when ReShade is left out, and still carries its presets over', async () => {

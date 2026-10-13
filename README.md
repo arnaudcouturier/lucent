@@ -18,8 +18,8 @@ The [download site](https://arnaudcouturier.github.io/lucent/) explains the Wind
 
 ## How it works
 
-1. **Scan** — Lucent finds your game folder, graphics card and launcher, and spots any existing setup (GShade leftovers, another ReShade or OptiScaler) that it will back up and replace.
-2. **One question** — pick Fidelity, Balanced or Performance.
+1. **Scan** — Lucent finds your game folder, graphics card and launcher, and lists every file it will back up and replace (an existing GShade, ReShade or OptiScaler, for instance) and the folder where it keeps a copy.
+2. **Your choices** — pick Fidelity, Balanced or Performance, and whether to include ReShade.
 3. **Review** — see exactly what will be backed up, added and downloaded before anything changes.
 4. **Done** — Lucent deploys, then teaches you the two overlay hotkeys.
 

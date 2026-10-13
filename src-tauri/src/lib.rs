@@ -145,8 +145,11 @@ pub fn run() {
                     std::thread::spawn(|| { std::thread::sleep(std::time::Duration::from_secs(30 * 60)); std::process::exit(1) });
                     return Ok(());
                 }
-                // Sized to --uninstall-width and --uninstall-height in tokens.css.
+                // Sized to --uninstall-width and --uninstall-height in tokens.css, and fixed: only the main window resizes.
                 Some("uninstall") => {
+                    window.set_resizable(false)?;
+                    window.set_maximizable(false)?;
+                    window.set_min_size(None::<tauri::Size>)?;
                     window.set_size(tauri::LogicalSize::new(460.0, 340.0))?;
                     window.center()?;
                     window.set_title("Uninstall Lucent")?;

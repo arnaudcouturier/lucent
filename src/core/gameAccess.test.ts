@@ -241,7 +241,7 @@ it('keeps the player’s deployment data when UAC uses another administrator acc
   await resumed.scan()
   expect(resumed.getState().error).toBeNull()
   expect(resumed.getState().deployment?.enabled).toBe(false)
-  expect(await platform.listFiles(`${originalData}\\deployments`)).toHaveLength(1)
+  expect((await platform.listFiles(`${originalData}\\deployments`)).filter((f) => !f.includes('\\backups\\'))).toHaveLength(1)
   const reopened = createCore(platform)
   await reopened.scan()
   expect(reopened.getState().deployment?.enabled).toBe(false)

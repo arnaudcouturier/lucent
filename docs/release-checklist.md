@@ -44,9 +44,13 @@ for files the game itself generates. Use two real content versions for the updat
 - [ ] With "Add Lucent to the Start menu" checked, confirm the Start menu shortcut and the
   Settings → Apps entry, then uninstall from Settings → Apps with "Restore the game folder" on.
   Confirm Lucent's data folder and installed exe are gone after it exits.
-- [ ] Uninstall and compare the game folder against the pre-deployment hash listing.
+- [ ] Before installing over an existing setup, open Scan's Show files and confirm the list and the
+  "Backed up to" folder. After installing, confirm that folder holds every listed file.
+- [ ] Uninstall and compare the game folder against the pre-deployment hash listing. Confirm the
+  readable backup folder is gone.
 - [ ] Check the window chrome on Windows 11 and in a Windows 10 22H2 x64 VM: dragging,
-  minimize, close, fixed size, shadow and rounded corners where supported.
+  minimize, maximize and restore (button and double-click), resizing from every edge down to
+  880×580, close, shadow and rounded corners where supported. The uninstall window stays fixed.
 
 ## First session only
 

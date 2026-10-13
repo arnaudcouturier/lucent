@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { createCore } from './core'
+import { createCore, setupChoices } from './core'
 import { createFakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { dataPaths, readDeployment } from './deployment'
@@ -117,12 +117,14 @@ it('keeps a Disabled deployment inactive while changing its profile', async () =
   expect(await platform.listFiles(`${ROOT}\\game`)).not.toContain('winmm.dll')
 })
 
-it('skips the Profile step and selector for a tier without profiles', async () => {
+it('keeps only the remaining choices on the Profile step for a tier without profiles', async () => {
   const platform = createFakePlatform(machine(profileMachine(), graphicsCard('Intel Arc A770', 0x8086)))
   const core = createCore(platform)
   await core.scan()
+  expect(setupChoices(core.getState())).toEqual({ profiles: false, reShade: false, startMenu: true, any: true })
   await core.continueSetup()
-  expect(core.getState()).toMatchObject({ activity: { kind: 'review' }, profiles: [], selectedProfile: null })
+  expect(core.getState()).toMatchObject({ activity: { kind: 'profile' }, profiles: [], selectedProfile: null })
+  await core.review()
   await core.deploy()
   core.finish()
   expect(core.getState().profiles).toEqual([])
@@ -178,7 +180,7 @@ it('switches only profile keys, keeps user settings and comments, and saves the 
 it('applies the profile after the recipe without saving it into the deployed recipe', () => {
   const content = PROFILE_MANIFEST.versions[0]
   const tier = PROFILE_MANIFEST.tiers.find((t) => t.id === 'rtx-30-40')!
-  const plan = planDeployment(content, tier, true, { files: {}, cachedFiles: [], ownedFiles: [] }, 'performance')
+  const plan = planDeployment(content, tier, true, { files: [], cachedFiles: [], ownedFiles: [] }, 'performance')
   const performance = content.tiers[tier.id].performanceProfiles!.find((p) => p.id === 'performance')!
   expect(plan.steps.slice(-performance.settings.length)).toEqual(performance.settings.map((s) => ({ kind: 'ini_set', ...s })))
   expect(plan.recipe.recipe).toEqual(content.tiers[tier.id].recipe)

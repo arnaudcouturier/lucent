@@ -1,8 +1,8 @@
-// The frameless 880×580 window: the rail on the left, the pane with its title strip on the right.
-// The rail and the title strip are the drag regions.
+// The frameless window, 880×580 at its smallest: the rail on the left, the pane with its title strip on the right.
+// The rail and the title strip are the drag regions; a double-click on either maximizes or restores the window.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Minus, X } from 'lucide-react'
-import { closeWindow, dragWindow, minimizeWindow } from './shell'
+import { Copy, Minus, Square, X } from 'lucide-react'
+import { closeWindow, dragWindow, minimizeWindow, observeMaximized, toggleMaximizeWindow } from './shell'
 import { Rail } from './Rail'
 import { Menu } from './Menu'
 import { useCore } from './useCore'
@@ -13,6 +13,8 @@ export function Window({ children }: { children: ReactNode }) {
   const [{ activity }] = useCore()
   const [menuScreen, setMenuScreen] = useState<'credits' | 'versions' | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => observeMaximized(setMaximized), [])
   const showMenuScreen = menuScreen && activity.kind === 'deployment'
   useEffect(() => { if (activity.kind !== 'deployment') setMenuScreen(null) }, [activity.kind])
   const onBack = () => {
@@ -27,6 +29,9 @@ export function Window({ children }: { children: ReactNode }) {
           {activity.kind === 'deployment' && <Menu onOpenCredits={() => setMenuScreen('credits')} onOpenVersions={() => setMenuScreen('versions')} returnFocusRef={menuButtonRef} />}
           <button className="caption" aria-label="Minimize" onClick={minimizeWindow}>
             <Minus size={14} strokeWidth={1.75} />
+          </button>
+          <button className="caption" aria-label={maximized ? 'Restore' : 'Maximize'} onClick={toggleMaximizeWindow}>
+            {maximized ? <Copy size={12} strokeWidth={1.75} className="caption-restore" /> : <Square size={11} strokeWidth={1.75} />}
           </button>
           <button className="caption caption-close" aria-label="Close" onClick={closeWindow}>
             <X size={14} strokeWidth={1.75} />

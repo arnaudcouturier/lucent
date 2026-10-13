@@ -3,6 +3,7 @@ import { Screen } from './Window'
 import { FlowError } from './DeploymentScreens'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { customProfileSummary } from '../core/customProfile'
+import { setupChoices } from '../core/core'
 
 /** The Profile screen's title already names the choice, so only the main screen shows a legend. */
 export function ProfileSelector({ legend = true }: { legend?: boolean }) {
@@ -26,10 +27,23 @@ export function ProfileSelector({ legend = true }: { legend?: boolean }) {
   </fieldset>
 }
 
+/** Every first-run choice lives here, so Review only reviews. */
 export function ProfileScreen() {
-  const [{ busy }, core] = useCore()
-  return <Screen title="Performance profile" sub="Choose how to balance detail and frame rate. You can change this later.">
+  const [state, core] = useCore()
+  const { busy, includeReShade, addToStartMenu } = state
+  const choices = setupChoices(state)
+  return <Screen title={choices.profiles ? 'Performance profile' : 'Options'} sub={choices.profiles ? 'Choose how to balance detail and frame rate. You can change this later.' : 'Choose what Lucent sets up.'}>
     <ProfileSelector legend={false} />
+    {(choices.reShade || choices.startMenu) && <div className="card option-list">
+      {choices.reShade && <label className="option-row">
+        <input type="checkbox" checked={includeReShade} disabled={busy} onChange={(e) => core.setIncludeReShade(e.target.checked)} />
+        <span><strong>Include ReShade</strong><small>Shaders and presets, ready when you want them. None is active until you pick one in game.</small></span>
+      </label>}
+      {choices.startMenu && <label className="option-row">
+        <input type="checkbox" checked={addToStartMenu} disabled={busy} onChange={(e) => core.setAddToStartMenu(e.target.checked)} />
+        <span><strong>Add Lucent to the Start menu</strong><small>Find it later like any installed app. Remove it from Settings → Apps.</small></span>
+      </label>}
+    </div>}
     <FlowError />
     <footer className="screen-actions">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToScan()}>Back</button>

@@ -112,9 +112,9 @@ original files to back up and final added files, excluding temporary files creat
 the recipe. Downloads are deduplicated by hash; a cache entry counts only after its size and hash
 have been checked. Required-ReShade tiers force that choice on.
 
-An existing file without journal ownership blocks deployment; a recipe alone cannot claim a player's
-files. An existing setup is the one exception. Scan lists each one with its files and presets, and
-the plan takes it over before the recipe runs:
+Scan lists every file from before a first deployment that the plan backs up, then replaces or removes,
+and the presets it keeps; Review only counts them. An existing setup is taken over before the recipe
+runs:
 
 - presets outside `reshade-presets\`, or at a path the content writes, are copied there first under
   a free name (`<name> (previous).ini` when taken), keeping the folders below their top-level
@@ -124,12 +124,20 @@ the plan takes it over before the recipe runs:
   in the backup. A taken-over log counts as generated, so Uninstall removes the mods' new log
   before restoring the old one.
 
+Any other file at a path the content writes (`unclaimedPaths`, such as a DLSS DLL no signature claims) is
+backed up and replaced by the recipe itself. An update plans without signatures and refuses while
+`unclaimedPaths` isn't empty, since no Scan has listed those files.
+
 Review counts those files as backed up. Uninstall restores them; the carried-over copies are user
 files from then on, which Repair, profile changes and Uninstall never touch. A failed deployment
 removes them along with everything else.
 
-Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, `backups\<sha256>`, and
-`deployments\<hash of normalized game-folder path>\record.json`. A record stores the game folder,
+Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, and per game folder
+`deployments\<hash of normalized game-folder path>\record.json` with the journal's
+`backups\<sha256>` beside it. A first deployment also copies every original it backs up to
+`Backups\<game folder name>\game\<its path>` (numbered when another game folder's deployment has
+the name), recorded as `backupFolder`. That readable copy is for the player only: the journal
+never restores from it, and it is removed once the whole deployment is undone. A record stores the game folder,
 GPU, tier, content version, ReShade choice, Enabled, performance profile, the recipe's steps,
 path lists and profiles, each journal entry,
 last-written config text, and every deployed file's SHA-256, size and modification time.

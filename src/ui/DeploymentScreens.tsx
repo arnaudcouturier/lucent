@@ -14,7 +14,7 @@ export function FlowError() {
     <h2>{recoveryRequired ? 'Recovery needs attention' : activity.kind === 'review' ? 'Deployment didn’t finish' : 'Couldn’t continue'}</h2>
     <p>{error}</p>
     {(activity.kind === 'scan' || recoveryRequired) && <button className="btn" disabled={busy} onClick={() => void core.scan()}>{recoveryRequired ? 'Try recovery again' : 'Scan again'}</button>}
-    {activity.kind === 'review' && <button className="btn" disabled={!gameActionsAvailable(state) || !plan || !!plan.blockedPaths.length} onClick={() => void core.deploy()}>Try again</button>}
+    {activity.kind === 'review' && <button className="btn" disabled={!gameActionsAvailable(state) || !plan} onClick={() => void core.deploy()}>Try again</button>}
   </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
 }
 
@@ -24,11 +24,13 @@ export function sizeLabel(bytes: number) {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
+/** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
   const [state, core] = useCore()
-  const { plan, gameFolder, graphics, busy, error } = state
+  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu } = state
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
+  const profile = profiles.find((p) => p.id === plan.profile)
   return <Screen title="Review" sub="Here’s what Lucent will put in your game folder.">
     {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <dl className="card plan-numbers">
@@ -36,23 +38,16 @@ export function ReviewScreen() {
       <div><dt>Files added</dt><dd>{plan.counts.added}</dd></div>
       <div><dt>Download</dt><dd>{sizeLabel(plan.downloadSize)}</dd></div>
     </dl>
-    <label className="card option-row">
-      <input type="checkbox" checked={plan.includeReShade} disabled={!!required || busy} onChange={(e) => void core.review(e.target.checked)} />
-      <span><strong>Include ReShade</strong><small>{required ? 'Required for your tier.' : 'Shaders and presets, ready when you want them.'}</small></span>
-      {required && <span className="option-required">Included</span>}
-    </label>
-    {!state.selfInstalled && <label className="card option-row">
-      <input type="checkbox" checked={state.addToStartMenu} disabled={busy} onChange={(e) => core.setAddToStartMenu(e.target.checked)} />
-      <span><strong>Add Lucent to the Start menu</strong><small>Find it later like any installed app. Remove it from Settings → Apps.</small></span>
-    </label>}
-    {!!plan.existingSetups.length && <p className="screen-note">Files backed up include your existing setup: {new Intl.ListFormat('en').format(plan.existingSetups.map((s) => s.label))}. Uninstall brings it back.</p>}
-    <p className="screen-note">{plan.includeReShade ? 'All presets are included. You choose a look in game; none is active by default.' : 'ReShade, shaders and presets will be left out.'}</p>
-    {!!plan.blockedPaths.length && <p className="callout" role="alert"><TriangleAlert size={14} /><span>These user files would be replaced: {plan.blockedPaths.join(', ')}. Move them aside before installing, then run Scan again.</span></p>}
+    <dl className="card summary-list">
+      {profile && <div><dt>Profile</dt><dd>{profile.label}</dd></div>}
+      <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
+      {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
+    </dl>
     <StatusCard />
     <FlowError />
     <footer className="screen-actions">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
-      {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !!plan.blockedPaths.length} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
+      {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
     </footer>
   </Screen>
 }

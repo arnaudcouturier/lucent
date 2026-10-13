@@ -74,16 +74,42 @@ it('rejects a corrupt cache entry and downloads a fresh verified file', async ()
   expect(platform.downloads).toEqual([fixtureUrl(OPTISCALER_HASH)])
 })
 
-it('leaves an unowned file in place and blocks the recipe that would replace it', async () => {
+it('lists an unclaimed file in Scan, backs it up readably, replaces it, and brings it back on uninstall', async () => {
   const platform = createFakePlatform(machine(deploymentMachine(), { files: { [`${ROOT}\\game\\winmm.dll`]: 'User mod', [`${ROOT}\\game\\reshade-shaders\\Paid.fx`]: 'Paid shader' } }))
   const core = createCore(platform)
   await core.scan()
+  const readable = `${(await dataPaths(platform, ROOT)).readableBackups}\\XIV\\game`
+  expect(core.getState().folderChanges).toEqual({ backupFolder: readable, backedUp: [{ path: 'winmm.dll', removed: false }], carried: [] })
   await core.review()
-  expect(core.getState().plan?.blockedPaths).toEqual(['winmm.dll'])
+  expect(core.getState().plan).toMatchObject({ unclaimedPaths: ['winmm.dll'], filesToBackup: ['winmm.dll'] })
   await core.deploy()
-  expect(platform.downloads).toHaveLength(0)
-  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('User mod')
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('OptiScaler')
+  expect(await platform.readText(`${readable}\\winmm.dll`)).toBe('User mod')
   expect(await platform.readText(`${ROOT}\\game\\reshade-shaders\\Paid.fx`)).toBe('Paid shader')
+  expect(core.getState().deployment?.backupFolder).toBe('XIV')
+  core.finish()
+  await core.uninstall()
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('User mod')
+  expect(await platform.stat(readable).then(() => true, () => false)).toBe(false)
+})
+
+it('still refuses an update that would replace a file no Scan has listed', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  await platform.removeFile(`${ROOT}\\game\\ReShade64.dll`)
+  await platform.writeText(`${ROOT}\\game\\ReShade64.dll`, 'Theirs')
+  const record = (await readDeployment(platform, ROOT))!
+  delete (record.files as Record<string, unknown>)['ReShade64.dll']
+  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
+  const content = TEST_MANIFEST.versions[0]
+  const { updateDeployment } = await import('./deployment')
+  await expect(updateDeployment(platform, ROOT, content, TEST_MANIFEST.tiers[1], { kind: 'github' }, () => {})).rejects.toThrow(/user files would be replaced: ReShade64.dll/)
+  expect(await platform.readText(`${ROOT}\\game\\ReShade64.dll`)).toBe('Theirs')
 })
 
 it('undoes earlier steps when a later write fails', async () => {

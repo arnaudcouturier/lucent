@@ -8,7 +8,7 @@ Settled in a design grilling session on 2026-10-12. Each section is a decision; 
 - It is a **manager, not a one-shot installer**: it stays useful after setup (repair after patches, profile switching, updates, rollback, clean uninstall).
 - **Form:** one portable GUI `.exe`. No `.bat` / `.ps1`.
 - **Stack:** Tauri 2 + React + TypeScript. Rust side stays thin: file ops, hashing, archive extraction, registry, GPU detection. Chosen because the project is vibe-coded and TS/React gives the highest aesthetic ceiling; Electron rejected (portable build unpacks on every launch), WinUI/WPF rejected (single-file pain, lower ceiling).
-- On first run it offers to install itself to `%LOCALAPPDATA%\Lucent` with a Start Menu shortcut and a per-user Settings → Apps entry (no admin). The offer is an **"Add Lucent to the Start menu"** checkbox on Review, on by default.
+- On first run it offers to install itself to `%LOCALAPPDATA%\Lucent` with a Start Menu shortcut and a per-user Settings → Apps entry (no admin). The offer is an **"Add Lucent to the Start menu"** checkbox on the Profile step, on by default.
 - Windows 10 22H2 and 11, x64 only. English only. No telemetry.
 - Name: **Lucent**. Use "XIV" rather than "FFXIV"/"Final Fantasy" in branding. No Square Enix logos, art or fonts.
 
@@ -31,8 +31,9 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 1. **Scan**: game folder, GPU, launcher, existing mods.
    - Game detection order: XIVLauncher `%APPDATA%\XIVLauncher\launcherConfigV3.json` (`GamePath`), Steam libraries (app 39210), Square Enix launcher uninstall registry entry, default paths, manual picker validated by `game\ffxiv_dx11.exe`.
    - Existing mods detected: GPosingway, leftover GShade files, regular ReShade (`dxgi.dll` etc.), other OptiScaler installs, swapped DLSS DLLs.
-2. **Performance profile**: Fidelity / Balanced / Performance. The only first-run choice.
-3. **Review**: "Include ReShade" checkbox (on by default; always on for Radeon/other tiers), "Add Lucent to the Start menu" checkbox (on by default), plus files backed up / added and download size.
+   - Scan is **the only place that lists what the deployment does to files already there** (settled 2026-10-13): every file it backs up, then replaces or removes, where the readable copy goes, and the presets it keeps. One "Existing setup" row with a folder tree behind "Show files"; nothing repeats it on Review.
+2. **Profile**: every first-run choice, so Review only reviews (settled 2026-10-13). The performance profile (Fidelity / Balanced / Performance), then "Include ReShade" (on by default; not offered when the tier requires it) and "Add Lucent to the Start menu" (on by default; not offered once Lucent is in the Start menu). A tier without profiles shows the step as **Options**; it's skipped when nothing is left to choose.
+3. **Review**: read only. Files backed up / added, download size, and a summary of the choices.
 4. **Install**, then a done screen that teaches the hotkeys (Insert = OptiScaler overlay, Home = ReShade).
 
 - All presets are always installed; **no preset is active** by default.
@@ -54,6 +55,8 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 - Install steps are **declarative data in the manifest** (`copy`, `rename`, `ini_set`, `delete`); the app is a generic executor. A new upstream round ships as a manifest edit, not an app release.
 - Every step is **journaled**; every overwritten or removed file is **backed up** into Lucent's data folder. Uninstall and rollback replay the journal.
 - Existing user setups: detect and explain, back up, then replace. User presets and shaders are carried over, never deleted.
+- **Any other file at a path the content writes** (an `nvngx_dlss.dll` no signature claims, a hand-made setup's license files) is backed up and replaced the same way on a first deployment, since Scan lists it. Nothing blocks Install (settled 2026-10-13: a "move these files aside, then scan again" dead end was rejected). An update still refuses to replace such a file, since no Scan has listed it.
+- **Readable backup**: a first deployment also copies every original it backs up to `%LOCALAPPDATA%\Lucent\Backups\<game folder name>\game\`, under its own path, so the player can find it. The journal restores only from its own hash-named backups, so the player can't break an uninstall by touching the copy; the copy goes once uninstall has put the files back. It costs disk space (about 700 MB for the dev machine's setup), accepted for the reassurance.
 - **Config files from an existing setup** (e.g. a previous `ReShade.ini`): back up, then write Lucent's whole file. No merging: Lucent doesn't know their history. Lucent is opinionated and built for people who don't want to tinker.
 - **Lucent's own config files on update**: key-by-key three-way merge between what Lucent last wrote, what's on disk, and what the new content version ships:
   - Key unchanged on disk, changed in the new version → new value.
@@ -121,8 +124,9 @@ Settled by the look prototype on 2026-10-12: variant **D · Ember**, on branch `
   - It evokes an aetheryte but **deliberately omits the cup-and-prong base and the zigzag ring ornament**. Keep it that way.
   - States: glass (scan, with a scan line; profile; review), filling (install), lit (done, healthy), pulse ring (update available), fast spin (repair or update running), dark facets with a stalled ring and a falling shard (drift), frozen steel (Disabled).
 - **Window**:
-  - A fixed **880×580** frameless window (`decorations: false`) with custom minimize and close buttons, and no maximize.
-  - Drag regions cover the rail and the title strip.
+  - A frameless window (`decorations: false`), **880×580 at its smallest**, resizable and maximizable (settled 2026-10-13), with custom minimize, maximize and close buttons.
+  - It reflows rather than zooms: text stays the same size, the rail stays 248px, and the pane's column grows to 720px wide and 880px tall, centred, so lists such as Scan's files get more room. Settings → Apps' uninstall window stays a fixed 460×340.
+  - Drag regions cover the rail and the title strip; a double-click on either maximizes or restores.
   - It keeps the native Windows 11 shadow and rounded corners. Still to be verified: `shadow: true`, and how it looks on Windows 10.
 
 ## Deferred

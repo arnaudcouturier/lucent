@@ -1,8 +1,9 @@
 // Scan: shows the game folder Lucent found and lets the player change it, or pick it when none was found.
-import { Archive, Check, Cpu, Folder, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
+import { Archive, Check, ChevronDown, Cpu, Folder, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { GAME_EXECUTABLE, type GameFolderSource } from '../core/gameFolder'
-import type { ExistingSetup } from '../core/existingSetup'
 import { Path } from './Path'
+import { FileTree } from './FileTree'
 import { useCore } from './useCore'
 import { Screen } from './Window'
 import { FlowError, StatusCard } from './DeploymentScreens'
@@ -25,7 +26,7 @@ export function ScanScreen() {
         <GameFolderRow />
         <XivLauncherRow />
         <GraphicsFeaturesRow />
-        {state.existingSetups.map((setup) => <ExistingSetupRow key={setup.id} setup={setup} />)}
+        <BackupRow />
       </ul>
       <ManifestNotice /></>}
       {state.rejectedFolder && (
@@ -42,26 +43,52 @@ export function ScanScreen() {
   )
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+const count = (n: number, one: string, many: string) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`
 
-/** Says what Lucent found and that it will be backed up and replaced; the paths are one click away. */
-function ExistingSetupRow({ setup }: { setup: ExistingSetup }) {
-  const presets = setup.presets.length ? ` · ${count(setup.presets.length, 'preset', 'presets')} carried over` : ''
+/**
+ * The one place that says what a first deployment does to files already in the game folder: which it backs up, then
+ * replaces or removes, where the readable copies go, and which presets it keeps.
+ */
+function BackupRow() {
+  const [{ existingSetups, folderChanges }] = useCore()
+  const [open, setOpen] = useState(false)
+  const backedUp = folderChanges?.backedUp ?? []
+  const carried = folderChanges?.carried ?? []
+  if (!existingSetups.length && !backedUp.length && !carried.length) return null
+  const facts = [
+    backedUp.length ? `${count(backedUp.length, 'file', 'files')} backed up and replaced` : null,
+    carried.length ? `${count(carried.length, 'preset', 'presets')} kept` : null,
+  ].filter(Boolean)
   return (
-    <li className="row is-warn">
+    <li className="row backup-row">
       <Archive size={15} strokeWidth={1.75} className="row-icon" />
       <div className="row-main">
-        <span className="row-label">Existing setup</span>
-        <span className="row-value">{setup.label}</span>
-        <span className="row-meta">{setup.files.length ? `${count(setup.files.length, 'file', 'files')} will be backed up and replaced` : 'Stays in place unless Lucent ships the same files'}{presets}</span>
-        {!!(setup.files.length + setup.presets.length) && <details className="row-details">
-          <summary>Show files</summary>
-          {!!setup.files.length && <><span>Backed up and replaced</span><ul>{setup.files.map((f) => <li key={f}><Path path={f} /></li>)}</ul></>}
-          {!!setup.presets.length && <><span>Presets carried over</span><ul>{setup.presets.map((f) => <li key={f}><Path path={f} /></li>)}</ul></>}
-        </details>}
+        <span className="row-label">{existingSetups.length ? 'Existing setup' : 'Replaced files'}</span>
+        <span className="row-value" title={existingSetups.map((s) => s.label).join(', ')}>{existingSetups.length ? new Intl.ListFormat('en').format(existingSetups.map((s) => s.label)) : count(backedUp.length, 'file', 'files')}</span>
+        <span className="row-meta">{facts.length ? facts.join(' · ') : 'Stays as it is'}</span>
+        {folderChanges && !!(backedUp.length + carried.length) && <button className="row-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? 'Hide files' : 'Show files'}<ChevronDown size={13} strokeWidth={1.75} />
+        </button>}
       </div>
       <span />
-      <span className="row-state"><TriangleAlert size={14} strokeWidth={1.75} aria-label="Will be replaced" /></span>
+      <span />
+      {open && folderChanges && <div className="backup-panel">
+        {!!backedUp.length && <section>
+          <div className="backup-destination">
+            <span>Backed up to</span>
+            <Path path={folderChanges.backupFolder} />
+            <small>Each file keeps its folder there. Uninstall puts every one back where it was.</small>
+          </div>
+          <FileTree label="Files backed up" files={backedUp.map((f) => ({ path: f.path, note: f.removed ? 'removed' : undefined }))} />
+        </section>}
+        {!!carried.length && <section>
+          <div className="backup-destination">
+            <span>Presets kept</span>
+            <small>Copied into ReShade’s preset folder, so they stay in its list. Uninstall leaves them.</small>
+          </div>
+          <FileTree label="Presets kept" files={carried.map((c) => ({ path: c.to, title: `From ${c.from}` }))} />
+        </section>}
+      </div>}
     </li>
   )
 }

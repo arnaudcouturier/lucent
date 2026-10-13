@@ -1,6 +1,7 @@
 // The left rail: the crystal, the first-run steps and the app version.
 import { Check } from 'lucide-react'
 import { crystalState } from '../core/crystal'
+import { setupChoices } from '../core/core'
 import { Crystal } from './crystal/Crystal'
 import { useCore } from './useCore'
 import { dragWindow } from './shell'
@@ -22,7 +23,8 @@ export function Mark({ className }: { className?: string }) {
 export function Rail() {
   const [state] = useCore()
   const crystal = crystalState(state)
-  const steps = [{ kind: 'scan', title: 'Scan' }, ...(state.profiles.length ? [{ kind: 'profile', title: 'Profile' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
+  const choices = setupChoices(state)
+  const steps = [{ kind: 'scan', title: 'Scan' }, ...(choices.any ? [{ kind: 'profile', title: choices.profiles ? 'Profile' : 'Options' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
   const step = steps.findIndex((s) => s.kind === state.activity.kind)
   const main = state.activity.kind === 'deployment'
   return (

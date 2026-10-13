@@ -182,7 +182,7 @@ it('a successful retry leaves only its record in the data folder and reopens Hea
   await core.deploy()
   expect(core.getState().activity.kind).toBe('done')
   const deployments = `${await platform.envFolder('LocalAppData')}\\Lucent\\deployments`
-  expect(await platform.listFiles(deployments)).toEqual([expect.stringMatching(/\\record\.json$/)])
+  expect((await platform.listFiles(deployments)).filter((f) => !f.includes('\\backups\\'))).toEqual([expect.stringMatching(/\\record\.json$/)])
   const reopened = createCore(platform)
   await reopened.scan()
   expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })

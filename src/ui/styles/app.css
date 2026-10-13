@@ -1,9 +1,12 @@
 /* Lucent's components. Values come from tokens.css; nothing here defines a colour of its own. */
 
 /* ---------- Window ---------- */
+/* Fills the native window, which Windows keeps at 880×580 or larger. */
 .window {
-  width: var(--window-width);
-  height: var(--window-height);
+  width: 100%;
+  height: 100%;
+  min-width: var(--window-width);
+  min-height: var(--window-height);
   display: grid;
   grid-template-columns: var(--rail-width) 1fr;
   overflow: hidden;
@@ -229,7 +232,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--pane-padding);
+  /* At most --content-max-height tall, centred, so the actions stay near the content in a tall window. */
+  height: min(100%, var(--content-max-height));
+  align-self: center;
+  padding: 0 var(--pane-inline);
   animation: screen-in var(--duration) var(--ease);
 }
 @keyframes screen-in {
@@ -357,28 +363,6 @@
 .row-action {
   height: 28px;
 }
-.row-details {
-  grid-column: 2;
-  font-size: var(--text-label);
-  color: var(--ink-3);
-}
-.row-details summary {
-  cursor: pointer;
-  width: fit-content;
-}
-.row-details summary:hover {
-  color: var(--ink-2);
-}
-.row-details > span {
-  display: block;
-  margin-top: var(--space-2);
-  color: var(--ink-2);
-}
-.row-details ul {
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
 .row-state {
   display: grid;
   place-items: center;
@@ -458,7 +442,6 @@
 .option-row strong { display: block; font-weight: 500; }
 .option-row small { display: block; color: var(--ink-2); margin-top: 2px; font-size: var(--text-label); }
 .option-row + .option-row { margin-top: var(--space-2); }
-.option-required { margin-left: auto; color: var(--ink-3); font-size: var(--text-label); }
 .screen-note { color: var(--ink-3); font-size: var(--text-label); margin: var(--space-3) 0 0; }
 .install-progress { padding: var(--space-5); }
 .progress-heading { display: flex; justify-content: space-between; font-weight: 500; }
@@ -497,6 +480,50 @@
 .version-facts { margin-top: 0; }
 .version-facts dt:not(:first-child) { margin-top: var(--space-4); }
 
+/* ---------- Backups: Scan's list of the files a deployment backs up ---------- */
+.row-toggle {
+  grid-column: 2; width: fit-content; margin-top: 2px; padding: 0; display: inline-flex; align-items: center; gap: 4px;
+  border: 0; background: transparent; color: var(--ink-2); font-size: var(--text-label); cursor: pointer;
+  transition: color var(--duration) var(--ease);
+}
+.row-toggle:hover { color: var(--ink); }
+.row-toggle svg { transition: transform var(--duration) var(--ease); }
+.row-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+.backup-panel { grid-column: 2 / -1; display: grid; gap: var(--space-4); padding: var(--space-1) 0 var(--space-1); }
+.backup-destination { display: grid; gap: 2px; margin-bottom: var(--space-2); color: var(--ink-2); font-size: var(--text-label); }
+.backup-destination > span:first-child { color: var(--ink-3); }
+.backup-destination small { color: var(--ink-3); font-size: var(--text-label); }
+.file-tree {
+  list-style: none; margin: 0; padding: var(--space-1) 0;
+  max-height: max(208px, min(100vh - var(--titlebar-height), var(--content-max-height)) - 400px); overflow-y: auto;
+  border-radius: var(--r-control); background: var(--canvas); box-shadow: inset 0 0 0 1px var(--line);
+}
+.file-tree ul { list-style: none; margin: 0; padding: 0; }
+.tree-row {
+  width: 100%; height: 26px; display: flex; align-items: center; gap: 6px;
+  padding: 0 var(--space-3) 0 calc(var(--space-3) + var(--depth) * 16px);
+  color: var(--ink-2); font: 400 12px/1 var(--mono); letter-spacing: -0.01em;
+}
+/* A file's icon lines up with its sibling folders' icons, after their chevron. */
+li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
+.tree-folder { border: 0; border-radius: 0; background: transparent; text-align: left; cursor: pointer; transition: background var(--duration) var(--ease); }
+.tree-folder:hover { background: var(--hover-2); color: var(--ink); }
+.tree-folder:focus-visible { outline-offset: -2px; }
+.tree-chevron { flex: none; color: var(--ink-3); transition: transform var(--duration) var(--ease); }
+.tree-folder[aria-expanded='true'] .tree-chevron { transform: rotate(90deg); }
+.tree-icon { flex: none; color: var(--ink-3); }
+.tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-count { flex: none; color: var(--ink-3); font-size: 11px; }
+.tree-note { flex: none; padding: 3px 6px; border-radius: var(--r-chip); background: var(--field); color: var(--ink-3); font: var(--text-chip); }
+
+/* ---------- Review: what was chosen, read only ---------- */
+.summary-list { margin: 0 0 var(--space-4); padding: 0; }
+.summary-list > div { display: grid; grid-template-columns: 108px 1fr; gap: var(--space-3); padding: var(--row-padding); }
+.summary-list > div + div { box-shadow: inset 0 1px 0 var(--line); }
+.summary-list dt { color: var(--ink-2); }
+.summary-list dd { margin: 0; min-width: 0; font-weight: 500; }
+.summary-list small { display: block; margin-top: 1px; color: var(--ink-3); font-size: var(--text-label); font-weight: 400; }
+
 /* ---------- Performance profiles ---------- */
 .profile-selector { border: 0; padding: 0; margin: 0; min-width: 0; }
 .profile-selector legend { padding: 0; margin-bottom: var(--space-3); color: var(--ink-2); font-size: var(--text-label); }
@@ -510,6 +537,14 @@
 .profile-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
 .profile-row input { flex: none; }
 .profile-selector:disabled .profile-row { cursor: default; opacity: 0.45; }
+.option-list { margin-top: var(--space-4); }
+.option-list .option-row { cursor: pointer; transition: background var(--duration) var(--ease); }
+.option-list .option-row:hover { background: var(--hover); }
+.option-list .option-row + .option-row { margin-top: 0; box-shadow: inset 0 1px 0 var(--line); }
+.option-list .option-row:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
+.option-list .option-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
+.option-list .option-row:only-child { border-radius: var(--r-card); }
+.option-list input { flex: none; }
 .status-card + .profile-selector { margin-top: var(--space-5); }
 .enabled-row { margin-top: var(--space-5); cursor: pointer; }
 .profile-selector + .enabled-row { margin-top: var(--space-4); }
@@ -596,7 +631,7 @@
 .credits-empty { margin: 0; color: var(--ink-2); }
 .credits-message { margin: 0 0 var(--space-4); padding: var(--space-2) var(--space-3); border-radius: var(--r-control); background: var(--accent-tint); color: var(--ink); overflow-wrap: anywhere; }
 .credits-message.is-error { background: var(--caution-tint); color: var(--caution-ink); }
-.credits-actions { flex: none; display: flex; padding: var(--space-2) var(--pane-padding) var(--pane-padding); }
+.credits-actions { flex: none; display: flex; padding: var(--space-2) var(--pane-inline) var(--pane-padding); }
 
 /* ---------- Versions ---------- */
 .versions-screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }

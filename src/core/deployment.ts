@@ -50,6 +50,11 @@ export interface DeploymentRecord {
   files: Record<string, FileStamp>
   /** The game version at the last healthy check; a different one means a patch, so the next check hashes every file. */
   gameVersion?: string | null
+  /**
+   * The folder in `Lucent\Backups` holding a readable copy of every file from before the deployment, under its own path.
+   * The journal restores from its own backups; this copy is for the player, and goes once the deployment is undone.
+   */
+  backupFolder?: string
 }
 export type DeploymentPhase = 'downloading' | 'backing-up' | 'applying' | 'checking'
 export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null }
@@ -86,10 +91,55 @@ async function hashText(text: string): Promise<string> {
   return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/** The journal's backups are named by hash; the player's readable copies live apart, in `Backups`. */
 export async function dataPaths(platform: Platform, gameFolder: string) {
   const data = joinPath(await platform.envFolder('LocalAppData'), 'Lucent')
   const id = await hashText(normalizePath(gameFolder).toLowerCase())
-  return { data, cache: joinPath(data, 'cache'), backups: joinPath(data, 'backups'), record: joinPath(data, 'deployments', id, 'record.json') }
+  const deployment = joinPath(data, 'deployments', id)
+  return { data, cache: joinPath(data, 'cache'), backups: joinPath(deployment, 'backups'), readableBackups: joinPath(data, 'Backups'), record: joinPath(deployment, 'record.json') }
+}
+
+const BACKUP_FOLDER_NAME = /^(?!\.+$)[^\\/:*?"<>|\u0000-\u001f]+$/
+
+/**
+ * Where a first deployment keeps the player's original files: `Backups\<game folder name>`, numbered when another
+ * game folder's deployment already uses that name. The `game` folder inside mirrors the game's.
+ */
+export async function backupFolderName(platform: Platform, gameFolder: string): Promise<string> {
+  const base = normalizePath(gameFolder).split('\\').at(-1)?.replace(/[:*?"<>|]/g, '').trim() || 'Game'
+  const taken = new Set<string>()
+  try {
+    for await (const record of deploymentRecords(platform)) {
+      if (record.backupFolder && record.status !== 'rolled-back' && fileKey(normalizePath(record.gameFolder)) !== fileKey(normalizePath(gameFolder))) taken.add(record.backupFolder.toLowerCase())
+    }
+  } catch { /* A damaged record is recovery's concern; the name only needs to be readable. */ }
+  let name = base
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} (${n})`
+  return name
+}
+
+/** The readable backup's mirror of the game's `game` folder. */
+export async function readableBackupPath(platform: Platform, gameFolder: string, name: string): Promise<string> {
+  return joinPath((await dataPaths(platform, gameFolder)).readableBackups, name, 'game')
+}
+
+/** Best effort: the journal never depends on the readable copy. */
+async function removeReadableBackup(platform: Platform, record: DeploymentRecord) {
+  if (!record.backupFolder) return
+  try {
+    const { readableBackups } = await dataPaths(platform, record.gameFolder)
+    const folder = joinPath(readableBackups, record.backupFolder)
+    if (!await maybeStat(platform, folder)) return
+    const files = await platform.listFiles(folder)
+    for (const relative of files) await platform.removeFile(joinPath(folder, relative))
+    const directories = new Set(files.flatMap((relative) => {
+      const parts = joinPath(relative).split('\\')
+      return parts.slice(1).map((_, i) => parts.slice(0, i + 1).join('\\'))
+    }))
+    for (const relative of [...directories].sort((a, b) => b.split('\\').length - a.split('\\').length)) await platform.removeDirectoryIfEmpty(joinPath(folder, relative))
+    await platform.removeDirectoryIfEmpty(folder)
+    await platform.removeDirectoryIfEmpty(readableBackups)
+  } catch { /* Leftover copies are harmless, and the next deployment of this folder replaces them. */ }
 }
 
 export async function maybeStat(platform: Platform, path: string): Promise<FileStat | null> {
@@ -125,6 +175,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     for (const path of value.generatedFiles) assertGamePath(path)
   }
   if (value.uninstalling !== undefined && typeof value.uninstalling !== 'boolean') throw new Error('The uninstall journal is damaged.')
+  if (value.backupFolder !== undefined && (typeof value.backupFolder !== 'string' || !BACKUP_FOLDER_NAME.test(value.backupFolder))) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.pinned !== undefined && typeof value.pinned !== 'boolean') throw new Error('The content pin is damaged.')
   if (value.pendingSelection !== undefined && (!value.pendingSelection || (value.pendingSelection.skip !== null && !/^\d{4}\.\d{2}\.\d{2}$/.test(value.pendingSelection.skip)))) throw new Error('The content selection is damaged.')
   if (value.cachedVersions !== undefined) {
@@ -206,11 +257,8 @@ export async function lostDeployment(platform: Platform): Promise<DeploymentReco
 
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {
   const root = joinPath(gameFolder, 'game')
-  const files: DeploymentScan['files'] = Object.create(null)
-  for (const relative of await platform.listFiles(root)) {
-    const path = await platform.resolveGamePath(root, relative)
-    files[relative] = await platform.stat(path)
-  }
+  const files = await platform.listFiles(root)
+  for (const relative of files) await platform.resolveGamePath(root, relative)
   const { cache } = await dataPaths(platform, gameFolder)
   const cachedFiles: string[] = []
   for (const file of content.files) {
@@ -219,7 +267,7 @@ export async function scanDeployment(platform: Platform, gameFolder: string, con
     if (stat?.kind === 'file' && stat.size === file.size && await platform.hashFile(path) === file.sha256) cachedFiles.push(file.sha256)
   }
   const ownedFiles = record?.status === 'complete' ? Object.keys(record.files) : []
-  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, Object.keys(files), ownedFiles) }
+  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, files, ownedFiles) }
 }
 
 export function releaseAsset(file: ContentVersion['files'][number]): string {
@@ -282,6 +330,8 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     record.status = 'complete'
   } else { await undoDirectories(platform, record.gameFolder, record.createdDirectories ?? []); record.status = 'rolled-back' }
   await checkpoint('all')
+  // Every original is back in the game folder, so the player's copy has served its purpose.
+  if (record.status === 'rolled-back') await removeReadableBackup(platform, record)
 }
 
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
@@ -294,9 +344,9 @@ export async function deployContent(
   if (previous && previous.status !== 'rolled-back') throw new Error('This game folder already has a deployment. Reopen Lucent to inspect it.')
   const scan = await scanDeployment(platform, gameFolder, content, null, signatures)
   const plan = planDeployment(content, tier, includeReShade, scan, profile)
-  if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before installing.`)
   const paths = await dataPaths(platform, gameFolder)
-  const present = new Set(Object.keys(scan.files).map(fileKey))
+  const present = new Set(scan.files.map(fileKey))
+  const backupFolder = plan.filesToBackup.length ? await backupFolderName(platform, gameFolder) : undefined
   // An existing setup's log is backed up like its other files, so the one the mods write later is Lucent's to remove.
   const takenOver = new Set(plan.takenOver.map(fileKey))
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
@@ -306,6 +356,7 @@ export async function deployContent(
     includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, recipe: plan.recipe, journal: [], createdDirectories: [],
     cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files)],
     generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
+    backupFolder,
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
   // Reserve every undo checkpoint before the first game write. Updating one byte
@@ -314,8 +365,10 @@ export async function deployContent(
   await save()
   await discardCheckpoints(platform, paths.record, previous?.undoCheckpoints)
   try {
-    // An existing setup's files are the only files Lucent takes over without having written them.
-    await applySteps({ platform, record, save, report, owned: takenOver }, plan.steps)
+    // Scan listed every file from before the deployment that it overwrites or removes; those are the only ones Lucent takes over.
+    const originals = new Set(plan.filesToBackup.map(fileKey))
+    const readable = backupFolder ? { folder: await readableBackupPath(platform, gameFolder, backupFolder), pending: new Set(originals) } : undefined
+    await applySteps({ platform, record, save, report, owned: originals, readable }, plan.steps)
     record.files = await stampFiles(platform, record, plan.expectedFiles, report)
     record.ownedConfigs = await readOwnedConfigs(platform, gameFolder, plan)
     // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
@@ -354,11 +407,12 @@ interface Execution {
   report: (progress: DeploymentProgress) => void
   /** Game-folder paths Lucent may overwrite or remove; every other existing file is the player's. */
   owned: Set<string>
-  /** Names the command in the message when XIV starts partway. */
+  /** A first deployment also copies each original it backs up into the player's readable backup, once per path. */
+  readable?: { folder: string; pending: Set<string> }
 }
 
 /** Applies planned steps through the journal: each intent and its verified backup are durable before the step. */
-async function applySteps({ platform, record, save, report, owned }: Execution, steps: PlanStep[]) {
+async function applySteps({ platform, record, save, report, owned, readable }: Execution, steps: PlanStep[]) {
   const { gameFolder } = record
   const { backups, cache } = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
@@ -383,6 +437,7 @@ async function applySteps({ platform, record, save, report, owned }: Execution, 
         const backup = joinPath(backups, before[relative]!)
         await platform.copyFile(path, backup)
         if (await platform.hashFile(backup) !== before[relative]) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
+        if (readable?.pending.delete(fileKey(relative))) await platform.copyFile(path, joinPath(readable.folder, relative), true)
       }
     }
     let configText: string | null = null
@@ -516,7 +571,7 @@ export async function updateDeployment(
   // No existing-setup signatures: without a Review to explain a takeover, a setup that appeared since blocks the update instead.
   const scan = await scanDeployment(platform, gameFolder, content, record, [])
   const plan = planDeployment(content, tier, record.includeReShade, scan, keptProfile(content, tier, record.profile), record.enabled)
-  if (plan.blockedPaths.length) throw new Error(`These user files would be replaced: ${plan.blockedPaths.join(', ')}. Move them aside before updating.`)
+  if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
   await requireGameStopped(platform)
@@ -566,7 +621,7 @@ export async function updateDeployment(
     // Shipped presets: keep an edited one Lucent did not change; preserve one it changed too as "(my edits)".
     const keptPresets: { path: string; sha256: string }[] = []
     const preservedPresets = new Map<string, PlanStep>()
-    const taken = new Set([...Object.keys(scan.files).map(fileKey), ...plan.expectedFiles.map((f) => fileKey(f.path))])
+    const taken = new Set([...scan.files.map(fileKey), ...plan.expectedFiles.map((f) => fileKey(f.path))])
     for (const preset of plan.recipe.shippedPresets) {
       const key = fileKey(preset.path)
       const stampedPath = Object.keys(record.files).find((p) => fileKey(p) === key)
@@ -616,7 +671,7 @@ export async function updateDeployment(
     const ownedConfigs: Record<string, string> = {}
     for (const config of plan.recipe.ownedConfigs) ownedConfigs[config.path] = incomingTexts.get(fileKey(config.path)) ?? await platform.readText(await platform.resolveGamePath(root, config.path))
     const generated = record.generatedFiles ?? []
-    const present = new Set(Object.keys(scan.files).map(fileKey))
+    const present = new Set(scan.files.map(fileKey))
     Object.assign(updated, {
       tier: tier.id, graphics: graphics ?? record.graphics,
       contentVersion: content.id, includeReShade: plan.includeReShade, profile: plan.profile, recipe: plan.recipe,

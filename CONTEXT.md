@@ -27,7 +27,7 @@ Mod files that Lucent did not deploy and that would conflict with a deployment, 
 _Avoid_: foreign mod, conflict
 
 **User file**:
-A file in the game folder that belongs to the user rather than to Lucent, such as their own presets, shaders or paid shaders. Lucent never modifies or removes one.
+A file in the game folder that belongs to the user rather than to Lucent, such as their own presets, shaders or paid shaders. Lucent never modifies or removes one, except where a first deployment writes the same path: Scan lists it, and it is backed up first.
 _Avoid_: custom file, foreign file
 
 **Vanilla**:
@@ -110,6 +110,10 @@ _Avoid_: log, history
 
 **Backup**:
 The original copy of a file that a step overwrote or removed.
+
+**Readable backup**:
+A copy of every file from before a first deployment, kept under its own path in `Lucent\Backups\<game folder name>` so the player can find it. Uninstall never depends on it.
+_Avoid_: backup folder (the journal's backups are elsewhere)
 
 **Health check**:
 A comparison of the game folder against what the deployment should be.
