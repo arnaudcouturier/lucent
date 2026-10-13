@@ -29,6 +29,9 @@ for files the game itself generates. Use two real content versions for the updat
 - [ ] Deploy from a vanilla game folder.
 - [ ] In game, confirm Insert opens OptiScaler, Home opens ReShade, and Neural Rendering is active.
 - [ ] Switch performance profile on the main screen; confirm the game picks up the new settings.
+- [ ] In the OptiScaler overlay, save without changing anything and close the game: the profile
+  stays as it was. Change one of the profile's settings, save and close the game: the main
+  screen shows "Custom · based on X". Pick a profile and confirm the Custom row is gone.
 - [ ] With the game closed, replace a deployed file to simulate a game patch. Reopen Lucent,
   confirm drift, choose Repair, and confirm a healthy deployment and working game.
 - [ ] With XIVLauncher auto-repair on (⋯ menu) and the Lucent window closed, replace a deployed
