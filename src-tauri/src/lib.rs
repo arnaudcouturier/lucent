@@ -67,7 +67,7 @@ async fn platform_download_file(url: String, to: PathBuf, progress: tauri::ipc::
 #[tauri::command]
 async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_game_running() }
 #[tauri::command]
-async fn platform_is_directory_writable(path: PathBuf) -> Result<bool, PlatformError> { platform::is_directory_writable(&path) }
+async fn platform_is_directory_writable(path: PathBuf, targets: Vec<String>) -> Result<bool, PlatformError> { platform::game_write_access(&path, &targets) }
 #[tauri::command]
 async fn platform_is_elevated() -> Result<bool, PlatformError> { platform::is_elevated() }
 #[tauri::command]

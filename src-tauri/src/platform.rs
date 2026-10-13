@@ -188,7 +188,9 @@ pub fn exe_path() -> Result<String> {
 
 /// Starts the exe at `path`, then exits this process so the new one takes over.
 pub fn launch_exe(path: &Path) -> Result<()> {
-    std::process::Command::new(path)
+    let mut command = std::process::Command::new(path);
+    if let Some(resume) = elevation_resume_path() { command.arg("--lucent-resume").arg(resume); }
+    command
         .spawn()
         .map_err(|e| PlatformError::io(e, Some(path)))?;
     std::process::exit(0)
@@ -204,6 +206,45 @@ pub fn is_directory_writable(path: &Path) -> Result<bool> {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(false),
         Err(e) => Err(PlatformError::io(e, Some(path))),
     }
+}
+
+/// Checks only the requested write targets and their existing parents, without modifying their bytes.
+pub fn game_write_access(root: &Path, targets: &[String]) -> Result<bool> {
+    use std::collections::BTreeSet;
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows::Win32::Storage::FileSystem::{DELETE, FILE_FLAG_BACKUP_SEMANTICS};
+    if !is_directory_writable(root)? { return Ok(false); }
+    let mut directories = BTreeSet::new();
+    directories.insert(root.to_owned());
+    for relative in targets {
+        let path = crate::files::resolve_game_path(root, relative)?;
+        match fs::metadata(&path) {
+            Ok(meta) => {
+                // Atomic replacement and removal need delete access to an existing target.
+                match fs::OpenOptions::new().access_mode(DELETE.0)
+                    .custom_flags(if meta.is_dir() { FILE_FLAG_BACKUP_SEMANTICS.0 } else { 0 }).open(&path) {
+                    Ok(_) => {},
+                    Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return Ok(false),
+                    Err(e) => return Err(PlatformError::io(e, Some(&path))),
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+            Err(e) => return Err(PlatformError::io(e, Some(&path))),
+        }
+        let mut parent = path.parent();
+        while let Some(directory) = parent {
+            match fs::metadata(directory) {
+                Ok(meta) if meta.is_dir() => {
+                    if directories.insert(directory.to_owned()) && !is_directory_writable(directory)? { return Ok(false); }
+                    break;
+                }
+                Ok(_) => return Err(PlatformError::new(ErrorKind::AccessDenied, "A write target's parent is a file.", Some(directory))),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => parent = directory.parent(),
+                Err(e) => return Err(PlatformError::io(e, Some(directory))),
+            }
+        }
+    }
+    Ok(true)
 }
 
 pub fn is_elevated() -> Result<bool> {
@@ -302,6 +343,44 @@ mod tests {
         assert!(acl(&["/remove:d", "*S-1-1-0"]).status.success());
         assert!(!result.unwrap());
         assert_eq!(fs::read_dir(&folder).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn game_write_probe_checks_protected_subfolders_and_leaves_contents_intact() {
+        use std::os::windows::process::CommandExt;
+        let dir = tempfile::tempdir().unwrap();
+        let shaders = dir.path().join("shaders");
+        fs::create_dir(&shaders).unwrap();
+        fs::write(shaders.join("Existing.fx"), "User shader").unwrap();
+        let acl = |args: &[&str]| std::process::Command::new("icacls")
+            .arg(&shaders).args(args).creation_flags(0x08000000).output().unwrap();
+        assert!(acl(&["/deny", "*S-1-1-0:(WD,AD)"]).status.success());
+        let result = game_write_access(dir.path(), &["shaders/New.fx".into()]);
+        // An unrelated protected subfolder does not require elevation for a write in the root.
+        let unrelated = game_write_access(dir.path(), &["OptiScaler.ini".into()]);
+        assert!(acl(&["/remove:d", "*S-1-1-0"]).status.success());
+        assert!(!result.unwrap());
+        assert!(unrelated.unwrap());
+        assert_eq!(fs::read_to_string(shaders.join("Existing.fx")).unwrap(), "User shader");
+        assert_eq!(fs::read_dir(&shaders).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn game_write_probe_checks_replacement_access_to_existing_files() {
+        use std::os::windows::process::CommandExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("OptiScaler.ini");
+        fs::write(&file, "Passes = 2").unwrap();
+        let acl = |path: &Path, args: &[&str]| std::process::Command::new("icacls")
+            .arg(path).args(args).creation_flags(0x08000000).output().unwrap();
+        // Replacement can use DELETE on the file or DELETE_CHILD on its parent. Deny both.
+        assert!(acl(dir.path(), &["/deny", "*S-1-1-0:(DC)"]).status.success());
+        assert!(acl(&file, &["/deny", "*S-1-1-0:(D)"]).status.success());
+        let result = game_write_access(dir.path(), &["OptiScaler.ini".into()]);
+        assert!(acl(&file, &["/remove:d", "*S-1-1-0"]).status.success());
+        assert!(acl(dir.path(), &["/remove:d", "*S-1-1-0"]).status.success());
+        assert!(!result.unwrap());
+        assert_eq!(fs::read_to_string(file).unwrap(), "Passes = 2");
     }
 
     #[test]

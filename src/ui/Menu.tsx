@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Ellipsis, LoaderCircle, Trash2 } from 'lucide-react'
 import { useCore } from './useCore'
+import { gameActionsAvailable } from '../core/gameAccess'
 
 export function Menu() {
-  const [{ busy, recoveryRequired, gameRunning }] = useCore()
+  const [state] = useCore()
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -22,7 +23,7 @@ export function Menu() {
         <Ellipsis size={16} strokeWidth={1.75} />
       </button>
       {open && <div className="menu" role="menu">
-        <button role="menuitem" className="is-danger" disabled={busy || recoveryRequired || gameRunning !== false} autoFocus onClick={() => { setOpen(false); setConfirming(true) }}>Uninstall…</button>
+        <button role="menuitem" className="is-danger" disabled={!gameActionsAvailable(state)} autoFocus onClick={() => { setOpen(false); setConfirming(true) }}>Uninstall…</button>
       </div>}
       {confirming && <UninstallDialog onClose={() => setConfirming(false)} />}
     </div>
@@ -30,7 +31,8 @@ export function Menu() {
 }
 
 function UninstallDialog({ onClose }: { onClose: () => void }) {
-  const [{ busy, recoveryRequired, gameRunning }, core] = useCore()
+  const [state, core] = useCore()
+  const { busy } = state
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { ref.current?.showModal() }, [])
   const uninstall = async () => {
@@ -43,7 +45,7 @@ function UninstallDialog({ onClose }: { onClose: () => void }) {
       <p>Lucent restores the files it backed up and removes everything it added, including the logs the mods wrote. Your own presets and shaders stay.</p>
       <footer className="confirm-actions">
         <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
-        <button className="btn is-danger" disabled={busy || recoveryRequired || gameRunning !== false} onClick={() => void uninstall()}>
+        <button className="btn is-danger" disabled={!gameActionsAvailable(state)} onClick={() => void uninstall()}>
           {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Trash2 size={14} strokeWidth={1.75} />}{busy ? 'Uninstalling…' : 'Uninstall'}
         </button>
       </footer>

@@ -1,7 +1,7 @@
 import { assertGamePath, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, planDeployment, type DeploymentScan, type Plan, type PlanStep } from './planner'
+import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { mergeIni, readIni } from './ini'
@@ -323,7 +323,7 @@ async function applySteps({ platform, record, save, report, owned }: Execution, 
   const root = joinPath(gameFolder, 'game')
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i]
-    const relatives = step.kind === 'copy' || step.kind === 'carry' ? [step.to] : step.kind === 'rename' ? [step.from, step.to] : [step.kind === 'ini_set' ? step.file : step.path]
+    const relatives = stepWritePaths(step)
     const before: JournalEntry['before'] = Object.create(null)
     report({ phase: 'backing-up', progress: 0.4 + i / steps.length * 0.4, file: relatives[0] })
     for (const relative of relatives) {

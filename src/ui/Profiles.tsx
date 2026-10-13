@@ -1,12 +1,14 @@
 import { useCore } from './useCore'
 import { Screen } from './Window'
 import { FlowError } from './DeploymentScreens'
+import { gameActionsAvailable } from '../core/gameAccess'
 
 /** The Profile screen's title already names the choice, so only the main screen shows a legend. */
 export function ProfileSelector({ legend = true }: { legend?: boolean }) {
-  const [{ profiles, selectedProfile, busy, recoveryRequired, gameRunning, activity }, core] = useCore()
+  const [state, core] = useCore()
+  const { profiles, selectedProfile, busy, recoveryRequired, activity } = state
   if (!profiles.length) return null
-  return <fieldset className="profile-selector" disabled={busy || recoveryRequired || (activity.kind === 'deployment' && gameRunning !== false)} aria-label={legend ? undefined : 'Performance profile'}>
+  return <fieldset className="profile-selector" disabled={activity.kind === 'deployment' ? !gameActionsAvailable(state) : busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
     {legend && <legend>Performance profile</legend>}
     <div className="card profile-rows">{profiles.map((profile) => <label className={`option-row profile-row ${selectedProfile === profile.id ? 'is-selected' : ''}`} key={profile.id}>
       <input type="radio" name="performance-profile" value={profile.id} checked={selectedProfile === profile.id} onChange={() => void core.selectProfile(profile.id)} />

@@ -156,7 +156,11 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await this.writeText(to, text)
     },
     async isGameRunning() { await gate; return machine.gameRunning ?? false },
-    async isDirectoryWritable(path) { await gate; return !isDenied(norm(path)) && !isReadOnly(norm(path)) },
+    async isDirectoryWritable(path, targets = []) {
+      await gate
+      for (const target of targets) assertGamePath(target)
+      return [path, ...targets.map((target) => `${path}\\${target}`)].every((target) => !isDenied(norm(target)) && !isReadOnly(norm(target)))
+    },
     async isElevated() { await gate; return machine.elevated ?? false },
     async getElevationResumePath() { await gate; return machine.elevationResumePath ?? null },
     async requestElevation(path) {

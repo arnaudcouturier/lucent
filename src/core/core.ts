@@ -6,7 +6,7 @@ import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { scanXivLauncher, type XivLauncherState } from './xivLauncher'
 import { changePerformanceProfile, deployContent, DeploymentError, failureReason, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { planDeployment, type Plan } from './planner'
+import { disabledName, fileKey, planDeployment, stepWritePaths, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, type Channel } from './updates'
 import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -15,7 +15,7 @@ import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
 import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId } from '../shared/manifest'
-import { gameWriteAccess, takeElevationResume, type GameWriteRequest } from './gameAccess'
+import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -108,6 +108,13 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1
 const CHANNEL: Channel = 'stable'
 
 export function createCore(platform: Platform): Core {
+  const nativePlatform = platform
+  let playerLocalAppData: string | null = null
+  platform = new Proxy(nativePlatform, { get(target, key) {
+    if (key === 'envFolder') return (folder: Parameters<Platform['envFolder']>[0]) => folder === 'LocalAppData' && playerLocalAppData
+      ? Promise.resolve(playerLocalAppData) : target.envFolder(folder)
+    return Reflect.get(target, key)
+  } })
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
@@ -121,8 +128,26 @@ export function createCore(platform: Platform): Core {
 
   const message = (error: unknown) => error instanceof Error ? error.message : String(error)
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
-  const prepareWrite = async (request: GameWriteRequest) => {
-    const ready = await access(request)
+  const writeTargets = async (request: GameWriteRequest): Promise<string[]> => {
+    if (request.kind === 'deploy') return state.plan?.steps.flatMap(stepWritePaths) ?? []
+    const record = await readDeployment(platform, request.gameFolder)
+    if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
+    if (request.kind === 'profile') return record.recipe.performanceProfiles?.find((p) => p.id === request.profile)?.settings
+      .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))).map((s) => s.file) ?? []
+    if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
+    if (request.kind === 'update' && state.manifest.status === 'ready') {
+      const content = state.manifest.manifest.versions.find((v) => v.id === request.contentVersion)
+      const tier = state.manifest.manifest.tiers.find((t) => t.id === record.tier)
+      if (!content || !tier) throw new Error('This content version is no longer published.')
+      const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
+      return planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled).steps.flatMap(stepWritePaths)
+    }
+    return [...record.journal.slice(request.kind === 'recover' ? record.changeStart ?? 0 : 0).flatMap((entry) => Object.keys(entry.before)),
+      ...(record.createdDirectories ?? []), ...(request.kind === 'uninstall' || record.uninstalling ? record.generatedFiles ?? [] : [])]
+  }
+  const prepareWrite = async (request: GameWriteRequest, targets?: string[]) => {
+    await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
+    const ready = await access(request, [...new Set(targets ?? await writeTargets(request))])
     if (!ready) set({ notice: 'Lucent is reopening with administrator access to continue your change.' })
     return ready
   }
@@ -240,7 +265,8 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
-        resume = await takeElevationResume(platform)
+        const context = await takeElevationResume(platform)
+        if (context) { playerLocalAppData = context.localAppData; resume = context.request }
         await core.refreshGameRunning()
         if (!await recover()) return
         // Recovery precedes all startup work, including cleanup of the last app update.
@@ -343,9 +369,10 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation: 'repair' } })
       let record = deployment
       try {
-        if (!await prepareWrite({ kind: 'repair', gameFolder: record.gameFolder })) return
+        await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
         const drift = await refreshHealth(record, true)
         if (drift) {
+          if (!await prepareWrite({ kind: 'repair', gameFolder: record.gameFolder }, drift.files)) return
           const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
           record = await repairDeployment(platform, record.gameFolder, drift.files, content, manifest.status === 'ready' ? manifest.source : null,
             (progress) => set({ deploymentProgress: progress }))

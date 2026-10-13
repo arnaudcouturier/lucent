@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { createCore } from './core'
-import { createFakePlatform, type Machine } from '../platform/fake'
+import { createFakePlatform, type FakePlatform, type Machine } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { statusCard } from './statusCard'
 import { dataPaths, readDeployment } from './deployment'
@@ -9,6 +9,9 @@ import { PlatformError } from './platform'
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
 const fixture = () => machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+const snapshot = async (platform: FakePlatform) => Object.fromEntries(await Promise.all(
+  (await platform.listFiles(GAME)).map(async (path) => [path, await platform.readText(`${GAME}\\${path}`)]),
+))
 
 it('observes XIV starting and closing without rescanning or losing the selected profile', async () => {
   const m = fixture()
@@ -41,14 +44,14 @@ it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update'] as con
     core = createCore(platform)
     await core.scan()
   }
-  const before = await platform.listFiles(GAME)
+  const before = await snapshot(platform)
   const downloads = [...platform.downloads]
   m.gameRunning = true
   if (command === 'profile') await core.selectProfile('balanced')
   else if (command === 'enabled') await core.setEnabled(false)
   else await core[command]()
   expect(core.getState().error).toMatch(/Close XIV/)
-  expect(await platform.listFiles(GAME)).toEqual(before)
+  expect(await snapshot(platform)).toEqual(before)
   expect(platform.downloads).toEqual(downloads)
 })
 
@@ -76,24 +79,29 @@ it('stops uninstall and preserves recovery when XIV starts between game writes',
 })
 
 it('asks once for a non-writable game folder and resumes deployment with the same folder and choices', async () => {
-  const m = { ...fixture(), readOnlyDirectories: [GAME] }
+  const manual = 'E:\\Manual XIV'
+  const game = `${manual}\\game`
+  const m = machine(fixture(), vanillaGame(manual), { readOnlyDirectories: [game] })
   const platform = createFakePlatform(m)
   const core = createCore(platform)
   await core.scan()
+  platform.answerPicker(manual)
+  await core.chooseGameFolder()
   await core.continueSetup()
   await core.selectProfile('performance')
   await core.review(false)
   await core.deploy()
   expect(platform.elevationRequests).toHaveLength(1)
-  expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
+  expect(await platform.listFiles(game)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
   await core.deploy()
   expect(platform.elevationRequests).toHaveLength(1)
   m.elevated = true
   const resumed = createCore(platform)
   await resumed.scan()
-  expect(resumed.getState()).toMatchObject({ activity: { kind: 'done' }, selectedProfile: 'performance', includeReShade: false, gameFolder: { path: ROOT } })
-  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
-  expect(await platform.listFiles(GAME)).not.toContain('reshade64.dll')
+  expect(resumed.getState()).toMatchObject({ activity: { kind: 'done' }, selectedProfile: 'performance', includeReShade: false, gameFolder: { path: manual } })
+  expect(await platform.readText(`${game}\\winmm.dll`)).toBe('OptiScaler')
+  expect(await platform.listFiles(game)).not.toContain('reshade64.dll')
+  expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
 })
 
 it.each(['repair', 'profile', 'enabled', 'uninstall', 'update'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
@@ -191,4 +199,46 @@ it('keeps changes unavailable when the process check fails and recovers on the n
   platform.isGameRunning = running
   await core.refreshGameRunning()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
+})
+
+it('asks for elevation when the profile config is protected even though the game root is writable', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  m.readOnlyDirectories = [`${GAME}\\OptiScaler.ini`]
+  await core.selectProfile('balanced')
+  expect(platform.elevationRequests).toHaveLength(1)
+  expect(core.getState().recoveryRequired).toBe(false)
+  m.elevated = true
+  const resumed = createCore(platform)
+  await resumed.scan()
+  expect(resumed.getState().selectedProfile).toBe('balanced')
+})
+
+it('keeps the player’s deployment data when UAC uses another administrator account', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  const originalData = (await dataPaths(platform, ROOT)).data
+  m.readOnlyDirectories = [GAME]
+  await core.setEnabled(false)
+  m.elevated = true
+  const envFolder = platform.envFolder.bind(platform)
+  platform.envFolder = async (folder) => folder === 'LocalAppData' ? 'C:\\Users\\Administrator\\AppData\\Local' : envFolder(folder)
+  const resumed = createCore(platform)
+  await resumed.scan()
+  expect(resumed.getState().error).toBeNull()
+  expect(resumed.getState().deployment?.enabled).toBe(false)
+  expect(await platform.listFiles(`${originalData}\\deployments`)).toHaveLength(1)
+  const reopened = createCore(platform)
+  await reopened.scan()
+  expect(reopened.getState().deployment?.enabled).toBe(false)
 })

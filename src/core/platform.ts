@@ -81,8 +81,8 @@ export interface Platform {
   /** Streams to a temporary file and atomically commits it when complete. */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
-  /** Probes with a temporary file that is removed before returning. */
-  isDirectoryWritable(path: string): Promise<boolean>
+  /** Probes the directory and the given relative write targets without changing existing files. */
+  isDirectoryWritable(path: string, targets?: string[]): Promise<boolean>
   isElevated(): Promise<boolean>
   /** The one-use resume file passed to an elevated relaunch, if any. */
   getElevationResumePath(): Promise<string | null>
