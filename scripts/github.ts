@@ -35,7 +35,7 @@ export function createGitHubHost(repository = 'arnaudcouturier/lucent', run: Com
     async listContentReleases() {
       const result: ContentRelease[] = []
       for (const r of await pages<Release>(endpoint)) {
-        if (!/^content-\d{4}\.\d{2}\.\d{2}$/.test(r.tag_name)) continue
+        if (!/^content-\d{4}\.\d{2}\.\d{2}(?:-\d+)?$/.test(r.tag_name)) continue
         result.push({ id: r.id, tag: r.tag_name, draft: r.draft, files: r.draft ? [] : await files(r.id, r.tag_name) })
       }
       return result

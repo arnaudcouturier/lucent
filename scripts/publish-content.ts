@@ -139,7 +139,21 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         }
       }
     }
-    let uploads = files.filter((f) => f.release === release)
+    // GitHub allows at most 1,000 assets per release, so a large content
+    // version spans the main release plus numbered overflow releases. The
+    // manifest already records which release holds each file.
+    const MAX_ASSETS_PER_RELEASE = 1000
+    const spanReleases = (uploads: ContentFile[]) => {
+      const groups = new Map<string, ContentFile[]>()
+      uploads.forEach((file, index) => {
+        const tag = index < MAX_ASSETS_PER_RELEASE ? release : `${release}-${Math.floor(index / MAX_ASSETS_PER_RELEASE) + 1}`
+        file.release = tag
+        groups.set(tag, [...(groups.get(tag) ?? []), file])
+      })
+      return groups
+    }
+    let uploads = next.versions.at(-1)!.files.filter((f) => f.release === release)
+    if (options.dryRun) spanReleases(uploads)
     if (!options.dryRun) {
       const host = options.host
       if (!host) throw new Error('A GitHub release host is required to publish.')
@@ -153,11 +167,19 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         file.release = matching.find((f) => f.release === file.release)?.release ?? matching[0]?.release ?? release
       }
       uploads = version.files.filter((f) => f.release === release)
+      const groups = spanReleases(uploads)
+      for (const tag of groups.keys()) {
+        if (tag !== release && releases.some((r) => r.tag === tag)) throw new Error(`Release ${tag} already exists; content versions are immutable.`)
+      }
       await assertManifestUnchanged(options.manifestPath, original)
-      const id = await host.createDraft(release, version)
-      for (const file of uploads) await host.upload(id, staged.get(file.sha256)!)
+      const drafts = new Map<string, number>()
+      for (const [tag, group] of groups) {
+        const id = await host.createDraft(tag, version)
+        drafts.set(tag, id)
+        for (const file of group) await host.upload(id, staged.get(file.sha256)!)
+      }
       await assertManifestUnchanged(options.manifestPath, original)
-      await host.publish(id)
+      for (const id of drafts.values()) await host.publish(id)
       await assertManifestUnchanged(options.manifestPath, original)
       await replaceManifest(options.manifestPath, serialize(next))
     }

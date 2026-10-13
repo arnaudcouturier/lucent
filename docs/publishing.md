@@ -121,6 +121,11 @@ Published hash-named assets are reused at their original release; drafts are not
 New files are copied to temporary staging and hashed from those bytes, so changing an input
 file later cannot change the bytes uploaded under that hash.
 
+GitHub stores at most 1,000 assets per release and rejects zero-byte assets. The script
+therefore refuses an empty source file up front, and a version with more than 1,000 new
+files spans numbered overflow releases (`content-YYYY.MM.DD-2`, `-3`, …) alongside the
+main one; the manifest records which release holds each file.
+
 The script creates `content-YYYY.MM.DD` as a draft, uploads the new files, publishes the release,
 and atomically replaces the local manifest. Both release requests explicitly use
 [`make_latest: "false"`](https://docs.github.com/en/rest/releases/releases#create-a-release),

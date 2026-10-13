@@ -19,7 +19,11 @@ async function manifestFile() {
   const directory = await mkdtemp(resolve(tmpdir(), 'lucent-publish-test-'))
   temporary.push(directory)
   const path = resolve(directory, 'manifest.json')
-  await writeFile(path, await readFile('manifest.json'))
+  // Start from the repo's tiers, not its published versions: these tests add
+  // the fixture version to an otherwise empty manifest.
+  const base = JSON.parse(await readFile('manifest.json', 'utf8'))
+  base.versions = []
+  await writeFile(path, JSON.stringify(base))
   return path
 }
 
@@ -115,6 +119,31 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
   const reopened = createCore(platform)
   await reopened.scan()
   expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
+})
+
+it('spans a content version with more than 1,000 new files across numbered releases', async () => {
+  const manifestPath = await manifestFile()
+  const directory = resolve(manifestPath, '..', 'many-files')
+  await mkdir(resolve(directory, 'reshade-presets'), { recursive: true })
+  await mkdir(resolve(directory, 'reshade-shaders', 'Shaders'), { recursive: true })
+  for (const name of ['dxgi.dll', 'ReShade.ini', 'reshade-presets/Example.ini', 'reshade-shaders/Shaders/Example.fx']) {
+    await writeFile(resolve(directory, name), await readFile(resolve('scripts/fixtures/publish/valid/files', name)))
+  }
+  await Promise.all(Array.from({ length: 1001 }, (_, i) => writeFile(resolve(directory, `extra-${i}.txt`), `extra ${i}\n`)))
+  const input = await inputFile(manifestPath, (value) => { value.tiers.other.sources = [{ folder: directory, component: 'ReShade fixture' }] })
+  const preview = parseManifest((await publishContent(input, { manifestPath, dryRun: true })).manifestText).versions[0]
+  expect(preview.files.filter((f) => f.release === 'content-2026.10.12')).toHaveLength(1000)
+  expect(preview.files.filter((f) => f.release === 'content-2026.10.12-2')).toHaveLength(5)
+  const remote = releaseHost()
+  const result = await publishContent(input, { manifestPath, host: remote.host })
+  expect(remote.releases.map((r) => [r.tag, r.draft, r.files.length])).toEqual([
+    ['content-2026.10.12', false, 1000],
+    ['content-2026.10.12-2', false, 5],
+  ])
+  const version = parseManifest(result.manifestText).versions[0]
+  expect(version.files.filter((f) => f.release === 'content-2026.10.12')).toHaveLength(1000)
+  expect(version.files.filter((f) => f.release === 'content-2026.10.12-2')).toHaveLength(5)
+  expect(result.uploads).toHaveLength(1005)
 })
 
 it('reuses assets from any published content release, including one absent from the manifest', async () => {

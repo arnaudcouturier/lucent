@@ -275,7 +275,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     const f = object(value, 'File')
     if (typeof f.size !== 'number' || !Number.isSafeInteger(f.size) || f.size < 0) invalid('File sizes must be nonnegative integers.')
     const release = nonemptyString(f.release, 'Content release')
-    if (!/^content-\d{4}\.\d{2}\.\d{2}$/.test(release)) invalid('Invalid content release tag.')
+    if (!/^content-\d{4}\.\d{2}\.\d{2}(?:-\d+)?$/.test(release)) invalid('Invalid content release tag.')
     return { sha256: hash(f.sha256), size: f.size, release }
   })
   unique(files.map((f) => f.sha256), 'File hashes')
