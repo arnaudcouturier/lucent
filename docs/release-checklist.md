@@ -28,13 +28,37 @@ for files the game itself generates. Use two real content versions for the updat
 
 - [ ] Deploy from a vanilla game folder.
 - [ ] In game, confirm Insert opens OptiScaler, Home opens ReShade, and Neural Rendering is active.
+- [ ] Switch performance profile on the main screen; confirm the game picks up the new settings.
+- [ ] In the OptiScaler overlay, save without changing anything and close the game: the profile
+  stays as it was. Change one of the profile's settings, save and close the game: the main
+  screen shows "Custom · based on X". Pick a profile and confirm the Custom row is gone.
 - [ ] With the game closed, replace a deployed file to simulate a game patch. Reopen Lucent,
   confirm drift, choose Repair, and confirm a healthy deployment and working game.
+- [ ] With XIVLauncher auto-repair on (⋯ menu) and the Lucent window closed, replace a deployed
+  file, launch through XIVLauncher and close the game. Confirm both notifications and that the
+  file is repaired.
 - [ ] Turn Enabled off. Confirm the Disabled deployment runs the game as vanilla.
 - [ ] Update and roll back between two real content versions; confirm the game works after each.
+- [ ] ⋯ → Copy diagnostics and Report a bug: the clipboard holds the full diagnostics, and the
+  browser opens the bug report template. ⋯ → Credits lists every component and upstream author.
+- [ ] With "Add Lucent to the Start menu" checked, confirm the Start menu shortcut and the
+  Settings → Apps entry, then uninstall from Settings → Apps with "Restore the game folder" on.
+  Confirm Lucent's data folder and installed exe are gone after it exits.
 - [ ] Uninstall and compare the game folder against the pre-deployment hash listing.
 - [ ] Check the window chrome on Windows 11 and in a Windows 10 22H2 x64 VM: dragging,
   minimize, close, fixed size, shadow and rounded corners where supported.
+
+## First session only
+
+Before the first release, on top of the checks above:
+
+- [ ] Deploy over the existing hand-made setup rather than a vanilla folder (#27). Confirm Scan
+  lists it, its presets carry over, and uninstall brings the hand-made setup back.
+- [ ] Check the GPosingway signature and the swapped-DLSS backup names (`.dlsss`, `.bak`,
+  `.backup`) in `manifest.json` against real installs.
+- [ ] Measure the crystal with the game running, following [the crystal procedure](crystal.md),
+  including minimize and Alt-Tab (#22).
+- [ ] Close #21 and #22 once their checks pass.
 
 ## Publish and verify
 

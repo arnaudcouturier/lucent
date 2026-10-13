@@ -504,6 +504,8 @@
 .profile-row + .profile-row { box-shadow: inset 0 1px 0 var(--line); }
 .profile-row:hover { background: var(--hover); }
 .profile-row.is-selected { background: var(--accent-tint); }
+.profile-row.is-custom { cursor: default; }
+.profile-row.is-custom:hover { background: var(--accent-tint); }
 .profile-row:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
 .profile-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }
 .profile-row input { flex: none; }
