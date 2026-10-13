@@ -9,6 +9,8 @@ import { changePerformanceProfile, deployContent, DeploymentError, failureReason
 import { planDeployment, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, type Channel } from './updates'
+import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
+export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
@@ -40,6 +42,10 @@ export type Activity =
 
 export interface State {
   activity: Activity
+  /** App releases are available even before a deployment exists. */
+  appUpdate: AppUpdate | null
+  /** Null while idle; otherwise the app download/replacement progress from 0 to 1. */
+  appUpdateProgress: number | null
   gameFolder: GameFolderState
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
@@ -82,6 +88,10 @@ export interface Core {
   repair(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
   update(): Promise<void>
+  /** Downloads the announced app version, verifies it, replaces the running exe and relaunches. */
+  updateApp(): Promise<void>
+  /** Stops announcing the announced app version. */
+  skipAppUpdate(): Promise<void>
   /** Stops announcing the announced content version. */
   skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
@@ -94,7 +104,7 @@ const CHANNEL: Channel = 'stable'
 
 export function createCore(platform: Platform): Core {
   let state: State = {
-    activity: { kind: 'scan' }, gameFolder: { status: 'idle' }, rejectedFolder: null,
+    activity: { kind: 'scan' }, appUpdate: null, appUpdateProgress: null, gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
     plan: null, existingSetups: [], deployment: null, deploymentProgress: null, includeReShade: true, profiles: [], selectedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [],
   }
@@ -131,6 +141,11 @@ export function createCore(platform: Platform): Core {
   }
   const deploymentActivity = (record: DeploymentRecord, drift: Drift | null, update: ContentUpdate | null): Activity =>
     ({ kind: 'deployment', enabled: record.enabled, drift, update, operation: null })
+  /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
+  const announceApp = async (): Promise<AppUpdate | null> => {
+    const { skippedApp } = await readSettings(platform)
+    return fetchAppUpdate(platform, { appVersion: APP_VERSION, skipped: skippedApp, channel: CHANNEL })
+  }
   /** Checked on open and after an update or a skip; there is no background service. */
   const announceUpdate = async (record: DeploymentRecord): Promise<ContentUpdate | null> => {
     if (state.manifest.status !== 'ready') return null
@@ -163,8 +178,8 @@ export function createCore(platform: Platform): Core {
   const refreshAnnouncement = async () => {
     if (state.activity.kind !== 'deployment' || !state.deployment) return
     try {
-      const update = await announceUpdate(state.deployment)
-      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update } })
+      const [update, appUpdate] = await Promise.all([announceUpdate(state.deployment), announceApp()])
+      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update }, appUpdate })
     } catch { /* The card keeps the last announcement; Update explains any failure. */ }
   }
   const newestContentForTier = (): ContentVersion | undefined => {
@@ -196,11 +211,13 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null, plan: null, existingSetups: [], deployment: null, profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       try {
         await recover()
-        const [found, graphics, manifest, xivLauncher] = await Promise.all([
-          findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform),
+        // Recovery precedes all startup work, including cleanup of the last app update.
+        await cleanupOldExe(platform)
+        const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
+          findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform), announceApp(),
         ])
         if (graphics.status === 'found' && manifest.status === 'ready') graphics.tier = matchTier(graphics.adapter, manifest.manifest)
-        set({ gameFolder: found ? { status: 'found', ...found } : { status: 'not-found' }, graphics, manifest, xivLauncher })
+        set({ gameFolder: found ? { status: 'found', ...found } : { status: 'not-found' }, graphics, manifest, xivLauncher, appUpdate })
         if (found) await restoreDeployment(found)
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
@@ -305,6 +322,28 @@ export function createCore(platform: Platform): Core {
         if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null } })
         set({ busy: false, deploymentProgress: null })
       }
+    },
+    async updateApp() {
+      if (state.busy || state.recoveryRequired || !state.appUpdate) return
+      const update = state.appUpdate
+      set({ busy: true, error: null, notice: null, appUpdateProgress: 0 })
+      try {
+        await performAppUpdate(platform, update, (appUpdateProgress) => set({ appUpdateProgress }))
+        // The real port relaunches and exits, so this runs only on the fake: the new exe is in place.
+        set({ appUpdate: null })
+      } catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false, appUpdateProgress: null }) }
+    },
+    async skipAppUpdate() {
+      const update = state.appUpdate
+      if (state.busy || !update) return
+      set({ busy: true, error: null })
+      try {
+        const settings = await readSettings(platform)
+        await writeSettings(platform, { ...settings, skippedApp: [...new Set([...settings.skippedApp, update.version])] })
+        set({ appUpdate: await announceApp() })
+      } catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false }) }
     },
     async skipUpdate() {
       const { activity } = state

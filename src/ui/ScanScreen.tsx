@@ -5,7 +5,7 @@ import type { ExistingSetup } from '../core/existingSetup'
 import { Path } from './Path'
 import { useCore } from './useCore'
 import { Screen } from './Window'
-import { FlowError } from './DeploymentScreens'
+import { FlowError, StatusCard } from './DeploymentScreens'
 
 const SOURCE_LABEL: Record<GameFolderSource, string> = {
   xivlauncher: 'XIVLauncher',
@@ -19,6 +19,8 @@ export function ScanScreen() {
   const [state, core] = useCore()
   return (
     <Screen title="Scan" sub="Lucent looks for your game folder, graphics card and launcher.">
+      <StatusCard />
+      <FlowError />
       {!state.recoveryRequired && <><ul className="card list">
         <GameFolderRow />
         <XivLauncherRow />
@@ -35,7 +37,6 @@ export function ScanScreen() {
           </span>
         </p>
       )}
-      <FlowError />
       {!state.recoveryRequired && <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.continueSetup()}>Continue</button></footer>}
     </Screen>
   )
@@ -101,7 +102,7 @@ function GraphicsFeaturesRow() {
 }
 
 function ManifestNotice() {
-  const [{ manifest, graphics }, core] = useCore()
+  const [{ manifest, graphics, appUpdate }, core] = useCore()
   const failed = manifest.status === 'update-required' || manifest.status === 'invalid' || manifest.status === 'unavailable'
   if (!failed && graphics.status !== 'not-found' && graphics.status !== 'unavailable') return null
   return (
@@ -110,7 +111,7 @@ function ManifestNotice() {
       <div className="scan-notice">
         {manifest.status === 'update-required' ? <>
           <span>Update Lucent to continue. This content needs a newer app.</span>
-          <span>Download the latest app from Lucent’s GitHub releases, then open it again.</span>
+          <span>{appUpdate ? 'Use Update above to reopen Lucent with the new app version.' : 'Download the latest app from Lucent’s GitHub releases, then open it again.'}</span>
         </> : <>
           <span>{manifest.status === 'invalid' ? 'The manifest is invalid. Lucent cannot determine your tier.' : manifest.status === 'unavailable' ? 'Could not load the manifest. Check your connection and try again.' : graphics.status === 'not-found' ? 'No hardware graphics card was found. Try Scan again once its driver is available.' : 'Could not scan your graphics card. Try Scan again.'}</span>
           <button className="btn" onClick={() => void core.scan()}>Scan again</button>

@@ -37,6 +37,8 @@ export function createTauriPlatform(): Platform {
     hashFile: (path) => call('platform_hash_file', { path }),
     resolveGamePath: (root, relative) => call('platform_resolve_game_path', { root, relative }),
     isGameRunning: () => call('platform_is_game_running', {}),
+    exePath: () => call<string>('platform_exe_path', {}),
+    launchExe: (path) => call('platform_launch_exe', { path }),
     downloadFile: (url, to, progress) => {
       const channel = new Channel<number>()
       channel.onmessage = progress

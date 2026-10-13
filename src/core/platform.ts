@@ -80,4 +80,8 @@ export interface Platform {
   /** Streams to a temporary file and atomically commits it when complete. */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
+  /** The running Lucent exe, which an app update renames aside and replaces. */
+  exePath(): Promise<string>
+  /** Starts the exe at `path`; the real port then exits this process so the new one takes over. */
+  launchExe(path: string): Promise<void>
 }

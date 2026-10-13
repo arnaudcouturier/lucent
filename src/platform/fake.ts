@@ -15,6 +15,8 @@ export interface Machine {
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
   gameRunning?: boolean
+  /** The running Lucent exe on this machine; an app update renames and replaces this file. */
+  exePath?: string
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
@@ -27,8 +29,12 @@ export const DEFAULT_ENV: Record<EnvFolder, string> = {
 const norm = (path: string) =>
   path.replace(/\//g, '\\').replace(/\\{2,}/g, '\\').replace(/\\$/, '').toLowerCase()
 
+export const FAKE_EXE_PATH = 'C:\\Users\\Player\\Downloads\\Lucent.exe'
+
 export interface FakePlatform extends Platform {
   readonly downloads: string[]
+  /** Every exe the fake was asked to launch, in order; the real port exits instead of returning. */
+  readonly launched: string[]
   listDirectories(root: string): Promise<string[]>
   /** Queues the folder the player will pick next, or null for a cancel. With nothing queued, the player cancels. */
   answerPicker(path: string | null): void
@@ -64,6 +70,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const env = { ...DEFAULT_ENV, ...machine.env }
   const denied: string[] = []
   const downloads: string[] = []
+  const launched: string[] = []
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
@@ -79,6 +86,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
 
   return {
     downloads,
+    launched,
     async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text); touch(target) },
     async writeFileByte(path, offset, value) {
       const text = await this.readText(path)
@@ -140,6 +148,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await this.writeText(to, text)
     },
     async isGameRunning() { await gate; return machine.gameRunning ?? false },
+    async exePath() { await gate; return machine.exePath ?? FAKE_EXE_PATH },
+    async launchExe(path) { await gate; launched.push(path) },
     async readText(path) {
       await gate
       const p = norm(path)

@@ -1,6 +1,6 @@
 // Machine layouts for the fake Platform: game folders and the launchers that point at them.
 // Shared by the core's tests, the state gallery and the app running in a browser.
-import { DEFAULT_ENV, type Machine } from './fake'
+import { DEFAULT_ENV, FAKE_EXE_PATH, type Machine } from './fake'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
 import { NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, fixtureUrl, nextFixtureUrl } from './contentFixture'
@@ -12,7 +12,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
@@ -22,6 +22,7 @@ export function machine(...parts: Machine[]): Machine {
     Object.assign(out.remoteText, p.remoteText)
     if (p.devContent !== undefined) out.devContent = p.devContent
     if (p.gameRunning !== undefined) out.gameRunning = p.gameRunning
+    if (p.exePath !== undefined) out.exePath = p.exePath
   }
   return out
 }

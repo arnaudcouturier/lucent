@@ -66,6 +66,10 @@ async fn platform_download_file(url: String, to: PathBuf, progress: tauri::ipc::
 }
 #[tauri::command]
 async fn platform_is_game_running() -> Result<bool, PlatformError> { files::is_game_running() }
+#[tauri::command]
+async fn platform_exe_path() -> Result<String, PlatformError> { platform::exe_path() }
+#[tauri::command]
+async fn platform_launch_exe(path: PathBuf) -> Result<(), PlatformError> { platform::launch_exe(&path) }
 
 pub fn run() {
     tauri::Builder::default()
@@ -80,7 +84,7 @@ pub fn run() {
             platform_dev_content,
             platform_write_text, platform_write_file_byte, platform_copy_file, platform_rename_file, platform_remove_file,
             platform_remove_directory_if_empty, platform_list_files, platform_hash_file, platform_resolve_game_path,
-            platform_download_file, platform_is_game_running
+            platform_download_file, platform_is_game_running, platform_exe_path, platform_launch_exe
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lucent");

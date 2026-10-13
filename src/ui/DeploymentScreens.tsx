@@ -85,10 +85,10 @@ export function MainScreen() {
   const [{ gameFolder }] = useCore()
   return <Screen title="Your game" sub="Your graphics, kept in place.">
     <StatusCard />
+    <FlowError />
     <ProfileSelector />
     <EnabledRow />
     {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
-    <FlowError />
   </Screen>
 }
 
@@ -102,10 +102,10 @@ function EnabledRow() {
   </label>
 }
 
-const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back' } as const
+const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', 'app-update': 'Updating Lucent' } as const
 
 /** Renders exactly the one state the core's priority function picks. */
-function StatusCard() {
+export function StatusCard() {
   const [state, core] = useCore()
   const card = statusCard(state)
   if (!card) return null
@@ -120,16 +120,21 @@ function StatusCard() {
       <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
     <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
   </div>
-  if (card.kind === 'update') return <div className="card health-card is-update" role="status">
-    <ArrowDownToLine size={20} />
-    <div className="health-body"><h2>Content {card.version} is available</h2>
-      <ul className="changelog">{card.changelog.map((line) => <li key={line}>{line}</li>)}</ul>
-      <p className="update-size">{card.downloadSize ? `${sizeLabel(card.downloadSize)} to download` : 'Nothing to download'}. Your profile and Enabled stay as they are.</p>
-      <footer className="update-actions">
-        <button className="btn is-ghost" disabled={state.busy} onClick={() => void core.skipUpdate()}>Skip</button>
-        <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void core.update()}><Download size={14} />Update</button>
-      </footer></div>
-  </div>
+  if (card.kind === 'app-update' || card.kind === 'update') {
+    const app = card.kind === 'app-update'
+    const notes = app ? card.notes : card.changelog
+    const size = app ? card.size : card.downloadSize
+    return <div className="card health-card is-update" role="status">
+      <ArrowDownToLine size={20} />
+      <div className="health-body"><h2>{app ? 'Lucent' : 'Content'} {card.version} is available</h2>
+        <ul className="changelog">{notes.map((line, index) => <li key={index}>{line}</li>)}</ul>
+        <p className="update-size">{size ? `${sizeLabel(size)} to download` : 'Nothing to download'}. {app ? 'Lucent will reopen when the update is ready.' : 'Your profile and Enabled stay as they are.'}</p>
+        <footer className="update-actions">
+          <button className="btn is-ghost" disabled={state.busy} onClick={() => void (app ? core.skipAppUpdate() : core.skipUpdate())}>Skip</button>
+          <button className="btn is-primary" disabled={state.busy || state.recoveryRequired} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
+        </footer></div>
+    </div>
+  }
   if (card.kind === 'disabled') return <div className="card health-card is-disabled">
     <Snowflake size={20} />
     <div className="health-body"><h2>Disabled</h2><p>Lucent’s files are in place but inactive. The game runs as if vanilla.</p></div>

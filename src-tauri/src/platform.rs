@@ -178,10 +178,32 @@ pub fn dev_content() -> Result<Option<LocalContent>> {
     }))
 }
 
+/// The running Lucent exe, which an app update renames aside and replaces.
+pub fn exe_path() -> Result<String> {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| PlatformError::new(ErrorKind::Unknown, e.to_string(), None))
+}
+
+/// Starts the exe at `path`, then exits this process so the new one takes over.
+pub fn launch_exe(path: &Path) -> Result<()> {
+    std::process::Command::new(path)
+        .spawn()
+        .map_err(|e| PlatformError::io(e, Some(path)))?;
+    std::process::exit(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn names_the_running_exe() {
+        let path = exe_path().unwrap();
+        assert!(Path::new(&path).is_absolute(), "got {path}");
+        assert!(!path.trim().is_empty());
+    }
 
     #[test]
     fn reads_a_text_file() {

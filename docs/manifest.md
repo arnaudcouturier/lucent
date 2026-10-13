@@ -242,3 +242,20 @@ unchanged, or saved as `<name> (my edits)` beside it when Lucent's changed too. 
 `changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
 follows. The previous version's files stay in the cache. An update never takes over an existing setup: one that
 appeared since the deployment and is in the way blocks the update, which asks the player to move it aside.
+
+## App updates
+
+On open, Lucent also reads GitHub Releases and announces the newest unskipped Stable `app-vX.Y.Z`
+release with a `Lucent.exe` asset and a SHA-256 digest. Release notes appear inline with Update and
+Skip. Drift still ranks first; app updates rank above content updates. The app card is also available
+during Scan, including when the manifest or its content needs a newer app. Content versions carry
+`minAppVersion` and are never offered to an app that cannot apply them.
+
+Skip persists in `settings.json` as `skippedApp`, independently of `skippedContent`. Nothing downloads
+until Update is clicked. The download is hash-checked and prepared beside the running exe before
+that exe is renamed to `<exe>.old` and the new one takes its place. Lucent relaunches from that same
+path. A replacement or relaunch failure restores the previous exe; a failed restoration reports its
+backup path. At the next start, a hash-checked `<exe>.lucent-update.json` record identifies the previous
+exe and any prepared file to remove. Unrecognized or changed adjacent files are preserved.
+
+The gallery includes `app-update`, `app-updating`, `app-update-failed`, and `schema-update`.

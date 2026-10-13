@@ -6,9 +6,11 @@ import { maybeStat } from './deployment'
 export interface Settings {
   /** Content versions the player skipped; they are no longer announced. */
   skippedContent: string[]
+  /** App versions the player skipped; they are no longer announced. */
+  skippedApp: string[]
 }
 
-const DEFAULTS: Settings = { skippedContent: [] }
+const DEFAULTS: Settings = { skippedContent: [], skippedApp: [] }
 
 const settingsPath = async (platform: Platform) => joinPath(await platform.envFolder('LocalAppData'), 'Lucent', 'settings.json')
 
@@ -18,8 +20,8 @@ export async function readSettings(platform: Platform): Promise<Settings> {
   if (!await maybeStat(platform, path)) return { ...DEFAULTS }
   try {
     const value = JSON.parse(await platform.readText(path)) as Partial<Settings> | null
-    const skipped = Array.isArray(value?.skippedContent) ? value.skippedContent.filter((id): id is string => typeof id === 'string') : []
-    return { ...DEFAULTS, skippedContent: skipped }
+    const strings = (list: unknown) => Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []
+    return { ...DEFAULTS, skippedContent: strings(value?.skippedContent), skippedApp: strings(value?.skippedApp) }
   } catch { return { ...DEFAULTS } }
 }
 

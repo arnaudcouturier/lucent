@@ -11,6 +11,7 @@ import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
+import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
 import './gallery.css'
 
 const AN_UPDATE = { version: '2026.11.02', changelog: ['OptiScaler 2 with sharper Neural Rendering.', 'Drops the example shader.'], downloadSize: 160 * 1024 ** 2 }
@@ -129,6 +130,22 @@ const updateAvailable = (stage: 'update' | 'updating') => async () => {
   return reopened
 }
 
+const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-failed') => async () => {
+  const m = machine(MACHINES.steam, appReleaseHost())
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  if (stage === 'app-updating') { platform.hold(); void core.updateApp() }
+  if (stage === 'app-update-failed') {
+    m.remoteText![APP_EXE_URL] = 'Corrupt download'
+    await core.updateApp()
+  }
+  return core
+}
+
 const STATES: GalleryState[] = [
   {
     key: 'scanning',
@@ -160,7 +177,7 @@ const STATES: GalleryState[] = [
   { key: 'rtx-20', label: 'Scan · RTX 20, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('NVIDIA GeForce RTX 2080 SUPER'))) },
   { key: 'radeon', label: 'Scan · Radeon, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'intel', label: 'Scan · Intel, Other', setup: scanned(machine(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086))) },
-  { key: 'schema-update', label: 'Scan · app update required', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 3 }))) },
+  { key: 'schema-update', label: 'Scan · app update required', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 3 }), appReleaseHost())) },
   { key: 'invalid-manifest', label: 'Scan · invalid manifest', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 1, tiers: [] }))) },
   { key: 'manifest-offline', label: 'Scan · manifest unavailable', setup: scanned(machine(steam(), graphicsCard())) },
   { key: 'no-gpu', label: 'Scan · no hardware graphics card', setup: scanned(machine(MACHINES.steam, { gpus: [] })) },
@@ -204,6 +221,9 @@ const STATES: GalleryState[] = [
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'update', label: 'Main · Content update available', setup: updateAvailable('update') },
   { key: 'updating', label: 'Main · Updating', setup: updateAvailable('updating') },
+  { key: 'app-update', label: 'Main · App update available', setup: appUpdateAvailable('app-update') },
+  { key: 'app-updating', label: 'Main · Updating Lucent', setup: appUpdateAvailable('app-updating') },
+  { key: 'app-update-failed', label: 'Main · App hash mismatch', setup: appUpdateAvailable('app-update-failed') },
   { key: 'uninstalled', label: 'Scan · after uninstall', async setup() {
     const core = await workflow('healthy')()
     await core.uninstall()
