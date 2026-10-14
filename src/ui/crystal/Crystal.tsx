@@ -2,15 +2,27 @@ import { useEffect, useRef } from 'react'
 import type { CrystalMode, CrystalState } from '../../core/crystal'
 import { inTauri, observeWindowFocus } from '../shell'
 import { HEIGHT, WIDTH, advanceMotion, drawCrystal, initialMotion } from './render'
+import { framePacer } from './pacing'
 
 const LABELS: Record<CrystalMode, string> = {
   scan: 'Scanning', glass: 'Ready for setup', fill: 'Deploying', lit: 'Healthy',
   update: 'Update available', busy: 'Working', drift: 'Needs repair', disabled: 'Disabled',
 }
 
+/**
+ * Paints per second. At rest the game may be running beside Lucent, so the crystal stays at 30; filling and
+ * repair/update/rollback can't run while XIV does, so they paint at up to 120.
+ */
+const restingRate = 30
+const workingRate = 120
+
 export function Crystal({ state }: { state: CrystalState }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const motion = useRef(initialMotion())
+  // The fill target changes with every progress report; the loop reads it here instead of restarting.
+  const target = useRef(state)
+  target.current = state
+  const repaint = useRef<() => void>(() => {})
 
   useEffect(() => {
     const canvas = canvasRef.current!
@@ -21,25 +33,26 @@ export function Crystal({ state }: { state: CrystalState }) {
     const reduced = () => reducedMotion.matches || stillPreview
     const measure = import.meta.env.DEV && new URLSearchParams(location.search).has('crystal-perf')
     const costs: number[] = []
-    let frames = 0, raf = 0, last = 0
+    let paints = 0, raf = 0
+    const pacer = framePacer(state.mode === 'fill' || state.mode === 'busy' ? workingRate : restingRate)
     let nativeFocused = !inTauri
     if (state.mode !== 'drift') motion.current.fall = 0
 
     const paint = () => {
       const start = measure ? performance.now() : 0
-      // Reduced motion still presents the fallen shard and a visible, stationary scan line.
+      // Reduced motion still presents the fallen shard, a visible, stationary scan line and the current fill.
       const pose = reduced()
-        ? { ...motion.current, fall: state.mode === 'drift' ? 1 : 0, effects: state.mode === 'scan' ? 0.85 : motion.current.effects }
+        ? { ...motion.current, fall: state.mode === 'drift' ? 1 : 0, effects: state.mode === 'scan' ? 0.85 : motion.current.effects, fill: target.current.fill }
         : motion.current
-      drawCrystal(ctx, state, pose)
+      drawCrystal(ctx, target.current, pose)
       if (measure) {
         costs.push(performance.now() - start)
         if (costs.length > 60) costs.shift()
-        frames++
-        if (frames === 1 || frames % 60 === 0) {
+        paints++
+        if (paints === 1 || paints % 60 === 0) {
           const sorted = [...costs].sort((a, b) => a - b)
           canvas.dispatchEvent(new CustomEvent('crystal-performance', { bubbles: true, detail: {
-            frames, mean: costs.reduce((sum, cost) => sum + cost, 0) / costs.length,
+            frames: paints, mean: costs.reduce((sum, cost) => sum + cost, 0) / costs.length,
             p95: sorted[Math.ceil(sorted.length * 0.95) - 1],
           } }))
         }
@@ -53,12 +66,11 @@ export function Crystal({ state }: { state: CrystalState }) {
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
     }
     const tick = (now: number) => {
-      if (now - last >= 1000 / 30) {
-        advanceMotion(motion.current, Math.min(0.1, (now - last) / 1000), state)
-        last = now
-        paint()
-      }
       raf = requestAnimationFrame(tick)
+      const seconds = pacer.frame(now)
+      if (seconds === null) return
+      advanceMotion(motion.current, seconds, target.current)
+      paint()
     }
     const reconcile = () => {
       cancelAnimationFrame(raf)
@@ -68,11 +80,18 @@ export function Crystal({ state }: { state: CrystalState }) {
       if (!visible) return
       paint()
       if (!reduced() && state.mode !== 'disabled') {
-        last = performance.now()
+        pacer.reset(performance.now())
         raf = requestAnimationFrame(tick)
       }
     }
-    const onResize = () => { resize(); reconcile() }
+    // Without a running loop, a new fill still needs a paint.
+    repaint.current = () => {
+      if (canvas.dataset.motion === 'running') return
+      motion.current.fill = target.current.mode === 'fill' ? target.current.fill : 0
+      paint()
+    }
+    // Resizing clears the canvas, so it paints again even while paused.
+    const onResize = () => { resize(); paint(); reconcile() }
     resize()
     reconcile()
     // First mount paints even in an unfocused window so the rail never starts empty.
@@ -85,6 +104,7 @@ export function Crystal({ state }: { state: CrystalState }) {
     reducedMotion.addEventListener('change', reconcile)
     return () => {
       cancelAnimationFrame(raf)
+      repaint.current = () => {}
       stopFocus()
       document.removeEventListener('visibilitychange', reconcile)
       window.removeEventListener('focus', reconcile)
@@ -92,7 +112,9 @@ export function Crystal({ state }: { state: CrystalState }) {
       window.removeEventListener('resize', onResize)
       reducedMotion.removeEventListener('change', reconcile)
     }
-  }, [state.mode, state.fill])
+  }, [state.mode])
+
+  useEffect(() => repaint.current(), [state.fill])
 
   const label = state.mode === 'fill' ? `Deploying ${Math.round(state.fill * 100)}%` : LABELS[state.mode]
   return <canvas ref={canvasRef} className="crystal" width={WIDTH} height={HEIGHT} role="img" aria-label={`Lucent crystal: ${label}`} />

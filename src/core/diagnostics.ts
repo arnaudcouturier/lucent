@@ -43,7 +43,9 @@ export async function collectDiagnostics(platform: Platform, state: State, appVe
   if (state.recoveryRequired) health = 'Recovery required'
   else if (record?.status === 'complete') {
     try {
-      drift = await checkHealth(platform, structuredClone(record), gameVersion, true)
+      // Diagnostics may describe a UI snapshot from before another window's operation. It must never save that
+      // snapshot over the live journal, even when all hashes match after a repair or a game-version change.
+      drift = await checkHealth(platform, structuredClone(record), gameVersion, true, undefined, { persist: false })
       health = drift ? 'Drift' : 'Healthy'
     } catch (error) { health = `Unavailable (${error instanceof Error ? error.message : String(error)})` }
   }

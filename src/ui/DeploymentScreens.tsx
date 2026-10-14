@@ -1,11 +1,14 @@
-import { ArrowDownToLine, Check, CircleCheck, Cpu, Download, FolderX, LoaderCircle, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
+import { Fragment, type ReactNode } from 'react'
+import { ArrowDownToLine, BookOpen, Check, CircleCheck, Cpu, Download, ExternalLink, FolderX, LoaderCircle, ScanSearch, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
+import { GUIDE_URL, type KeyBinding } from '../core/hotkeys'
 import type { DeploymentPhase } from '../core/deployment'
 import { statusCard, type StatusCard as Card } from '../core/statusCard'
 import { Screen } from './Window'
 import { useCore } from './useCore'
 import { Path } from './Path'
-import { ProfileSelector } from './Profiles'
+import { EasedNumber, ProgressBar, percentLabel } from './Progress'
 import { gameActionsAvailable } from '../core/gameAccess'
+import { sizeLabel } from '../core/format'
 
 export function FlowError() {
   const [state, core] = useCore()
@@ -16,12 +19,6 @@ export function FlowError() {
     {(activity.kind === 'scan' || recoveryRequired) && <button className="btn" disabled={busy} onClick={() => void core.scan()}>{recoveryRequired ? 'Try recovery again' : 'Scan again'}</button>}
     {activity.kind === 'review' && <button className="btn" disabled={!gameActionsAvailable(state) || !plan} onClick={() => void core.deploy()}>Try again</button>}
   </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
-}
-
-export function sizeLabel(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
 /** Read-only: Scan listed the files, Profile made the choices. */
@@ -52,61 +49,104 @@ export function ReviewScreen() {
   </Screen>
 }
 
-const PHASES: { key: DeploymentPhase; label: string; description: string }[] = [
-  { key: 'downloading', label: 'Downloading', description: 'Every file is checked before it reaches your game.' },
-  { key: 'backing-up', label: 'Backing up', description: 'Saving each file before a step changes it.' },
-  { key: 'applying', label: 'Applying', description: 'Putting the tested content in place.' },
-  { key: 'checking', label: 'Checking', description: 'Confirming the deployed files match their hashes.' },
+const PHASES: { key: DeploymentPhase; label: string }[] = [
+  { key: 'downloading', label: 'Downloading' },
+  { key: 'backing-up', label: 'Backing up' },
+  { key: 'applying', label: 'Applying' },
+  { key: 'checking', label: 'Checking' },
 ]
+
+/** "245.1 MB of 662.0 MB" while downloading, "412 of 1,145 files" otherwise. */
+function progressDetail(phase: DeploymentPhase, total: number) {
+  return phase === 'downloading'
+    ? (done: number) => `${sizeLabel(Math.round(done))} of ${sizeLabel(total)}`
+    : (done: number) => `${Math.floor(done).toLocaleString('en')} of ${total.toLocaleString('en')} files`
+}
+
 export function InstallScreen() {
-  const [{ deploymentProgress, activity }] = useCore()
+  const [{ deploymentProgress, activity, plan }] = useCore()
   const progress = activity.kind === 'deploying' ? activity.progress : 0
-  const phase = PHASES.findIndex((p) => p.key === deploymentProgress?.phase)
-  return <Screen title="Installing" sub="Keep Lucent open while it prepares your game.">
+  // A folder with nothing to back up skips that stage, so it isn't listed.
+  const phases = PHASES.filter((p) => p.key !== 'backing-up' || (plan?.counts.backedUp ?? 0) > 0)
+  const phase = Math.max(0, phases.findIndex((p) => p.key === deploymentProgress?.phase))
+  const current = phases[phase]
+  const total = deploymentProgress?.total
+  return <Screen title="Installing" sub="Keep Lucent open until it’s done.">
     <div className="card install-progress">
-      <div className="progress-heading"><span>{PHASES[Math.max(0, phase)].label}</span><span className="mono">{Math.round(progress * 100)}%</span></div>
-      <progress max={1} value={progress} aria-label="Installation progress" />
-      <p>{PHASES[Math.max(0, phase)].description}</p>
-      {deploymentProgress?.file && <Path path={deploymentProgress.file} />}
+      <div className="progress-heading" aria-live="polite">
+        <span className="progress-phase" key={current.key}>{current.label}</span>
+        <EasedNumber className="progress-figure" value={progress} format={percentLabel} />
+      </div>
+      <ProgressBar value={progress} label="Installation progress" />
+      <div className="progress-meta">
+        {total ? <EasedNumber key={current.key} className="mono progress-count" value={deploymentProgress?.done ?? 0} format={progressDetail(current.key, total)} /> : <span>&nbsp;</span>}
+      </div>
     </div>
-    <ol className="install-phases" aria-live="polite">{PHASES.map((p, i) => <li key={p.key} className={i === phase ? 'is-current' : i < phase ? 'is-complete' : ''}>
-      {i < phase ? <Check size={14} /> : i === phase ? <LoaderCircle size={14} className="spin" /> : <span className="phase-dot" />}{p.label}
+    <ol className="install-stages" aria-label="Installation stages">{phases.map((p, i) => <li key={p.key} className={i === phase ? 'is-current' : i < phase ? 'is-complete' : ''} aria-current={i === phase ? 'step' : undefined}>
+      <span className="install-stage-dot">{i < phase && <Check size={10} strokeWidth={3} />}</span>{p.label}
     </li>)}</ol>
   </Screen>
 }
 
+/** Keycaps for keys pressed together, such as Shift + F2. */
+export function Keys({ keys }: { keys: string[] }) {
+  return <span className="keys" aria-label={keys.join(' + ')}>{keys.map((key, i) => <Fragment key={i}>
+    {i > 0 && <span className="keys-plus" aria-hidden>+</span>}<kbd aria-hidden>{key}</kbd>
+  </Fragment>)}</span>
+}
+
+/** Where to read about every key and setting once the Done screen is gone. */
+export function GuideLink({ children }: { children: ReactNode }) {
+  const [{ busy }, core] = useCore()
+  return <p className="guide-link"><BookOpen size={14} strokeWidth={1.75} /><span>{children}{' '}
+    <button className="text-link" disabled={busy} onClick={() => void core.openLink(GUIDE_URL)}>Lucent guide<ExternalLink size={12} strokeWidth={1.75} /></button>
+  </span></p>
+}
+
+/** Keys grouped by tool: keycaps (or "Not set"), the action, and what Lucent set when the player changed it since. */
+export function KeyBindingList({ bindings }: { bindings: KeyBinding[] }) {
+  const groups = (['OptiScaler', 'ReShade'] as const).map((tool) => ({ tool, rows: bindings.filter((b) => b.tool === tool) })).filter((g) => g.rows.length)
+  return <div className="card hotkeys">{groups.map(({ tool, rows }) => <section key={tool} aria-label={`${tool} keys`}>
+    <h2>{tool}</h2>
+    {rows.map((b) => <div className="hotkey" key={b.action}>
+      {b.keys ? <Keys keys={b.keys} /> : <span className="key-unset">Not set</span>}
+      <span className="hotkey-action">{b.action}{b.hint && <small>{b.hint}</small>}
+        {b.shipped !== undefined && <small className="key-changed">Changed in game · Lucent set {b.shipped ? b.shipped.join(' + ') : 'none'}</small>}</span>
+    </div>)}
+  </section>)}</div>
+}
+
 export function DoneScreen() {
   const [{ hotkeys, deployment }, core] = useCore()
-  return <Screen title="You’re ready" sub="Lucent is in place. Open XIV when you’re ready to play.">
-    <div className="card hotkeys">{hotkeys.map((hint) => <div className="hotkey" key={hint.key}><kbd>{hint.key}</kbd><span>{hint.description}</span></div>)}</div>
-    {deployment?.includeReShade && <p className="screen-note">No preset is active. Press Home in game to choose one.</p>}
+  const presetKey = hotkeys.find((h) => h.tool === 'ReShade' && h.action === 'Menu')?.keys
+  return <Screen title="You’re ready" sub="Lucent is in place. Open XIV and use these keys in game.">
+    <KeyBindingList bindings={hotkeys} />
+    {deployment?.includeReShade && presetKey && <p className="screen-note">No preset is active. Press <Keys keys={presetKey} /> in game to choose one.</p>}
+    <GuideLink>Every key and setting, explained, in the</GuideLink>
     <footer className="screen-actions"><button className="btn is-primary" onClick={() => core.finish()}>Done<Check size={14} /></button></footer>
   </Screen>
 }
 
-export function MainScreen() {
-  const [{ gameFolder }] = useCore()
-  return <Screen title="Your game" sub="Your graphics, kept in place.">
-    <StatusCard />
-    <FlowError />
-    <ProfileSelector />
-    <EnabledRow />
-    {gameFolder.status === 'found' && <div className="destination main-destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
-  </Screen>
-}
-
 /** The master switch: Disabled leaves the deployment's files in place but inactive. */
-function EnabledRow() {
+export function EnabledRow() {
   const [state, core] = useCore()
   const { activity } = state
   if (activity.kind !== 'deployment') return null
-  return <label className="card option-row enabled-row">
-    <input type="checkbox" role="switch" checked={activity.enabled} disabled={!gameActionsAvailable(state)} onChange={(e) => void core.setEnabled(e.target.checked)} />
+  return <label className="card option-row enabled-row settings-switch">
     <span><strong>Enabled</strong><small>{activity.enabled ? 'Lucent is active in game.' : 'Files stay in place, but the game runs as if vanilla.'}</small></span>
+    <input type="checkbox" role="switch" checked={activity.enabled} disabled={!gameActionsAvailable(state)} onChange={(e) => void core.setEnabled(e.target.checked)} />
   </label>
 }
 
-const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', tier: 'Switching tier', 'app-update': 'Updating Lucent' } as const
+const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', tier: 'Switching tier', scan: 'Scanning', 'app-update': 'Updating Lucent' } as const
+
+/** Checks every deployed file now, so a problem shows without reopening Lucent. */
+export function ScanButton() {
+  const [state, core] = useCore()
+  return <button className="btn is-ghost" disabled={state.busy || state.recoveryRequired} onClick={() => void core.checkFiles()} title="Check every deployed file against its hash">
+    <ScanSearch size={14} strokeWidth={1.75} />Scan
+  </button>
+}
 
 /** Renders exactly the one state the core's priority function picks. */
 export function StatusCard() {
@@ -114,7 +154,7 @@ export function StatusCard() {
   const card = statusCard(state)
   if (!card) return null
   return <div className="card status-card">
-    <StatusCardContent card={card} />
+    <StatusCardContent key={card.kind} card={card} />
     {card.caution && <p className="known-broken" role="status"><TriangleAlert size={14} /><span>{card.caution}</span></p>}
   </div>
 }
@@ -127,8 +167,10 @@ function StatusCardContent({ card }: { card: Card }) {
   </div>
   if (card.kind === 'busy') return <div className="health-card is-busy" role="status">
     <LoaderCircle size={20} className="spin" />
-    <div className="health-body"><h2>{OPERATION_LABEL[card.operation]}…</h2>
-      <progress max={1} value={card.progress} aria-label={`${OPERATION_LABEL[card.operation]} progress`} /></div>
+    <div className="health-body">
+      <div className="busy-heading"><h2>{OPERATION_LABEL[card.operation]}…</h2><EasedNumber className="progress-figure is-compact" value={card.progress} format={percentLabel} /></div>
+      <ProgressBar value={card.progress} label={`${OPERATION_LABEL[card.operation]} progress`} />
+    </div>
   </div>
   if (card.kind === 'folder-missing') return <div className="health-card is-folder-missing" role="alert">
     <FolderX size={20} />
@@ -165,9 +207,11 @@ function StatusCardContent({ card }: { card: Card }) {
   if (card.kind === 'disabled') return <div className="health-card is-disabled">
     <Snowflake size={20} />
     <div className="health-body"><h2>Disabled</h2><p>Lucent’s files are in place but inactive. The game runs as if vanilla.</p></div>
+    <ScanButton />
   </div>
   return <div className="health-card is-healthy">
     <CircleCheck size={20} />
     <div className="health-body"><h2>Healthy</h2><p>All deployed files match the tested content.</p></div>
+    <ScanButton />
   </div>
 }

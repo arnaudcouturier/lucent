@@ -134,6 +134,7 @@ it('recovers a toggle interrupted after the rename on reopening', async () => {
   }
   void core.setEnabled(false)
   await crashSeen
+  platform.crash()
   platform.renameFile = rename
   const reopened = await reopen(platform)
   expect(reopened.getState().error).toBeNull()

@@ -32,6 +32,23 @@ it('deploys a vanilla folder, reports the plan numbers and stores a complete rec
   expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
+it('deploys over a read-only file in the game folder instead of failing on permissions', async () => {
+  const m = deploymentMachine()
+  m.files = { ...m.files, [`${ROOT}\\game\\ReShade.ini`]: '[GENERAL]\nPresetPath=old.ini\n' }
+  m.readOnlyFiles = [`${ROOT}\\game\\ReShade.ini`]
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
+  expect(await platform.readText(`${ROOT}\\game\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=\n')
+  await core.finish()
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${ROOT}\\game\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=old.ini\n')
+})
+
 it('a wrong download hash never reaches the game folder, even after earlier downloads pass', async () => {
   const m = deploymentMachine()
   const lastHash = Object.keys(FIXTURE_ASSETS).at(-1)!
@@ -94,6 +111,61 @@ it('lists an unclaimed file in Scan, backs it up readably, replaces it, and brin
   expect(await platform.stat(readable).then(() => true, () => false)).toBe(false)
 })
 
+it.each(['after Scan', 'after Review'])('requires another Scan for a user file that appears %s', async (when) => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  if (when === 'after Review') await core.review(false)
+  await platform.writeText(`${ROOT}\\game\\winmm.dll`, 'Unreviewed user file')
+  if (when === 'after Scan') await core.review(false)
+  else await core.deploy()
+  expect(core.getState()).toMatchObject({ activity: { kind: 'scan' }, plan: null, deployment: null, recoveryRequired: false })
+  expect(core.getState().error).toMatch(/winmm.dll.*Run Scan again/)
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('Unreviewed user file')
+  expect(platform.downloads).toHaveLength(0)
+  expect(await readDeployment(platform, ROOT)).toBeNull()
+  // Retrying Review cannot silently acknowledge the new file. Scan must show it first.
+  await core.review(false)
+  expect(core.getState().activity.kind).toBe('scan')
+  await core.scan()
+  expect(core.getState().folderChanges?.backedUp).toContainEqual({ path: 'winmm.dll', removed: false })
+  await core.review(false)
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('OptiScaler')
+})
+
+it('requires another Scan for a newly detected setup even when its files are only removed', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review(false)
+  await platform.writeText(`${ROOT}\\game\\dxgi.dll`, 'New ReShade')
+  await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[GENERAL]\n')
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ activity: { kind: 'scan' }, plan: null, deployment: null })
+  expect(core.getState().error).toMatch(/dxgi.dll.*Run Scan again/)
+  expect(await platform.readText(`${ROOT}\\game\\dxgi.dll`)).toBe('New ReShade')
+  expect(platform.downloads).toHaveLength(0)
+})
+
+it('protects a user file appearing while content downloads and directs the player back to Scan', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review(false)
+  const download = platform.downloadFile.bind(platform)
+  platform.downloadFile = async (url, to, progress) => {
+    await download(url, to, progress)
+    await platform.writeText(`${ROOT}\\game\\winmm.dll`, 'Arrived during download')
+  }
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ activity: { kind: 'scan' }, plan: null, recoveryRequired: false })
+  expect(core.getState().error).toMatch(/Run Scan again/)
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('Arrived during download')
+  expect((await readDeployment(platform, ROOT))?.status).toBe('rolled-back')
+})
+
 it('still refuses an update that would replace a file no Scan has listed', async () => {
   const platform = createFakePlatform(deploymentMachine())
   const core = createCore(platform)
@@ -138,9 +210,25 @@ it.each([
   await core.review(false)
   expect(core.getState().includeReShade).toBe(required)
   await core.deploy()
-  expect(core.getState().hotkeys.map((h) => h.key)).toEqual(keys)
+  expect(core.getState().hotkeys.map((h) => h.keys!.join('+'))).toEqual(keys)
   core.finish()
   expect(core.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
+})
+
+it('reads the in-game keys from the game folder, so a key changed in game shows with what Lucent set', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  await core.refreshKeybinds()
+  const menu = () => core.getState().keybinds?.find((b) => b.tool === 'ReShade' && b.action === 'Menu')
+  expect(menu()).toMatchObject({ keys: ['Home'] })
+  expect(menu()?.shipped).toBeUndefined()
+  await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[GENERAL]\nPresetPath=\n[INPUT]\nKeyOverlay=113,0,1,0\n')
+  await core.refreshKeybinds()
+  expect(menu()).toMatchObject({ keys: ['Shift', 'F2'], shipped: ['Home'] })
 })
 
 it('refuses to touch the game folder while XIV runs', async () => {
@@ -271,4 +359,49 @@ it.each(['before removal', 'after removal'])('resumes recovery interrupted %s af
   await reopened.scan()
   expect(reopened.getState().error).toBeNull()
   expect((await readDeployment(platform, ROOT))!.status).toBe('rolled-back')
+})
+
+it('downloads several files at once, the largest first, and reports progress by bytes received', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const download = platform.downloadFile.bind(platform)
+  const started: string[] = []
+  let running = 0, most = 0
+  platform.downloadFile = async (url, to, progress) => {
+    started.push(url)
+    most = Math.max(most, ++running)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    try { await download(url, to, progress) } finally { running-- }
+  }
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  const downloading: number[] = []
+  const unsubscribe = core.subscribe(() => {
+    const { deploymentProgress } = core.getState()
+    if (deploymentProgress?.phase === 'downloading') downloading.push(deploymentProgress.progress)
+  })
+  await core.deploy()
+  unsubscribe()
+  expect(core.getState().activity.kind).toBe('done')
+  expect(most).toBeGreaterThan(1)
+  const sizes = Object.fromEntries(Object.entries(FIXTURE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text.length]))
+  expect(started.map((url) => sizes[url])).toEqual(started.map((url) => sizes[url]).sort((a, b) => b - a))
+  expect(downloading).toEqual([...downloading].sort((a, b) => a - b))
+  expect(Math.max(...downloading)).toBeLessThanOrEqual(0.4)
+})
+
+it('retries a download that failed on the network before giving up on the deployment', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const download = platform.downloadFile.bind(platform)
+  const failed = new Set<string>()
+  platform.downloadFile = async (url, to, progress) => {
+    if (!failed.has(url)) { failed.add(url); throw new PlatformError('network', 'Connection reset') }
+    return download(url, to, progress)
+  }
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
+  expect(failed.size).toBe(Object.keys(FIXTURE_ASSETS).length)
 })

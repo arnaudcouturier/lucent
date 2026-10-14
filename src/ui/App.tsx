@@ -1,7 +1,8 @@
 import { ScanScreen } from './ScanScreen'
 import { Window } from './Window'
 import { useCore, useGameRunningRefresh } from './useCore'
-import { DoneScreen, InstallScreen, MainScreen, ReviewScreen } from './DeploymentScreens'
+import { DoneScreen, InstallScreen, ReviewScreen } from './DeploymentScreens'
+import { MainScreen } from './MainScreens'
 import { ProfileScreen } from './Profiles'
 
 export function App() {

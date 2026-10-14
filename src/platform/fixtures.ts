@@ -13,7 +13,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], elevated: false, elevationCancelled: false, elevationResumePath: null, processes: [], headlessMode: null }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], readOnlyFiles: [], elevated: false, elevationCancelled: false, elevationResumePath: null, processes: [], headlessMode: null, operationLocks: new Set<string>() }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
@@ -26,11 +26,13 @@ export function machine(...parts: Machine[]): Machine {
     if (p.exePath !== undefined) out.exePath = p.exePath
     if (p.windowsVersion !== undefined) out.windowsVersion = p.windowsVersion
     if (p.readOnlyDirectories) out.readOnlyDirectories = p.readOnlyDirectories
+    if (p.readOnlyFiles) out.readOnlyFiles = p.readOnlyFiles
     if (p.elevated !== undefined) out.elevated = p.elevated
     if (p.elevationCancelled !== undefined) out.elevationCancelled = p.elevationCancelled
     if (p.elevationResumePath !== undefined) out.elevationResumePath = p.elevationResumePath
     if (p.processes) out.processes = p.processes
     if (p.headlessMode !== undefined) out.headlessMode = p.headlessMode
+    if (p.operationLocks !== undefined) out.operationLocks = p.operationLocks
   }
   return out
 }
@@ -158,7 +160,7 @@ export const MACHINES = {
   squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
   existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
-  /** Beta content and an app pre-release are published; turn on Beta channel in the ⋯ menu to be offered them. */
+  /** Beta content and an app pre-release are published; turn on Beta channel in Settings to be offered them. */
   beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>
 

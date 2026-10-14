@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { announcedContent } from './updates'
+import { announcedContent, needsNewerApp } from './updates'
 import { TEST_CONTENT, TEST_MANIFEST } from '../platform/contentFixture'
 import type { ContentVersion, Manifest } from '../shared/manifest'
 
@@ -26,4 +26,17 @@ it('ignores versions without a recipe for the deployed tier, or needing a newer 
   const noTier = version('2026.11.20', { tiers: { radeon: TEST_CONTENT.tiers.radeon } })
   const newerApp = version('2026.11.25', { minAppVersion: '0.2.0' })
   expect(announcedContent(manifest(version('2026.11.02'), noTier, newerApp), facts)?.id).toBe('2026.11.02')
+})
+
+it('compares minimum app versions, counting -beta.N below its release', () => {
+  expect(needsNewerApp('0.2.0', '0.1.0')).toBe(true)
+  expect(needsNewerApp('0.1.0', '0.2.0')).toBe(false)
+  expect(needsNewerApp('0.2.0', '0.2.0')).toBe(false)
+  // A beta of the minimum is already satisfied by the release, and by a later beta.
+  expect(needsNewerApp('0.2.0-beta.1', '0.2.0')).toBe(false)
+  expect(needsNewerApp('0.2.0-beta.2', '0.2.0-beta.1')).toBe(true)
+  expect(needsNewerApp('0.2.0-beta.1', '0.2.0-beta.1')).toBe(false)
+  // A release minimum is not met by its own betas.
+  expect(needsNewerApp('0.2.0', '0.2.0-beta.3')).toBe(true)
+  expect(needsNewerApp('0.2.0-beta.1', '0.1.9')).toBe(true)
 })

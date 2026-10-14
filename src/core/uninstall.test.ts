@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
-import { readDeployment } from './deployment'
+import { readDeployment, replacedOriginals } from './deployment'
 import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -158,4 +158,26 @@ it('keeps a game folder the player picked when returning to Scan', async () => {
   core.finish()
   await core.uninstall()
   expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'scan' }, gameFolder: { status: 'found', path: other } })
+})
+
+it('says whether uninstall put back files it had replaced', async () => {
+  const vanilla = createCore(createFakePlatform(deploymentMachine()))
+  await vanilla.scan()
+  await vanilla.review(true)
+  await vanilla.deploy()
+  vanilla.finish()
+  await vanilla.uninstall()
+  expect(vanilla.getState().notice).toMatch(/hadn’t replaced any of your files/)
+
+  const platform = createFakePlatform(MACHINES.existing)
+  const existing = createCore(platform)
+  await existing.scan()
+  await existing.continueSetup()
+  await existing.review(true)
+  await existing.deploy()
+  existing.finish()
+  const replaced = replacedOriginals(existing.getState().deployment!)
+  expect(replaced.length).toBeGreaterThan(0)
+  await existing.uninstall()
+  expect(existing.getState().notice).toMatch(new RegExp(`put back the ${replaced.length === 1 ? 'file' : `${replaced.length} files`} it had replaced`))
 })

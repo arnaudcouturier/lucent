@@ -165,3 +165,43 @@ async function snapshot(platform: FakePlatform) {
   const files = await platform.listFiles(GAME)
   return Object.fromEntries(await Promise.all(files.map(async (f) => [f, await platform.readText(`${GAME}\\${f}`)])))
 }
+
+it('Scan finds a file changed while Lucent is open, without reopening it, and Repair fixes it', async () => {
+  const platform = await deployed()
+  const core = await reopen(platform)
+  expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
+  const dll = `${GAME}\\winmm.dll`
+  const fileSize = (await platform.stat(dll)).size
+  // Same size and the stamp it had: only a full hash check can tell.
+  const stamp = core.getState().deployment!.files['winmm.dll']
+  await platform.writeText(dll, 'X'.repeat(fileSize))
+  platform.setModifiedTime(dll, stamp.modifiedMs)
+  await core.checkFiles()
+  expect(core.getState()).toMatchObject({ busy: false, error: null, notice: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null })
+  await core.repair()
+  expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
+  expect(await platform.readText(dll)).toBe('OptiScaler')
+})
+
+it('Scan confirms a healthy deployment, reports its progress and works while XIV runs', async () => {
+  const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+  const platform = createFakePlatform(m)
+  const setup = createCore(platform)
+  await setup.scan()
+  await setup.review()
+  await setup.deploy()
+  const core = await reopen(platform)
+  m.gameRunning = true
+  await core.refreshGameRunning()
+  const seen: string[] = []
+  const unsubscribe = core.subscribe(() => {
+    const card = statusCard(core.getState())
+    if (card?.kind === 'busy') seen.push(`${card.operation} ${core.getState().deploymentProgress?.phase ?? 'starting'}`)
+  })
+  await core.checkFiles()
+  unsubscribe()
+  expect(seen).toContain('scan checking')
+  expect(core.getState()).toMatchObject({ busy: false, error: null, activity: { kind: 'deployment', drift: null, operation: null } })
+  expect(core.getState().notice).toMatch(/^Scan checked \d+ files\. Everything matches/)
+})

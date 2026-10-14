@@ -1,5 +1,6 @@
 // Which content version to announce: a pure function of the manifest and what the player has.
 import type { ContentVersion, Manifest } from '../shared/manifest'
+import { compareAppVersions } from './appUpdate'
 
 export type Channel = ContentVersion['channel']
 
@@ -15,12 +16,9 @@ export interface AnnouncementFacts {
 /** Beta sees Stable and Beta versions; Stable sees only Stable. */
 export const onChannel = (version: ContentVersion, channel: Channel) => channel === 'beta' || version.channel === 'stable'
 
-/** Compares the numeric parts of two app versions, such as 0.1.0 and 0.2.0. */
+/** Whether the content's minimum app version is newer than the running app; `-beta.N` ranks below its release. */
 export function needsNewerApp(minAppVersion: string, appVersion: string): boolean {
-  const app = appVersion.split(/[.-]/).map(Number)
-  const minimum = minAppVersion.split(/[.-]/).map(Number)
-  const firstDifference = minimum.findIndex((n, i) => n !== app[i])
-  return firstDifference >= 0 && minimum[firstDifference] > (app[firstDifference] ?? 0)
+  return compareAppVersions(minAppVersion, appVersion) > 0
 }
 
 /** The newest version on the channel that is newer than the current one, isn't skipped, and this app can apply. */

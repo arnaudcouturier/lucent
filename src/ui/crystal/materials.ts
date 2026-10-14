@@ -3,7 +3,6 @@ const RAMPS = {
   ember: ['#1a0602', '#4a1404', '#9c3208', '#ec6a1c', '#ff9c50', '#ffd2a2', '#fff7ec'],
   glass: ['#0b0c0f', '#16181c', '#24262c', '#3a3d45', '#666a74', '#a9adb6', '#e6e8ec'],
   dark: ['#0b0a0a', '#151313', '#211e1d', '#2e2a28', '#3f3a37', '#58524e', '#7d7672'],
-  gold: ['#1d150b', '#4a3720', '#86663c', '#c49d66', '#e6c793', '#f7e5c4', '#fffaf0'],
   steel: ['#0e0f11', '#1c1d21', '#2c2e33', '#45484f', '#6b6f78', '#9a9ea7', '#c9ccd2'],
 }
 export type Material = keyof typeof RAMPS

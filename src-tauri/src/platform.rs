@@ -7,15 +7,22 @@ use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
-use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
-use winreg::RegKey;
-use windows::core::{HSTRING, Interface};
+use windows::core::{Interface, HSTRING};
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
-use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIDevice, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND};
-use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT};
+use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, IDXGIDevice, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+    DXGI_ERROR_NOT_FOUND,
+};
+use windows::Win32::System::DataExchange::{
+    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+};
+use windows::Win32::System::Memory::{
+    GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+use winreg::RegKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -52,7 +59,11 @@ pub struct FileStat {
 impl PlatformError {
     pub(crate) fn new(kind: ErrorKind, message: impl Into<String>, path: Option<&Path>) -> Self {
         let path = path.map(|p| p.to_string_lossy().into_owned());
-        PlatformError { kind, message: message.into(), path }
+        PlatformError {
+            kind,
+            message: message.into(),
+            path,
+        }
     }
 
     pub(crate) fn io(e: io::Error, path: Option<&Path>) -> Self {
@@ -75,7 +86,10 @@ impl PlatformError {
 /// Reads a UTF-8 text file, without the byte order mark some Windows tools write.
 pub fn read_text(path: &Path) -> Result<String> {
     let text = fs::read_to_string(path).map_err(|e| PlatformError::io(e, Some(path)))?;
-    Ok(text.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(text))
+    Ok(text
+        .strip_prefix('\u{feff}')
+        .map(str::to_owned)
+        .unwrap_or(text))
 }
 
 /// Reads and normalizes only the last `max_lines` of a potentially large text log.
@@ -92,20 +106,26 @@ pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
     }
 
     let mut file = fs::File::open(path).map_err(|e| PlatformError::io(e, Some(path)))?;
-    let file_len = file.seek(SeekFrom::End(0)).map_err(|e| PlatformError::io(e, Some(path)))?;
+    let file_len = file
+        .seek(SeekFrom::End(0))
+        .map_err(|e| PlatformError::io(e, Some(path)))?;
 
     // Match the fake platform's trailing-newline behavior: drop exactly one final LF,
     // along with its CR when the file uses CRLF.
     let mut content_end = file_len;
     if content_end > 0 {
-        file.seek(SeekFrom::Start(content_end - 1)).map_err(|e| PlatformError::io(e, Some(path)))?;
+        file.seek(SeekFrom::Start(content_end - 1))
+            .map_err(|e| PlatformError::io(e, Some(path)))?;
         let mut last_byte = [0; 1];
-        file.read_exact(&mut last_byte).map_err(|e| PlatformError::io(e, Some(path)))?;
+        file.read_exact(&mut last_byte)
+            .map_err(|e| PlatformError::io(e, Some(path)))?;
         if last_byte[0] == b'\n' {
             content_end -= 1;
             if content_end > 0 {
-                file.seek(SeekFrom::Start(content_end - 1)).map_err(|e| PlatformError::io(e, Some(path)))?;
-                file.read_exact(&mut last_byte).map_err(|e| PlatformError::io(e, Some(path)))?;
+                file.seek(SeekFrom::Start(content_end - 1))
+                    .map_err(|e| PlatformError::io(e, Some(path)))?;
+                file.read_exact(&mut last_byte)
+                    .map_err(|e| PlatformError::io(e, Some(path)))?;
                 if last_byte[0] == b'\r' {
                     content_end -= 1;
                 }
@@ -123,8 +143,10 @@ pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
     while cursor > 0 {
         let chunk_start = cursor.saturating_sub(SCAN_CHUNK_SIZE);
         let chunk_len = (cursor - chunk_start) as usize;
-        file.seek(SeekFrom::Start(chunk_start)).map_err(|e| PlatformError::io(e, Some(path)))?;
-        file.read_exact(&mut chunk[..chunk_len]).map_err(|e| PlatformError::io(e, Some(path)))?;
+        file.seek(SeekFrom::Start(chunk_start))
+            .map_err(|e| PlatformError::io(e, Some(path)))?;
+        file.read_exact(&mut chunk[..chunk_len])
+            .map_err(|e| PlatformError::io(e, Some(path)))?;
 
         for (index, byte) in chunk[..chunk_len].iter().enumerate().rev() {
             if *byte == b'\n' {
@@ -145,7 +167,8 @@ pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
     if !found_start {
         tail_start = 0;
     }
-    file.seek(SeekFrom::Start(tail_start)).map_err(|e| PlatformError::io(e, Some(path)))?;
+    file.seek(SeekFrom::Start(tail_start))
+        .map_err(|e| PlatformError::io(e, Some(path)))?;
     let mut tail = Vec::new();
     file.take(content_end - tail_start)
         .read_to_end(&mut tail)
@@ -161,7 +184,11 @@ pub fn stat(path: &Path) -> Result<FileStat> {
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_millis() as u64);
-    Ok(FileStat { kind: if meta.is_dir() { "dir" } else { "file" }, size: meta.len(), modified_ms })
+    Ok(FileStat {
+        kind: if meta.is_dir() { "dir" } else { "file" },
+        size: meta.len(),
+        modified_ms,
+    })
 }
 
 /// Reads a string value. `key` is the full subkey path under the hive (`HKCU` or `HKLM`).
@@ -169,7 +196,13 @@ pub fn read_registry(hive: &str, key: &str, value: &str) -> Result<String> {
     let root = match hive {
         "HKCU" => RegKey::predef(HKEY_CURRENT_USER),
         "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE),
-        _ => return Err(PlatformError::new(ErrorKind::Unknown, format!("Unknown registry hive {hive}"), None)),
+        _ => {
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                format!("Unknown registry hive {hive}"),
+                None,
+            ))
+        }
     };
     root.open_subkey_with_flags(key, KEY_READ)
         .and_then(|k| k.get_value::<String, _>(value))
@@ -183,9 +216,16 @@ pub fn env_folder(folder: &str) -> Result<String> {
         "LocalAppData" => "LOCALAPPDATA",
         "ProgramFiles" => "ProgramFiles",
         "ProgramFilesX86" => "ProgramFiles(x86)",
-        _ => return Err(PlatformError::new(ErrorKind::Unknown, format!("Unknown folder {folder}"), None)),
+        _ => {
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                format!("Unknown folder {folder}"),
+                None,
+            ))
+        }
     };
-    std::env::var(var).map_err(|_| PlatformError::new(ErrorKind::NotFound, format!("{var} is not set"), None))
+    std::env::var(var)
+        .map_err(|_| PlatformError::new(ErrorKind::NotFound, format!("{var} is not set"), None))
 }
 
 #[derive(Debug, Serialize)]
@@ -201,7 +241,8 @@ pub struct GpuAdapter {
 
 /// Enumerates DXGI adapters. Choice and tier matching belong to the TypeScript core.
 pub fn gpu_adapters() -> Result<Vec<GpuAdapter>> {
-    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
+    let error =
+        |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
     // SAFETY: the bindings manage the COM interfaces' lifetimes. GetDesc1 returns an owned descriptor;
     // no raw pointer or interface leaves this thread.
     unsafe {
@@ -214,19 +255,27 @@ pub fn gpu_adapters() -> Result<Vec<GpuAdapter>> {
                 Err(e) => return Err(error(e)),
             };
             let desc = adapter.GetDesc1().map_err(error)?;
-            let len = desc.Description.iter().position(|c| *c == 0).unwrap_or(desc.Description.len());
+            let len = desc
+                .Description
+                .iter()
+                .position(|c| *c == 0)
+                .unwrap_or(desc.Description.len());
             // DXGI reports the user-mode driver version as four packed 16-bit values.
             // This query is optional: an adapter that does not support it must still be listed.
-            let driver_version = adapter.CheckInterfaceSupport(&IDXGIDevice::IID).ok().map(|version| {
-                let version = version as u64;
-                format!(
-                    "{}.{}.{}.{}",
-                    (version >> 48) & 0xffff,
-                    (version >> 32) & 0xffff,
-                    (version >> 16) & 0xffff,
-                    version & 0xffff,
-                )
-            });
+            let driver_version =
+                adapter
+                    .CheckInterfaceSupport(&IDXGIDevice::IID)
+                    .ok()
+                    .map(|version| {
+                        let version = version as u64;
+                        format!(
+                            "{}.{}.{}.{}",
+                            (version >> 48) & 0xffff,
+                            (version >> 32) & 0xffff,
+                            (version >> 16) & 0xffff,
+                            version & 0xffff,
+                        )
+                    });
             adapters.push(GpuAdapter {
                 name: String::from_utf16_lossy(&desc.Description[..len]),
                 vendor_id: desc.VendorId,
@@ -246,13 +295,27 @@ pub fn windows_version() -> Result<String> {
     let key = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey_with_flags(CURRENT_VERSION_KEY, KEY_READ)
         .map_err(|e| PlatformError::io(e, None))?;
-    let build_value: String = key.get_value("CurrentBuildNumber").map_err(|e| PlatformError::io(e, None))?;
+    let build_value: String = key
+        .get_value("CurrentBuildNumber")
+        .map_err(|e| PlatformError::io(e, None))?;
     let build = build_value.parse::<u32>().map_err(|e| {
-        PlatformError::new(ErrorKind::Unknown, format!("Invalid Windows build number: {e}"), None)
+        PlatformError::new(
+            ErrorKind::Unknown,
+            format!("Invalid Windows build number: {e}"),
+            None,
+        )
     })?;
-    let display_version: String = key.get_value("DisplayVersion").map_err(|e| PlatformError::io(e, None))?;
-    let ubr: u32 = key.get_value("UBR").map_err(|e| PlatformError::io(e, None))?;
-    let family = if build >= 22_000 { "Windows 11" } else { "Windows 10" };
+    let display_version: String = key
+        .get_value("DisplayVersion")
+        .map_err(|e| PlatformError::io(e, None))?;
+    let ubr: u32 = key
+        .get_value("UBR")
+        .map_err(|e| PlatformError::io(e, None))?;
+    let family = if build >= 22_000 {
+        "Windows 11"
+    } else {
+        "Windows 10"
+    };
 
     Ok(format!("{family} {display_version} (build {build}.{ubr})"))
 }
@@ -275,7 +338,11 @@ pub fn copy_text(text: &str, owner: HWND) -> Result<()> {
             let pointer = GlobalLock(memory);
             if pointer.is_null() {
                 let _ = GlobalFree(Some(memory));
-                return Err(PlatformError::new(ErrorKind::Unknown, "Windows could not lock clipboard memory", None));
+                return Err(PlatformError::new(
+                    ErrorKind::Unknown,
+                    "Windows could not lock clipboard memory",
+                    None,
+                ));
             }
             std::ptr::copy_nonoverlapping(wide.as_ptr(), pointer.cast::<u16>(), wide.len());
             // GlobalUnlock returns false when the lock count reaches zero, which is its normal
@@ -298,20 +365,27 @@ pub fn copy_text(text: &str, owner: HWND) -> Result<()> {
 /// Opens an HTTPS URL in the user's default browser.
 pub fn open_url(url: &str, owner: HWND) -> Result<()> {
     if url.contains('\0') {
-        return Err(PlatformError::new(ErrorKind::Unknown, "URL contains an embedded NUL", None));
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "URL contains an embedded NUL",
+            None,
+        ));
     }
     let parsed = reqwest::Url::parse(url)
         .map_err(|e| PlatformError::new(ErrorKind::Unknown, format!("Invalid URL: {e}"), None))?;
     if parsed.scheme() != "https" || parsed.host_str().is_none() {
-        return Err(PlatformError::new(ErrorKind::Unknown, "Only HTTPS URLs can be opened", None));
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "Only HTTPS URLs can be opened",
+            None,
+        ));
     }
     let target = HSTRING::from(parsed.as_str());
     let operation = HSTRING::from("open");
 
     // SAFETY: the HSTRING values stay alive for the call and `owner` is Tauri's live window.
-    let result = unsafe {
-        ShellExecuteW(Some(owner), &operation, &target, None, None, SW_SHOWNORMAL)
-    };
+    let result =
+        unsafe { ShellExecuteW(Some(owner), &operation, &target, None, None, SW_SHOWNORMAL) };
     let code = result.0 as usize;
     if code <= 32 {
         return Err(PlatformError::new(
@@ -321,6 +395,36 @@ pub fn open_url(url: &str, owner: HWND) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Asks Steam to start a game by its app id, as a Steam library "Play" would.
+pub fn open_steam_game(app_id: u32, owner: HWND) -> Result<()> {
+    let target = HSTRING::from(format!("steam://rungameid/{app_id}"));
+    let operation = HSTRING::from("open");
+    // SAFETY: the HSTRING values stay alive for the call and `owner` is Tauri's live window.
+    let result =
+        unsafe { ShellExecuteW(Some(owner), &operation, &target, None, None, SW_SHOWNORMAL) };
+    let code = result.0 as usize;
+    if code <= 32 {
+        return Err(PlatformError::new(
+            ErrorKind::NotFound,
+            format!("Steam didn't start the game (ShellExecuteW error {code})"),
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// Starts a program from its own folder without waiting for it; unlike `launch_exe`, Lucent keeps running.
+pub fn start_program(path: &Path) -> Result<()> {
+    let mut command = std::process::Command::new(path);
+    if let Some(folder) = path.parent() {
+        command.current_dir(folder);
+    }
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| PlatformError::io(e, Some(path)))
 }
 
 fn win32_error(error: windows::core::Error) -> PlatformError {
@@ -335,7 +439,16 @@ pub async fn fetch_text(url: &str) -> Result<String> {
         .user_agent(concat!("Lucent/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(error)?;
-    client.get(url).send().await.map_err(error)?.error_for_status().map_err(error)?.text().await.map_err(error)
+    client
+        .get(url)
+        .send()
+        .await
+        .map_err(error)?
+        .error_for_status()
+        .map_err(error)?
+        .text()
+        .await
+        .map_err(error)
 }
 
 #[derive(Debug, Serialize)]
@@ -350,12 +463,21 @@ pub fn dev_content() -> Result<Option<LocalContent>> {
     if !cfg!(debug_assertions) {
         return Ok(None);
     }
-    let Some(manifest) = std::env::var_os("LUCENT_DEV_MANIFEST") else { return Ok(None) };
+    let Some(manifest) = std::env::var_os("LUCENT_DEV_MANIFEST") else {
+        return Ok(None);
+    };
     let manifest = std::path::absolute(manifest).map_err(|e| PlatformError::io(e, None))?;
     let files = match std::env::var_os("LUCENT_DEV_FILES") {
         Some(path) => std::path::absolute(path).map_err(|e| PlatformError::io(e, None))?,
-        None => manifest.parent()
-            .ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The dev manifest must name a file", None))?
+        None => manifest
+            .parent()
+            .ok_or_else(|| {
+                PlatformError::new(
+                    ErrorKind::Unknown,
+                    "The dev manifest must name a file",
+                    None,
+                )
+            })?
             .join("files"),
     };
     Ok(Some(LocalContent {
@@ -374,7 +496,9 @@ pub fn exe_path() -> Result<String> {
 /// Starts the exe at `path`, then exits this process so the new one takes over.
 pub fn launch_exe(path: &Path) -> Result<()> {
     let mut command = std::process::Command::new(path);
-    if let Some(resume) = elevation_resume_path() { command.arg("--lucent-resume").arg(resume); }
+    if let Some(resume) = elevation_resume_path() {
+        command.arg("--lucent-resume").arg(resume);
+    }
     command
         .spawn()
         .map_err(|e| PlatformError::io(e, Some(path)))?;
@@ -384,10 +508,20 @@ pub fn launch_exe(path: &Path) -> Result<()> {
 /// A create/delete probe distinguishes access denial from a full disk or locked folder.
 pub fn is_directory_writable(path: &Path) -> Result<bool> {
     if crate::files::is_game_running()? {
-        return Err(PlatformError::new(ErrorKind::Locked, "Close XIV before changing the game folder.", Some(path)));
+        return Err(PlatformError::new(
+            ErrorKind::Locked,
+            "Close XIV before changing the game folder.",
+            Some(path),
+        ));
     }
-    match tempfile::Builder::new().prefix(".lucent-access-").tempfile_in(path) {
-        Ok(file) => { file.close().map_err(|e| PlatformError::io(e, Some(path)))?; Ok(true) }
+    match tempfile::Builder::new()
+        .prefix(".lucent-access-")
+        .tempfile_in(path)
+    {
+        Ok(file) => {
+            file.close().map_err(|e| PlatformError::io(e, Some(path)))?;
+            Ok(true)
+        }
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(false),
         Err(e) => Err(PlatformError::io(e, Some(path))),
     }
@@ -398,7 +532,9 @@ pub fn game_write_access(root: &Path, targets: &[String]) -> Result<bool> {
     use std::collections::BTreeSet;
     use std::os::windows::fs::OpenOptionsExt;
     use windows::Win32::Storage::FileSystem::{DELETE, FILE_FLAG_BACKUP_SEMANTICS};
-    if !is_directory_writable(root)? { return Ok(false); }
+    if !is_directory_writable(root)? {
+        return Ok(false);
+    }
     let mut directories = BTreeSet::new();
     directories.insert(root.to_owned());
     for relative in targets {
@@ -406,24 +542,41 @@ pub fn game_write_access(root: &Path, targets: &[String]) -> Result<bool> {
         match fs::metadata(&path) {
             Ok(meta) => {
                 // Atomic replacement and removal need delete access to an existing target.
-                match fs::OpenOptions::new().access_mode(DELETE.0)
-                    .custom_flags(if meta.is_dir() { FILE_FLAG_BACKUP_SEMANTICS.0 } else { 0 }).open(&path) {
-                    Ok(_) => {},
+                match fs::OpenOptions::new()
+                    .access_mode(DELETE.0)
+                    .custom_flags(if meta.is_dir() {
+                        FILE_FLAG_BACKUP_SEMANTICS.0
+                    } else {
+                        0
+                    })
+                    .open(&path)
+                {
+                    Ok(_) => {}
                     Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return Ok(false),
                     Err(e) => return Err(PlatformError::io(e, Some(&path))),
                 }
             }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(PlatformError::io(e, Some(&path))),
         }
         let mut parent = path.parent();
         while let Some(directory) = parent {
             match fs::metadata(directory) {
                 Ok(meta) if meta.is_dir() => {
-                    if directories.insert(directory.to_owned()) && !is_directory_writable(directory)? { return Ok(false); }
+                    if directories.insert(directory.to_owned())
+                        && !is_directory_writable(directory)?
+                    {
+                        return Ok(false);
+                    }
                     break;
                 }
-                Ok(_) => return Err(PlatformError::new(ErrorKind::AccessDenied, "A write target's parent is a file.", Some(directory))),
+                Ok(_) => {
+                    return Err(PlatformError::new(
+                        ErrorKind::AccessDenied,
+                        "A write target's parent is a file.",
+                        Some(directory),
+                    ))
+                }
                 Err(e) if e.kind() == io::ErrorKind::NotFound => parent = directory.parent(),
                 Err(e) => return Err(PlatformError::io(e, Some(directory))),
             }
@@ -434,9 +587,12 @@ pub fn game_write_access(root: &Path, targets: &[String]) -> Result<bool> {
 
 pub fn is_elevated() -> Result<bool> {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
     use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
+    let error =
+        |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), None);
     // SAFETY: the token belongs to this process; the output buffer has the exact TOKEN_ELEVATION size.
     // Its handle is closed even when GetTokenInformation fails.
     unsafe {
@@ -444,7 +600,13 @@ pub fn is_elevated() -> Result<bool> {
         OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).map_err(error)?;
         let mut elevation = TOKEN_ELEVATION::default();
         let mut size = 0;
-        let result = GetTokenInformation(token, TokenElevation, Some((&mut elevation as *mut TOKEN_ELEVATION).cast()), std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut size);
+        let result = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut size,
+        );
         let _ = CloseHandle(token);
         result.map_err(error)?;
         Ok(elevation.TokenIsElevated != 0)
@@ -453,7 +615,9 @@ pub fn is_elevated() -> Result<bool> {
 
 /// `uninstall` when Settings → Apps started Lucent as its own uninstaller (`--uninstall`);
 /// `check` or `repair` when a XIVLauncher add-on started a headless run.
-pub fn headless_mode() -> Option<&'static str> { headless_mode_from(std::env::args_os().skip(1)) }
+pub fn headless_mode() -> Option<&'static str> {
+    headless_mode_from(std::env::args_os().skip(1))
+}
 
 fn headless_mode_from<I: IntoIterator<Item = std::ffi::OsString>>(args: I) -> Option<&'static str> {
     args.into_iter().find_map(|arg| match arg.to_str()? {
@@ -467,21 +631,28 @@ fn headless_mode_from<I: IntoIterator<Item = std::ffi::OsString>>(args: I) -> Op
 const AUMID: &str = "io.github.arnaudcouturier.lucent";
 
 fn xml_escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Shows a Windows toast from Lucent. An unpackaged exe needs its AppUserModelID registered first.
 pub fn notify(title: &str, body: &str) -> Result<()> {
     use windows::Data::Xml::Dom::XmlDocument;
-    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
     use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
     let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
         .create_subkey(format!(r"Software\Classes\AppUserModelId\{AUMID}"))
         .map_err(|e| PlatformError::io(e, None))?;
-    key.set_value("DisplayName", &"Lucent").map_err(|e| PlatformError::io(e, None))?;
+    key.set_value("DisplayName", &"Lucent")
+        .map_err(|e| PlatformError::io(e, None))?;
     // Best effort: it only improves how Windows groups the toast with the app.
     // SAFETY: the HSTRING outlives the call.
-    unsafe { let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(AUMID)); }
+    unsafe {
+        let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(AUMID));
+    }
     let xml = format!(
         "<toast><visual><binding template=\"ToastText02\"><text id=\"1\">{}</text><text id=\"2\">{}</text></binding></visual></toast>",
         xml_escape(title), xml_escape(body),
@@ -498,17 +669,33 @@ pub fn notify(title: &str, body: &str) -> Result<()> {
 pub fn elevation_resume_path() -> Option<String> {
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--lucent-resume" { return args.next().map(|path| path.to_string_lossy().into_owned()); }
+        if arg == "--lucent-resume" {
+            return args.next().map(|path| path.to_string_lossy().into_owned());
+        }
     }
     None
 }
 
 fn elevation_arguments(path: &Path) -> Result<String> {
-    let path = path.to_str().ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The resume path is not UTF-8.", Some(path)))?;
+    let path = path.to_str().ok_or_else(|| {
+        PlatformError::new(
+            ErrorKind::Unknown,
+            "The resume path is not UTF-8.",
+            Some(path),
+        )
+    })?;
     if path.contains(['"', '\0']) || !Path::new(path).is_absolute() || !path.ends_with(".json") {
-        return Err(PlatformError::new(ErrorKind::Unknown, "Invalid administrator resume path.", Some(Path::new(path))));
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "Invalid administrator resume path.",
+            Some(Path::new(path)),
+        ));
     }
-    let uninstall = if headless_mode() == Some("uninstall") { " --uninstall" } else { "" };
+    let uninstall = if headless_mode() == Some("uninstall") {
+        " --uninstall"
+    } else {
+        ""
+    };
     Ok(format!("--lucent-resume \"{path}\"{uninstall}"))
 }
 
@@ -517,7 +704,9 @@ pub fn request_elevation(resume_path: &Path) -> Result<()> {
     use windows::core::{w, PCWSTR};
     use windows::Win32::Foundation::{CloseHandle, RPC_E_CHANGED_MODE};
     use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS};
+    use windows::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
     let exe = wide(&exe_path()?);
@@ -527,22 +716,45 @@ pub fn request_elevation(resume_path: &Path) -> Result<()> {
     unsafe {
         let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
-            return Err(PlatformError::new(ErrorKind::Unknown, initialized.to_string(), None));
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                initialized.to_string(),
+                None,
+            ));
         }
         let mut info = SHELLEXECUTEINFOW {
             cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
             fMask: SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS,
-            lpVerb: w!("runas"), lpFile: PCWSTR(exe.as_ptr()), lpParameters: PCWSTR(args.as_ptr()),
-            nShow: SW_SHOWNORMAL.0, ..Default::default()
+            lpVerb: w!("runas"),
+            lpFile: PCWSTR(exe.as_ptr()),
+            lpParameters: PCWSTR(args.as_ptr()),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
         };
         let result = ShellExecuteExW(&mut info);
-        if initialized.is_ok() { CoUninitialize(); }
+        if initialized.is_ok() {
+            CoUninitialize();
+        }
         result.map_err(|e| {
             let cancelled = e.code().0 as u32 & 0xffff == 1223;
-            let message = if cancelled { "Administrator access was cancelled.".to_owned() } else { e.to_string() };
-            PlatformError::new(if cancelled { ErrorKind::Cancelled } else { ErrorKind::AccessDenied }, message, Some(resume_path))
+            let message = if cancelled {
+                "Administrator access was cancelled.".to_owned()
+            } else {
+                e.to_string()
+            };
+            PlatformError::new(
+                if cancelled {
+                    ErrorKind::Cancelled
+                } else {
+                    ErrorKind::AccessDenied
+                },
+                message,
+                Some(resume_path),
+            )
         })?;
-        if !info.hProcess.is_invalid() { let _ = CloseHandle(info.hProcess); }
+        if !info.hProcess.is_invalid() {
+            let _ = CloseHandle(info.hProcess);
+        }
     }
     std::process::exit(0)
 }
@@ -550,28 +762,52 @@ pub fn request_elevation(resume_path: &Path) -> Result<()> {
 /// Creates or replaces a `.lnk` at `path` that starts `target`.
 pub fn create_shortcut(path: &Path, target: &Path) -> Result<()> {
     use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
     use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| PlatformError::io(e, Some(parent)))?; }
-    let target_directory = target.parent().ok_or_else(|| PlatformError::new(ErrorKind::Unknown, "The shortcut target must name a file.", Some(target)))?;
-    let error = |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), Some(path));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| PlatformError::io(e, Some(parent)))?;
+    }
+    let target_directory = target.parent().ok_or_else(|| {
+        PlatformError::new(
+            ErrorKind::Unknown,
+            "The shortcut target must name a file.",
+            Some(target),
+        )
+    })?;
+    let error =
+        |e: windows::core::Error| PlatformError::new(ErrorKind::Unknown, e.to_string(), Some(path));
     // SAFETY: every HSTRING outlives the synchronous COM calls. COM is uninitialized only if this call
     // initialized it, after the shell link and file interfaces (dropped inside the closure) are released.
     unsafe {
         let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
-            return Err(PlatformError::new(ErrorKind::Unknown, initialized.to_string(), None));
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                initialized.to_string(),
+                None,
+            ));
         }
         let result = (|| {
-            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).map_err(error)?;
-            link.SetPath(&HSTRING::from(target.as_os_str())).map_err(error)?;
-            link.SetWorkingDirectory(&HSTRING::from(target_directory.as_os_str())).map_err(error)?;
-            link.SetIconLocation(&HSTRING::from(target.as_os_str()), 0).map_err(error)?;
-            link.SetDescription(&HSTRING::from("Lucent")).map_err(error)?;
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).map_err(error)?;
+            link.SetPath(&HSTRING::from(target.as_os_str()))
+                .map_err(error)?;
+            link.SetWorkingDirectory(&HSTRING::from(target_directory.as_os_str()))
+                .map_err(error)?;
+            link.SetIconLocation(&HSTRING::from(target.as_os_str()), 0)
+                .map_err(error)?;
+            link.SetDescription(&HSTRING::from("Lucent"))
+                .map_err(error)?;
             let file: IPersistFile = link.cast().map_err(error)?;
-            file.Save(&HSTRING::from(path.as_os_str()), true).map_err(error)
+            file.Save(&HSTRING::from(path.as_os_str()), true)
+                .map_err(error)
         })();
-        if initialized.is_ok() { CoUninitialize(); }
+        if initialized.is_ok() {
+            CoUninitialize();
+        }
         result
     }
 }
@@ -579,24 +815,51 @@ pub fn create_shortcut(path: &Path, target: &Path) -> Result<()> {
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall";
 
 fn uninstall_key_path(id: &str) -> Result<String> {
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
-        return Err(PlatformError::new(ErrorKind::Unknown, format!("Invalid uninstall entry id {id:?}"), None));
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            format!("Invalid uninstall entry id {id:?}"),
+            None,
+        ));
     }
     Ok(format!(r"{UNINSTALL_KEY}\{id}"))
 }
 
 /// Creates the per-user Settings -> Apps entry `id`, or updates its values.
-pub fn set_uninstall_entry(id: &str, values: &serde_json::Map<String, serde_json::Value>) -> Result<()> {
+pub fn set_uninstall_entry(
+    id: &str,
+    values: &serde_json::Map<String, serde_json::Value>,
+) -> Result<()> {
     let path = uninstall_key_path(id)?;
-    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(&path).map_err(|e| PlatformError::io(e, None))?;
+    let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
+        .create_subkey(&path)
+        .map_err(|e| PlatformError::io(e, None))?;
     for (name, value) in values {
         let written = match value {
             serde_json::Value::String(text) => key.set_value(name, text),
-            serde_json::Value::Number(number) => match number.as_u64().and_then(|n| u32::try_from(n).ok()) {
-                Some(n) => key.set_value(name, &n),
-                None => return Err(PlatformError::new(ErrorKind::Unknown, format!("Uninstall value {name} must be a 32-bit unsigned integer"), None)),
-            },
-            _ => return Err(PlatformError::new(ErrorKind::Unknown, format!("Uninstall value {name} must be a string or number"), None)),
+            serde_json::Value::Number(number) => {
+                match number.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                    Some(n) => key.set_value(name, &n),
+                    None => {
+                        return Err(PlatformError::new(
+                            ErrorKind::Unknown,
+                            format!("Uninstall value {name} must be a 32-bit unsigned integer"),
+                            None,
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(PlatformError::new(
+                    ErrorKind::Unknown,
+                    format!("Uninstall value {name} must be a string or number"),
+                    None,
+                ))
+            }
         };
         written.map_err(|e| PlatformError::io(e, None))?;
     }
@@ -615,34 +878,69 @@ pub fn remove_uninstall_entry(id: &str) -> Result<()> {
 
 fn validate_removal_folder(folder: &Path, named_lucent: bool) -> Result<()> {
     use std::path::Component;
-    let invalid = |why: &str| PlatformError::new(ErrorKind::Unknown, format!("Refusing to remove this folder: {why}."), Some(folder));
-    let text = folder.to_str().ok_or_else(|| invalid("the path is not UTF-8"))?;
-    if text.chars().any(|c| c == '"' || c == '%' || c.is_control()) { return Err(invalid("the path has unsafe characters")); }
-    if !folder.is_absolute() { return Err(invalid("the path is not absolute")); }
+    let invalid = |why: &str| {
+        PlatformError::new(
+            ErrorKind::Unknown,
+            format!("Refusing to remove this folder: {why}."),
+            Some(folder),
+        )
+    };
+    let text = folder
+        .to_str()
+        .ok_or_else(|| invalid("the path is not UTF-8"))?;
+    if text.chars().any(|c| c == '"' || c == '%' || c.is_control()) {
+        return Err(invalid("the path has unsafe characters"));
+    }
+    if !folder.is_absolute() {
+        return Err(invalid("the path is not absolute"));
+    }
     let mut names = 0;
     for component in folder.components() {
         match component {
             Component::Normal(_) => names += 1,
-            Component::ParentDir | Component::CurDir => return Err(invalid("the path is not normalized")),
+            Component::ParentDir | Component::CurDir => {
+                return Err(invalid("the path is not normalized"))
+            }
             _ => {}
         }
     }
-    if names < 3 { return Err(invalid("the path is too short")); }
-    let last = folder.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    if named_lucent && !last.eq_ignore_ascii_case("Lucent") { return Err(invalid("it is not a Lucent folder")); }
+    if names < 3 {
+        return Err(invalid("the path is too short"));
+    }
+    let last = folder
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    if named_lucent && !last.eq_ignore_ascii_case("Lucent") {
+        return Err(invalid("it is not a Lucent folder"));
+    }
     Ok(())
 }
 
 fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String> {
-    for folder in folders { validate_removal_folder(folder, true)?; }
-    for folder in extra { validate_removal_folder(folder, false)?; }
+    for folder in folders {
+        validate_removal_folder(folder, true)?;
+    }
+    for folder in extra {
+        validate_removal_folder(folder, false)?;
+    }
     let all: Vec<&PathBuf> = folders.iter().chain(extra).collect();
-    if all.is_empty() { return Err(PlatformError::new(ErrorKind::Unknown, "No folders to remove.", None)); }
+    if all.is_empty() {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "No folders to remove.",
+            None,
+        ));
+    }
     // WebView2 child processes can hold files briefly after exit, so wait, then retry in rounds.
     let mut steps = vec!["ping -n 3 127.0.0.1 >nul".to_owned()];
     for round in 0..3 {
-        if round > 0 { steps.push("ping -n 3 127.0.0.1 >nul".to_owned()); }
-        for folder in &all { steps.push(format!("rmdir /s /q \"{}\" 2>nul", folder.display())); }
+        if round > 0 {
+            steps.push("ping -n 3 127.0.0.1 >nul".to_owned());
+        }
+        for folder in &all {
+            steps.push(format!("rmdir /s /q \"{}\" 2>nul", folder.display()));
+        }
     }
     Ok(steps.join(" & "))
 }
@@ -658,7 +956,9 @@ pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
         .raw_arg(format!("/d /c \"{script}\""))
         .current_dir(std::env::temp_dir())
         .creation_flags(CREATE_NO_WINDOW)
-        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| PlatformError::io(e, None))?;
     std::process::exit(0)
@@ -683,8 +983,14 @@ mod tests {
         let folder = dir.path().join("protected-game");
         fs::create_dir(&folder).unwrap();
         // Everyone is denied file creation on this disposable fixture only, including an elevated runner.
-        let acl = |args: &[&str]| std::process::Command::new("icacls")
-            .arg(&folder).args(args).creation_flags(0x08000000).output().unwrap();
+        let acl = |args: &[&str]| {
+            std::process::Command::new("icacls")
+                .arg(&folder)
+                .args(args)
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap()
+        };
         assert!(acl(&["/deny", "*S-1-1-0:(WD,AD)"]).status.success());
         let result = is_directory_writable(&folder);
         assert!(acl(&["/remove:d", "*S-1-1-0"]).status.success());
@@ -699,8 +1005,14 @@ mod tests {
         let shaders = dir.path().join("shaders");
         fs::create_dir(&shaders).unwrap();
         fs::write(shaders.join("Existing.fx"), "User shader").unwrap();
-        let acl = |args: &[&str]| std::process::Command::new("icacls")
-            .arg(&shaders).args(args).creation_flags(0x08000000).output().unwrap();
+        let acl = |args: &[&str]| {
+            std::process::Command::new("icacls")
+                .arg(&shaders)
+                .args(args)
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap()
+        };
         assert!(acl(&["/deny", "*S-1-1-0:(WD,AD)"]).status.success());
         let result = game_write_access(dir.path(), &["shaders/New.fx".into()]);
         // An unrelated protected subfolder does not require elevation for a write in the root.
@@ -708,7 +1020,10 @@ mod tests {
         assert!(acl(&["/remove:d", "*S-1-1-0"]).status.success());
         assert!(!result.unwrap());
         assert!(unrelated.unwrap());
-        assert_eq!(fs::read_to_string(shaders.join("Existing.fx")).unwrap(), "User shader");
+        assert_eq!(
+            fs::read_to_string(shaders.join("Existing.fx")).unwrap(),
+            "User shader"
+        );
         assert_eq!(fs::read_dir(&shaders).unwrap().count(), 1);
     }
 
@@ -718,10 +1033,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("OptiScaler.ini");
         fs::write(&file, "Passes = 2").unwrap();
-        let acl = |path: &Path, args: &[&str]| std::process::Command::new("icacls")
-            .arg(path).args(args).creation_flags(0x08000000).output().unwrap();
+        let acl = |path: &Path, args: &[&str]| {
+            std::process::Command::new("icacls")
+                .arg(path)
+                .args(args)
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap()
+        };
         // Replacement can use DELETE on the file or DELETE_CHILD on its parent. Deny both.
-        assert!(acl(dir.path(), &["/deny", "*S-1-1-0:(DC)"]).status.success());
+        assert!(acl(dir.path(), &["/deny", "*S-1-1-0:(DC)"])
+            .status
+            .success());
         assert!(acl(&file, &["/deny", "*S-1-1-0:(D)"]).status.success());
         let result = game_write_access(dir.path(), &["OptiScaler.ini".into()]);
         assert!(acl(&file, &["/remove:d", "*S-1-1-0"]).status.success());
@@ -737,14 +1060,20 @@ mod tests {
         assert_eq!(parse(&["--headless-repair"]), Some("repair"));
         assert_eq!(parse(&[]), None);
         assert_eq!(parse(&["--lucent-resume", r"C:\resume.json"]), None);
-        assert_eq!(parse(&["--lucent-resume", "x.json", "--headless-repair"]), Some("repair"));
+        assert_eq!(
+            parse(&["--lucent-resume", "x.json", "--headless-repair"]),
+            Some("repair")
+        );
         assert_eq!(parse(&["--headless-checks", "headless-check"]), None);
         assert_eq!(parse(&["--uninstall"]), Some("uninstall"));
     }
 
     #[test]
     fn escapes_toast_xml() {
-        assert_eq!(xml_escape(r#"a & <b> "c" 'd'"#), "a &amp; &lt;b&gt; &quot;c&quot; &apos;d&apos;");
+        assert_eq!(
+            xml_escape(r#"a & <b> "c" 'd'"#),
+            "a &amp; &lt;b&gt; &quot;c&quot; &apos;d&apos;"
+        );
     }
 
     #[test]
@@ -755,33 +1084,75 @@ mod tests {
 
     #[test]
     fn removal_script_quotes_folders_and_rejects_unsafe_ones() {
-        let script = build_removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")], &[]).unwrap();
-        assert!(script.starts_with(r#"ping -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#), "got {script}");
+        let script =
+            build_removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")], &[])
+                .unwrap();
+        assert!(
+            script.starts_with(
+                r#"ping -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#
+            ),
+            "got {script}"
+        );
         assert_eq!(script.matches("rmdir").count(), 3);
         for bad in [
-            r"Users\Me\Local\Lucent", "C:\\Users\\Me\\\"x\\Lucent", r"C:\Users\%TEMP%\Lucent", r"C:\Lucent",
-            r"C:\Users\Me\Local\Other", r"C:\Users\Me\..\Lucent", "C:\\Users\\Me\\Local\\Lucent\n",
+            r"Users\Me\Local\Lucent",
+            "C:\\Users\\Me\\\"x\\Lucent",
+            r"C:\Users\%TEMP%\Lucent",
+            r"C:\Lucent",
+            r"C:\Users\Me\Local\Other",
+            r"C:\Users\Me\..\Lucent",
+            "C:\\Users\\Me\\Local\\Lucent\n",
         ] {
-            assert_eq!(build_removal_script(&[PathBuf::from(bad)], &[]).unwrap_err().kind, ErrorKind::Unknown, "{bad}");
+            assert_eq!(
+                build_removal_script(&[PathBuf::from(bad)], &[])
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::Unknown,
+                "{bad}"
+            );
         }
         assert!(build_removal_script(&[], &[]).is_err());
-        assert!(build_removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")], &[]).is_ok());
+        assert!(
+            build_removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")], &[])
+                .is_ok()
+        );
     }
 
     #[test]
     fn extra_removal_folders_skip_only_the_name_rule() {
         let lucent = PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent");
         let webview = PathBuf::from(r"C:\Users\Me\AppData\Local\io.github.lucent");
-        assert!(build_removal_script(std::slice::from_ref(&lucent), std::slice::from_ref(&webview)).is_ok());
-        assert!(build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Local")]).is_err());
-        assert!(build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Users\Me\%x%")]).is_err());
+        assert!(build_removal_script(
+            std::slice::from_ref(&lucent),
+            std::slice::from_ref(&webview)
+        )
+        .is_ok());
+        assert!(
+            build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Local")])
+                .is_err()
+        );
+        assert!(build_removal_script(
+            std::slice::from_ref(&lucent),
+            &[PathBuf::from(r"C:\Users\Me\%x%")]
+        )
+        .is_err());
     }
 
     #[test]
     fn uninstall_entry_ids_cannot_escape_the_uninstall_key() {
         for bad in [r"..\x", r"a\b", "", "a b", "a/b"] {
-            assert_eq!(set_uninstall_entry(bad, &serde_json::Map::new()).unwrap_err().kind, ErrorKind::Unknown, "{bad:?}");
-            assert_eq!(remove_uninstall_entry(bad).unwrap_err().kind, ErrorKind::Unknown, "{bad:?}");
+            assert_eq!(
+                set_uninstall_entry(bad, &serde_json::Map::new())
+                    .unwrap_err()
+                    .kind,
+                ErrorKind::Unknown,
+                "{bad:?}"
+            );
+            assert_eq!(
+                remove_uninstall_entry(bad).unwrap_err().kind,
+                ErrorKind::Unknown,
+                "{bad:?}"
+            );
         }
     }
 
@@ -791,8 +1162,13 @@ mod tests {
         let values = serde_json::json!({ "DisplayName": "Lucent test", "NoModify": 1, "EstimatedSize": 4096 });
         set_uninstall_entry(&id, values.as_object().unwrap()).unwrap();
         let result = std::panic::catch_unwind(|| {
-            let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(format!(r"{UNINSTALL_KEY}\{id}")).unwrap();
-            assert_eq!(key.get_value::<String, _>("DisplayName").unwrap(), "Lucent test");
+            let key = RegKey::predef(HKEY_CURRENT_USER)
+                .open_subkey(format!(r"{UNINSTALL_KEY}\{id}"))
+                .unwrap();
+            assert_eq!(
+                key.get_value::<String, _>("DisplayName").unwrap(),
+                "Lucent test"
+            );
             assert_eq!(key.get_value::<u32, _>("NoModify").unwrap(), 1);
             assert_eq!(key.get_value::<u32, _>("EstimatedSize").unwrap(), 4096);
         });
@@ -801,7 +1177,9 @@ mod tests {
         remove_uninstall_entry(&id).unwrap();
         result.unwrap();
         assert_eq!(bad.unwrap_err().kind, ErrorKind::Unknown);
-        assert!(RegKey::predef(HKEY_CURRENT_USER).open_subkey(format!(r"{UNINSTALL_KEY}\{id}")).is_err());
+        assert!(RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey(format!(r"{UNINSTALL_KEY}\{id}"))
+            .is_err());
     }
 
     #[test]
@@ -854,7 +1232,10 @@ mod tests {
     fn reading_a_folder_as_a_file_is_access_denied() {
         let dir = tempfile::tempdir().unwrap();
 
-        assert_eq!(read_text(dir.path()).unwrap_err().kind, ErrorKind::AccessDenied);
+        assert_eq!(
+            read_text(dir.path()).unwrap_err().kind,
+            ErrorKind::AccessDenied
+        );
     }
 
     #[test]
@@ -864,7 +1245,11 @@ mod tests {
         let file = dir.path().join("winmm.dll");
         fs::write(&file, "MZ").unwrap();
         // Share mode 0: nobody else may open it, which is how a running game holds its DLLs.
-        let _held = fs::OpenOptions::new().read(true).share_mode(0).open(&file).unwrap();
+        let _held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&file)
+            .unwrap();
 
         assert_eq!(read_text(&file).unwrap_err().kind, ErrorKind::Locked);
     }
@@ -877,21 +1262,35 @@ mod tests {
 
         let f = stat(&file).unwrap();
         assert_eq!((f.kind, f.size), ("file", 4));
-        assert!(f.modified_ms > 1_600_000_000_000, "modified time is in ms since the epoch");
+        assert!(
+            f.modified_ms > 1_600_000_000_000,
+            "modified time is in ms since the epoch"
+        );
         assert_eq!(stat(dir.path()).unwrap().kind, "dir");
     }
 
     #[test]
     fn reads_a_registry_value() {
-        let name = read_registry("HKLM", r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "ProductName").unwrap();
+        let name = read_registry(
+            "HKLM",
+            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            "ProductName",
+        )
+        .unwrap();
 
         assert!(name.starts_with("Windows"), "got {name}");
     }
 
     #[test]
     fn a_missing_registry_key_or_value_is_not_found() {
-        let missing_key = read_registry("HKCU", r"Software\Lucent\DoesNotExist", "Value").unwrap_err();
-        let missing_value = read_registry("HKLM", r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "NoSuchValue").unwrap_err();
+        let missing_key =
+            read_registry("HKCU", r"Software\Lucent\DoesNotExist", "Value").unwrap_err();
+        let missing_value = read_registry(
+            "HKLM",
+            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            "NoSuchValue",
+        )
+        .unwrap_err();
 
         assert_eq!(missing_key.kind, ErrorKind::NotFound);
         assert_eq!(missing_value.kind, ErrorKind::NotFound);
@@ -932,7 +1331,11 @@ mod tests {
             ("\n\n", 1, ""),
         ] {
             fs::write(&path, source).unwrap();
-            assert_eq!(read_text_tail(&path, max_lines).unwrap(), expected, "source {source:?}");
+            assert_eq!(
+                read_text_tail(&path, max_lines).unwrap(),
+                expected,
+                "source {source:?}"
+            );
         }
     }
 
@@ -982,6 +1385,9 @@ mod tests {
         file.write_all(suffix.as_bytes()).unwrap();
         drop(file);
 
-        assert_eq!(read_text_tail(&path, 300).unwrap(), final_lines[5..].join("\n"));
+        assert_eq!(
+            read_text_tail(&path, 300).unwrap(),
+            final_lines[5..].join("\n")
+        );
     }
 }

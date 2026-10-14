@@ -33,8 +33,13 @@ if (import.meta.env.DEV && params.has('gallery')) {
 
 function renderApp(platform: Platform, uninstalling: boolean) {
   const core = createCore(platform)
-  // Settings → Apps starts Lucent with --uninstall: the small uninstall window instead of the main one.
-  void (uninstalling ? core.openAppUninstall() : core.scan())
+  // A reloaded webview (F5) orphaned the old context's operation leases in this process; drop them so
+  // Scan can recover any half-applied install instead of reporting the lock held until restart.
+  void (async () => {
+    await platform.resetOperationLocks().catch(() => {})
+    // Settings → Apps starts Lucent with --uninstall: the small uninstall window instead of the main one.
+    await (uninstalling ? core.openAppUninstall() : core.scan())
+  })()
   root.render(
     <StrictMode>
       <CoreContext.Provider value={core}>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { creditsVersion } from '../core/credits'
 import { useCore } from './useCore'
 
@@ -26,7 +26,8 @@ const AUTHORS = [
   { group: 'ipsuShade', people: [{ name: 'ipsusu', url: 'https://github.com/ipsusu/ipsuShade' }] },
 ]
 
-export function CreditsScreen({ onBack }: { onBack: () => void }) {
+/** Upstream authors and the components of the installed content, with links to their sources. */
+export function Credits() {
   const [state, core] = useCore()
   const [opening, setOpening] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -42,15 +43,8 @@ export function CreditsScreen({ onBack }: { onBack: () => void }) {
   }
   const linkDisabled = state.busy || opening !== null
 
-  return <div className="credits-screen">
-    <div className="screen">
-      <header className="screen-head">
-        <h1>Credits</h1>
-        <p>Lucent brings together work from these upstream authors. Their components retain their own licences; upstream licence files belong alongside deployed files.</p>
-      </header>
-      {(state.error || state.notice || linkError) && <div className={`credits-message ${state.error || linkError ? 'is-error' : ''}`} role={state.error || linkError ? 'alert' : 'status'}>
-        {linkError ?? state.error ?? state.notice}
-      </div>}
+  return <div className="credits">
+      {linkError && <div className="credits-message is-error" role="alert">{linkError}</div>}
 
       <section className="credits-section" aria-labelledby="upstream-credits-title">
         <h2 id="upstream-credits-title">Upstream authors</h2>
@@ -90,9 +84,5 @@ export function CreditsScreen({ onBack }: { onBack: () => void }) {
               : <p className="credits-empty">No published content version matches this tier yet. Upstream author credits are available above.</p>
             : <p className="credits-empty">The content manifest is unavailable. Upstream author credits are available above.</p>}
       </section>
-    </div>
-    <footer className="credits-actions">
-      <button className="btn is-ghost" autoFocus onClick={onBack}><ArrowLeft size={14} strokeWidth={1.75} />Back</button>
-    </footer>
   </div>
 }

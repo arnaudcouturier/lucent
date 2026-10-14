@@ -87,6 +87,7 @@ it('recovers a crashed profile change on reopening without undoing the deploymen
   }
   void core.selectProfile('performance')
   await crashed
+  platform.crash()
   platform.writeText = write
   const reopened = createCore(platform)
   await reopened.scan()

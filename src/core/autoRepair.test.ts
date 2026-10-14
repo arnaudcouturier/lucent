@@ -239,6 +239,13 @@ describe('uninstalling Lucent from Settings → Apps', () => {
     expect(await platform.readText(CONFIG)).toBe(before)
   })
 
+  it('still uninstalls when a deployment’s game folder no longer exists', async () => {
+    const { m, platform } = await deployed()
+    for (const file of await platform.listFiles(ROOT)) await platform.removeFile(`${ROOT}\\${file}`)
+    const after = await uninstall(m, platform, true)
+    expect(after.getState()).toMatchObject({ error: null, appUninstalled: true })
+  })
+
   it('finishes while XIVLauncher runs, leaves its config alone and says where to remove the add-ons', async () => {
     const { m, platform, core } = await deployed()
     await core.setAutoRepair(true)

@@ -2,13 +2,14 @@
 import { useState } from 'react'
 import { Archive, Check, ChevronDown, Cpu, Folder, FolderOpen, LoaderCircle, TriangleAlert } from 'lucide-react'
 import { GAME_EXECUTABLE, type GameFolderSource } from '../core/gameFolder'
+import { onChannel } from '../core/updates'
 import { Path } from './Path'
 import { FileTree } from './FileTree'
 import { useCore } from './useCore'
 import { Screen } from './Window'
 import { FlowError, StatusCard } from './DeploymentScreens'
 
-const SOURCE_LABEL: Record<GameFolderSource, string> = {
+export const SOURCE_LABEL: Record<GameFolderSource, string> = {
   xivlauncher: 'XIVLauncher',
   steam: 'Steam',
   'square-enix': 'Square Enix launcher',
@@ -18,6 +19,9 @@ const SOURCE_LABEL: Record<GameFolderSource, string> = {
 
 export function ScanScreen() {
   const [state, core] = useCore()
+  const tierId = state.graphics.status === 'found' ? state.graphics.tier?.id : undefined
+  const contentAvailable = !!tierId && state.manifest.status === 'ready'
+    && state.manifest.manifest.versions.some((v) => v.tiers[tierId] && onChannel(v, state.channel))
   return (
     <Screen title="Scan" sub="Lucent looks for your game folder, graphics card and launcher.">
       <StatusCard />
@@ -28,6 +32,7 @@ export function ScanScreen() {
         <GraphicsFeaturesRow />
         <BackupRow />
       </ul>
+      <SetupContentNotice />
       <ManifestNotice /></>}
       {state.rejectedFolder && (
         <p className="callout" role="alert">
@@ -38,9 +43,36 @@ export function ScanScreen() {
           </span>
         </p>
       )}
-      {!state.recoveryRequired && <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier} onClick={() => void core.continueSetup()}>Continue</button></footer>}
+      {!state.recoveryRequired && <footer className="screen-actions"><button className="btn is-primary" disabled={state.busy || !!state.error || state.gameFolder.status !== 'found' || !contentAvailable} onClick={() => void core.continueSetup()}>Continue</button></footer>}
     </Screen>
   )
+}
+
+/** Beta can be chosen before the first deployment; Settings is only available after setup. */
+function SetupContentNotice() {
+  const [{ manifest, graphics, channel, busy }, core] = useCore()
+  if (manifest.status !== 'ready' || graphics.status !== 'found' || !graphics.tier) return null
+  const tierId = graphics.tier.id
+  const versions = manifest.manifest.versions.filter((v) => v.tiers[tierId])
+  const hasContent = versions.some((v) => onChannel(v, channel))
+  const hasBeta = versions.some((v) => v.channel === 'beta')
+  const changeChannel = async (beta: boolean) => {
+    const next = beta ? 'beta' : 'stable'
+    await core.setChannel(next)
+    // Scan must show the replacements for the newly selected content before the player continues.
+    if (core.getState().channel === next && !core.getState().error) await core.scan()
+  }
+  return <>
+    {!hasContent && <p className="callout is-notice" role="status">
+      <span>{hasBeta
+        ? 'Stable content isn’t published for this graphics card yet. Enable Beta below to try the available setup.'
+        : 'No content is published for this graphics card yet. Check back for a tested setup.'}</span>
+    </p>}
+    {(hasBeta || channel === 'beta') && <label className="card option-row settings-switch setup-channel">
+      <span><strong>Beta channel</strong><small>Try beta versions of Lucent and its content. You can change this later in Settings.</small></span>
+      <input type="checkbox" role="switch" checked={channel === 'beta'} disabled={busy} onChange={(e) => void changeChannel(e.target.checked)} />
+    </label>}
+  </>
 }
 
 const count = (n: number, one: string, many: string) => `${n.toLocaleString('en')} ${n === 1 ? one : many}`

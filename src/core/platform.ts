@@ -31,6 +31,8 @@ export interface FileStat {
   modifiedMs: number
 }
 
+export interface CopyItem { from: string; to: string; replace: boolean }
+
 export type RegistryHive = 'HKCU' | 'HKLM'
 
 /** Well-known folders, as Windows resolves them for the current user. */
@@ -70,8 +72,16 @@ export interface Platform {
   /** Fetches UTF-8 text; HTTP errors are port failures, never document contents. */
   fetchText(url: string): Promise<string>
   getDevContent(): Promise<LocalContent | null>
+  /** Acquires an exclusive cross-process lease for this player's Lucent data folder; fails with `locked` while another operation holds it. */
+  acquireOperationLock(dataFolder: string): Promise<string>
+  /** Releases the lease; the native process also releases its leases on exit or crash. */
+  releaseOperationLock(token: string): Promise<void>
+  /** Drops every lease this process holds. Called once by a fresh webview (after a reload, the old context's leases are orphaned); another process's lease is untouched. */
+  resetOperationLocks(): Promise<void>
   /** Atomic, durable replacement; readers see either the old or the complete new file. */
   writeText(path: string, text: string, stagingDirectory?: string): Promise<void>
+  /** Appends to a text file in one write, creating the file and its folder when missing. For logs: nothing is flushed. */
+  appendText(path: string, text: string): Promise<void>
   /** Durably changes an already allocated byte; refuses to extend the file. */
   writeFileByte(path: string, offset: number, value: number): Promise<void>
   /** `replace=false` atomically refuses a destination that appeared since the last check. */
@@ -85,6 +95,20 @@ export interface Platform {
   hashFile(path: string): Promise<string>
   /** Resolves a relative path, rejecting traversal and reparse points in every existing ancestor. */
   resolveGamePath(root: string, relative: string): Promise<string>
+  // Batches: one call for many files, run in parallel by the real port. A deployment touches a thousand files, and a
+  // round trip per file cost more than the file work itself.
+  /** `resolveGamePath` for many paths, in order. */
+  resolveGamePaths(root: string, relatives: string[]): Promise<string[]>
+  /** `stat` for many paths, in order; null where nothing exists. */
+  statMany(paths: string[]): Promise<(FileStat | null)[]>
+  hashMany(paths: string[]): Promise<string[]>
+  /** `copyFile` for many items. After a failure no new copy starts, and the first failure is reported. */
+  copyMany(items: CopyItem[], stagingDirectory?: string): Promise<void>
+  removeMany(paths: string[]): Promise<void>
+  /** `writeFileByte` at several offsets, with one flush. */
+  writeFileBytes(path: string, offsets: number[], value: number): Promise<void>
+  /** `removeDirectoryIfEmpty` for each path, in order. */
+  removeDirectoriesIfEmpty(paths: string[]): Promise<void>
   /** Streams to a temporary file and atomically commits it when complete. */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
@@ -101,6 +125,10 @@ export interface Platform {
   exePath(): Promise<string>
   /** Starts the exe at `path`; the real port then exits this process so the new one takes over. */
   launchExe(path: string): Promise<void>
+  /** Starts a program from its own folder and keeps Lucent running. */
+  startProgram(path: string): Promise<void>
+  /** Asks Steam to start a game by its app id. */
+  openSteamGame(appId: number): Promise<void>
   /** Creates or replaces a Windows shortcut (.lnk) at `path` that starts `target`. */
   createShortcut(path: string, target: string): Promise<void>
   /** Creates or updates this user's Settings → Apps entry `id`; strings and DWORD numbers, no admin. */

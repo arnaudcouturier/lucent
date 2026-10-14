@@ -20,12 +20,16 @@ export interface Machine {
   /** The headless run this process was started for. */
   headlessMode?: 'uninstall' | HeadlessMode | null
   readOnlyDirectories?: string[]
+  /** Files carrying the Windows read-only flag; Lucent clears it on a file it must replace or remove. */
+  readOnlyFiles?: string[]
   elevated?: boolean
   elevationCancelled?: boolean
   elevationResumePath?: string | null
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
   windowsVersion?: string
+  /** Share this set between simulated processes to model leases for the same player's data folder. */
+  operationLocks?: Set<string>
   /** How Settings → Apps started this exe; null or absent for the main window. */
 }
 
@@ -47,6 +51,8 @@ export interface FakePlatform extends Platform {
   readonly downloads: string[]
   /** Every exe the fake was asked to launch, in order; the real port exits instead of returning. */
   readonly launched: string[]
+  /** Programs started and Steam games opened, as `steam://rungameid/<id>`, in order. */
+  readonly started: string[]
   readonly clipboard: string | null
   readonly openedUrls: string[]
   /** Every Windows notification shown, in order. */
@@ -64,6 +70,8 @@ export interface FakePlatform extends Platform {
   /** Holds every call until `release()`, to observe in-flight states. */
   hold(): void
   release(): void
+  /** Simulates process death: releases its OS leases while preserving its machine's files for recovery. */
+  crash(): void
 }
 
 export function createFakePlatform(machine: Machine = {}): FakePlatform {
@@ -93,6 +101,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const denied: string[] = []
   const downloads: string[] = []
   const launched: string[] = []
+  const started: string[] = []
   let clipboard: string | null = null
   const openedUrls: string[] = []
   const notifications: { title: string; body: string }[] = []
@@ -102,14 +111,24 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const picks: (string | null)[] = []
   let gate: Promise<void> = Promise.resolve()
   let open = () => {}
+  const operationLocks = machine.operationLocks ?? new Set<string>()
+  const operationLeases = new Map<string, string>()
+  const endedOperationLeases = new Set<string>()
+  const releaseProcessLocks = () => {
+    for (const [token, folder] of operationLeases) { operationLocks.delete(folder); endedOperationLeases.add(token) }
+    operationLeases.clear()
+  }
 
   const isDenied = (p: string) => denied.some((d) => p === d || p.startsWith(d + '\\'))
   const isDir = (p: string) => directories.has(p)
   const isReadOnly = (p: string) => !machine.elevated && (machine.readOnlyDirectories ?? []).some((path) => p === norm(path) || p.startsWith(norm(path) + '\\'))
+  const readOnlyFiles = new Set((machine.readOnlyFiles ?? []).map(norm))
   const writable = (path: string) => {
     const p = norm(path)
     if (isDenied(p) || isReadOnly(p)) throw new PlatformError('access-denied', `Access is denied: ${path}`, path)
     if (isDir(p)) throw new PlatformError('access-denied', `Is a folder: ${path}`, path)
+    // The real port clears a destination's read-only flag before replacing or removing it.
+    readOnlyFiles.delete(p)
     return p
   }
 
@@ -117,6 +136,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     downloads,
     elevationRequests,
     launched,
+    started,
     get clipboard() { return clipboard },
     openedUrls,
     notifications,
@@ -131,6 +151,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       return text.replace(/\r?\n$/, '').split(/\r?\n/).slice(-maxLines).join('\n')
     },
     async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text); touch(target) },
+    async appendText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, (files.get(target) ?? '') + text); touch(target) },
     async writeFileByte(path, offset, value) {
       const text = await this.readText(path)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset >= text.length || value < 0 || value > 127) throw new PlatformError('unknown', 'Invalid byte write', path)
@@ -156,6 +177,20 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       files.delete(source)
     },
     async removeFile(path) { await gate; files.delete(writable(path)) },
+    // The batches go through the single-file methods, so a test that replaces one of those sees every batched call.
+    async resolveGamePaths(root, relatives) { const out: string[] = []; for (const r of relatives) out.push(await this.resolveGamePath(root, r)); return out },
+    async statMany(paths) {
+      const out: (FileStat | null)[] = []
+      for (const path of paths) {
+        try { out.push(await this.stat(path)) } catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') out.push(null); else throw error }
+      }
+      return out
+    },
+    async hashMany(paths) { const out: string[] = []; for (const path of paths) out.push(await this.hashFile(path)); return out },
+    async copyMany(items, stagingDirectory) { for (const { from, to, replace } of items) await this.copyFile(from, to, replace, stagingDirectory) },
+    async removeMany(paths) { for (const path of paths) await this.removeFile(path) },
+    async writeFileBytes(path, offsets, value) { for (const offset of offsets) await this.writeFileByte(path, offset, value) },
+    async removeDirectoriesIfEmpty(paths) { for (const path of paths) await this.removeDirectoryIfEmpty(path) },
     async removeDirectoryIfEmpty(path) {
       await gate
       const p = norm(path)
@@ -197,7 +232,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       return running.some((name) => name.toLowerCase() === exeName.toLowerCase())
     },
     async notify(title, body) { await gate; notifications.push({ title, body }) },
-    async exit() { exited = true },
+    async exit() { releaseProcessLocks(); exited = true },
     async isDirectoryWritable(path, targets = []) {
       await gate
       for (const target of targets) assertGamePath(target)
@@ -210,9 +245,16 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       elevationRequests.push(path)
       if (machine.elevationCancelled) throw new PlatformError('cancelled', 'Administrator access was cancelled.')
       machine.elevationResumePath = path
+      releaseProcessLocks()
     },
     async exePath() { await gate; return machine.exePath ?? FAKE_EXE_PATH },
-    async launchExe(path) { await gate; launched.push(path) },
+    async launchExe(path) { await gate; launched.push(path); releaseProcessLocks() },
+    async startProgram(path) {
+      await gate
+      if (!files.has(norm(path))) throw new PlatformError('not-found', `Not found: ${path}`, path)
+      started.push(path)
+    },
+    async openSteamGame(appId) { await gate; started.push(`steam://rungameid/${appId}`) },
     async createShortcut(path, target) { await this.writeText(path, `Shortcut to ${target}`) },
     async setUninstallEntry(id, values) {
       await gate
@@ -226,6 +268,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     // The real port exits here; the fake removes the folders at once and keeps running.
     async exitAndRemove(folders) {
       await gate
+      releaseProcessLocks()
       for (const folder of folders.map(norm)) {
         for (const path of [...files.keys()]) if (path.startsWith(folder + '\\')) files.delete(path)
         for (const path of [...directories]) if (path === folder || path.startsWith(folder + '\\')) directories.delete(path)
@@ -277,6 +320,35 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await gate
       return machine.devContent ? { ...machine.devContent } : null
     },
+    async acquireOperationLock(dataFolder) {
+      await gate
+      if (!/^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i.test(dataFolder)) throw new PlatformError('unknown', 'Lucent data folder must be an absolute path', dataFolder)
+      const folder = norm(dataFolder)
+      const path = `${dataFolder}\\operation.lock`
+      const file = writable(path)
+      if (operationLocks.has(folder)) throw new PlatformError('locked', 'Another Lucent window is working with files. Try again when it finishes.', path)
+      const token = crypto.randomUUID()
+      operationLocks.add(folder)
+      operationLeases.set(token, folder)
+      if (!files.has(file)) { files.set(file, ''); addParents(path) }
+      return token
+    },
+    async resetOperationLocks() {
+      await gate
+      // A fresh webview in the same process: this instance's leases are orphaned, other instances keep theirs.
+      releaseProcessLocks()
+    },
+    async releaseOperationLock(token) {
+      await gate
+      const folder = operationLeases.get(token)
+      if (folder === undefined) {
+        // Native exit does not return; allow the fake's finally block to release its already ended lease.
+        if (endedOperationLeases.delete(token)) return
+        throw new PlatformError('unknown', 'Lucent operation lease is not held by this process.')
+      }
+      operationLocks.delete(folder)
+      operationLeases.delete(token)
+    },
     answerPicker(path) {
       picks.push(path)
     },
@@ -292,5 +364,6 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     release() {
       open()
     },
+    crash() { releaseProcessLocks() },
   }
 }

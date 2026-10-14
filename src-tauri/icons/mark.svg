@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Placeholder app icon: Lucent's mark on the rail colour. The crystal replaces it later. -->
+  <!-- Lucent's app icon: the brand mark on the rail colour. Also the site's favicon. -->
   <rect width="1024" height="1024" rx="224" fill="#0d0e11"/>
   <g transform="translate(512 512) scale(30) translate(-8 -11)">
     <polygon points="8,0 16,8 8,22 0,8" fill="#F47521"/>

@@ -1,6 +1,6 @@
 import { PlatformError, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
-import type { ProfileId } from '../shared/manifest'
+import { assertGamePath, type ProfileId } from '../shared/manifest'
 import type { State } from './core'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
@@ -31,13 +31,18 @@ export async function guardGameWrites(platform: Platform, gameFolder: string): P
     async renameFile(from, to, replace) { await check(from, to); await platform.renameFile(from, to, replace) },
     async removeFile(path) { await check(path); await platform.removeFile(path) },
     async removeDirectoryIfEmpty(path) { await check(path); await platform.removeDirectoryIfEmpty(path) },
+    // A batch checks once: a process scan costs about 6 ms, more than a hundred small file writes.
+    async copyMany(items, staging) { await check(...items.map((item) => item.to)); await platform.copyMany(items, staging) },
+    async removeMany(paths) { await check(...paths); await platform.removeMany(paths) },
+    async writeFileBytes(path, offsets, value) { await check(path); await platform.writeFileBytes(path, offsets, value) },
+    async removeDirectoriesIfEmpty(paths) { await check(...paths); await platform.removeDirectoriesIfEmpty(paths) },
     async downloadFile(url, to, progress) { await check(to); await platform.downloadFile(url, to, progress) },
     async isDirectoryWritable(path, targets) { await check(path); return platform.isDirectoryWritable(path, targets) },
   }
 }
 
 export type GameWriteRequest = { gameFolder: string } & (
-  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null }
+  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; reviewedPaths: string[] }
   | { kind: 'repair' | 'uninstall' | 'recover' }
   | { kind: 'update'; contentVersion: string }
   | { kind: 'tier'; tier: string; contentVersion: string }
@@ -47,16 +52,21 @@ export type GameWriteRequest = { gameFolder: string } & (
 
 const resumeDirectory = async (platform: Platform) => joinPath(await platform.envFolder('LocalAppData'), 'Lucent')
 
+/** The player's data context, available before acquiring its operation lock or consuming the resume request. */
+export function elevationResumeLocalAppData(path: string): string {
+  const normalized = normalizePath(path)
+  const match = /^(.*)\\Lucent\\resume-[a-f0-9-]{36}\.json$/i.exec(normalized)
+  if (!match || !/^(?:[a-z]:\\|\\\\[^\\]+\\[^\\]+\\)/i.test(normalized) || normalized.split('\\').includes('..')) throw new Error('The administrator resume file is invalid.')
+  return match[1]
+}
+
 /** The request is consumed before executing it, so failures never retry silently on another launch. */
 export async function takeElevationResume(platform: Platform): Promise<{ localAppData: string; request: GameWriteRequest | null } | null> {
   const path = await platform.getElevationResumePath()
   if (!path) return null
   // UAC may use another administrator account. The original path carries the player's data context,
   // even after the request has been consumed or this elevated process is relaunched by an app update.
-  const normalized = normalizePath(path)
-  const match = /^(.*)\\Lucent\\resume-[a-f0-9-]{36}\.json$/i.exec(normalized)
-  if (!match || !/^(?:[a-z]:\\|\\\\[^\\]+\\[^\\]+\\)/i.test(normalized) || normalized.split('\\').includes('..')) throw new Error('The administrator resume file is invalid.')
-  const localAppData = match[1]
+  const localAppData = elevationResumeLocalAppData(path)
   if (!await platform.isElevated()) throw new Error('Administrator access was not granted. Try the change again.')
   let text: string
   try { text = await platform.readText(path) }
@@ -71,6 +81,10 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
     || (request.kind === 'deploy' && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !['fidelity', 'balanced', 'performance'].includes(request.profile))))
     || (request.kind === 'profile' && !['fidelity', 'balanced', 'performance'].includes(request.profile))
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')
+  if (request.kind === 'deploy') {
+    if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')
+    request.reviewedPaths.forEach(assertGamePath)
+  }
   return { localAppData, request }
 }
 

@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "Lucent",
-        "width": 880,
-        "height": 580,
+        "width": 1000,
+        "height": 680,
         "minWidth": 880,
-        "minHeight": 580,
+        "minHeight": 600,
         "resizable": true,
         "maximizable": true,
         "decorations": false,

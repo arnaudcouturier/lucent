@@ -13,7 +13,7 @@ import { Screen, Window } from '../ui/Window'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
 import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
-import { NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
+import { BETA_CONTENT, BETA_MANIFEST, NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
 import { MANIFEST_URL } from '../core/manifest'
 import './gallery.css'
 
@@ -49,8 +49,19 @@ const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, incl
   if (stage === 'healthy') core.finish()
   return core
 }
+const multipleLaunchers = async () => {
+  const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
+  await platform.writeText(`${await platform.envFolder('LocalAppData')}\\XIVLauncher\\current\\XIVLauncher.exe`, 'XIVLauncher')
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  return core
+}
 const installStage = (phase: DeploymentPhase) => async () => {
-  const platform = createFakePlatform(MACHINES.steam)
+  // Only a folder with files to replace has a Backing up stage.
+  const platform = createFakePlatform(phase === 'backing-up' ? MACHINES.existing : MACHINES.steam)
   const core = createCore(platform)
   await core.scan()
   await core.review()
@@ -269,6 +280,8 @@ const STATES: GalleryState[] = [
   },
   { key: 'xivlauncher', label: 'Scan · found through XIVLauncher', setup: scanned(MACHINES.xivlauncher) },
   { key: 'steam', label: 'Scan · found in a Steam library', setup: scanned(MACHINES.steam) },
+  { key: 'beta-setup', label: 'Scan · first deployment with Beta content', setup: scanned(machine(MACHINES.beta, manifestHost({ ...BETA_MANIFEST, versions: [BETA_CONTENT] }))) },
+  { key: 'no-published-tier', label: 'Scan · no content published for this card', setup: scanned(machine(MACHINES.steam, manifestHost({ ...BETA_MANIFEST, versions: [] }))) },
   { key: 'squareenix', label: 'Scan · found through the Square Enix launcher', setup: scanned(MACHINES.squareenix) },
   {
     key: 'long-path',
@@ -321,6 +334,8 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'healthy-launchers', label: 'Main · Choose XIVLauncher or Steam', setup: multipleLaunchers },
+  { key: 'healthy-official', label: 'Main · Square Enix launcher', setup: workflow('healthy', MACHINES.squareenix) },
   { key: 'game-running', label: 'Main · XIV running', async setup() {
     const m = machine(MACHINES.steam)
     const core = await workflow('healthy', m)()
@@ -355,17 +370,17 @@ const STATES: GalleryState[] = [
   { key: 'app-uninstall-game-running', label: 'Settings → Apps · XIV running', setup: appUninstall('game-running'), uninstallWindow: true },
   { key: 'app-uninstall-done', label: 'Settings → Apps · uninstalled', setup: appUninstall('done'), uninstallWindow: true },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
-  crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, precessing gold rings and a gentle float.'),
+  crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, two orbiting shards and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),
-  crystalPreview('fill', 'Deploying', { kind: 'deploying', progress: 0.5 }, 'Light fills the cluster from its base as deployment advances.'),
+  crystalPreview('fill', 'Deploying', { kind: 'deploying', progress: 0.5 }, 'Light fills the cluster from its base, easing between progress reports.'),
   crystalPreview('done', 'Done', { kind: 'done' }, 'The lit state after deployment completes.'),
-  crystalPreview('lit', 'Healthy', deployment(), 'A lit spire with a slow spin, precessing rings and a gentle float.'),
-  crystalPreview('update', 'Update available', deployment({ update: AN_UPDATE }), 'A pulse ring announces an available update.'),
-  crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and rings move faster during repair.'),
+  crystalPreview('lit', 'Healthy', deployment(), 'A lit spire with a slow spin, orbiting shards and a gentle float.'),
+  crystalPreview('update', 'Update available', deployment({ update: AN_UPDATE }), 'A swelling glow announces an available update.'),
+  crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and shards move faster during repair.'),
   crystalPreview('busy-update', 'Update running', deployment({ update: AN_UPDATE, operation: 'update' }), 'The same fast spin during an update.'),
   crystalPreview('rollback', 'Rollback running', deployment({ operation: 'rollback' }), 'The same fast spin during rollback.'),
-  crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], patch: null } }), 'Dark facets, a small ring stalled in place and a falling shard.'),
-  crystalPreview('disabled', 'Disabled', deployment({ enabled: false }), 'Frozen steel rings and unlit glass.'),
+  crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], patch: null } }), 'Dark facets, a slowed spin and a falling shard.'),
+  crystalPreview('disabled', 'Disabled', deployment({ enabled: false }), 'A frozen steel crystal.'),
   crystalPreview('disabled-repair', 'Disabled during repair', deployment({ enabled: false, drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'Disabled stays frozen during repair, update and rollback.'),
 ]
 

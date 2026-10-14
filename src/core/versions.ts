@@ -1,6 +1,6 @@
 import type { ContentFile, ContentVersion, Manifest, Tier } from '../shared/manifest'
 import type { DeploymentRecord } from './deployment'
-import { dataPaths, maybeStat, readDeployment } from './deployment'
+import { dataPaths, readDeployment } from './deployment'
 import type { Platform } from './platform'
 import { joinPath } from './paths'
 import type { Settings } from './settings'
@@ -40,10 +40,8 @@ export async function pruneContentCache(platform: Platform, gameFolder: string):
     for (const stamp of Object.values(record.files)) keep.add(stamp.sha256)
     for (const step of record.recipe.recipe) if (step.kind === 'copy') keep.add(step.file)
   }
-  for (const relative of await platform.listFiles(cache)) {
-    // Only Lucent's hash-named assets belong to this cache. Unrecognized files stay untouched.
-    if (/^[a-f0-9]{64}$/.test(relative) && !keep.has(relative)) await platform.removeFile(joinPath(cache, relative))
-  }
+  // Only Lucent's hash-named assets belong to this cache. Unrecognized files stay untouched.
+  await platform.removeMany((await platform.listFiles(cache)).filter((relative) => /^[a-f0-9]{64}$/.test(relative) && !keep.has(relative)).map((relative) => joinPath(cache, relative)))
 }
 
 /** Listing checks cached assets by size only; applying a version hashes them before use and re-downloads a damaged one. */
@@ -54,7 +52,10 @@ export async function versionChoices(platform: Platform, record: DeploymentRecor
   // A skipped version from the other channel is still published, just not offered here: leaving Beta hides it.
   const offChannel = new Set((manifest?.versions ?? []).filter((v) => !onChannel(v, channel)).map((v) => v.id))
   const ids = new Set([record.contentVersion, ...saved.keys(), ...published.keys(), ...settings.skippedContent.filter((id) => !offChannel.has(id))])
-  const present = new Map<string, boolean>()
+  // Every file any listed version needs, checked once, in one round trip.
+  const needed = [...new Map([...saved.values()].map((v) => v.content).concat([...published.values()]).flatMap((c) => c.files).map((f) => [f.sha256, f])).values()]
+  const stats = await platform.statMany(needed.map((file) => joinPath(cache, file.sha256)))
+  const present = new Map(needed.map((file, i) => [file.sha256, stats[i]?.kind === 'file' && stats[i]!.size === file.size]))
   const choices: VersionChoice[] = []
   for (const id of [...ids].sort((a, b) => b.localeCompare(a))) {
     const content = saved.get(id)?.content ?? published.get(id)
@@ -67,10 +68,6 @@ export async function versionChoices(platform: Platform, record: DeploymentRecor
       const hashes = new Set(recipe.recipe.filter((s) => s.kind === 'copy' && (!s.when || record.includeReShade || tier.requiresReShade)).map((s) => s.kind === 'copy' ? s.file : ''))
       downloadSize = 0
       for (const file of content.files.filter((f) => hashes.has(f.sha256))) {
-        if (!present.has(file.sha256)) {
-          const stat = await maybeStat(platform, joinPath(cache, file.sha256))
-          present.set(file.sha256, stat?.kind === 'file' && stat.size === file.size)
-        }
         if (!present.get(file.sha256)) downloadSize += file.size
       }
     }

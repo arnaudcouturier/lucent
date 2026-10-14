@@ -6,7 +6,7 @@ import { MANIFEST_URL } from './manifest'
 import { readSettings } from './settings'
 import { statusCard } from './statusCard'
 import { createFakePlatform, type FakePlatform, type Machine } from '../platform/fake'
-import { betaContentHost, fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { betaContentHost, fixtureContentHost, graphicsCard, machine, manifestHost, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { APP_BETA_RELEASE, APP_RELEASE, appBetaReleaseHost } from '../platform/appUpdateFixture'
 import { BETA_CONTENT, BETA_MANIFEST, NEXT_CONTENT, PROFILE_MANIFEST, TEST_CONTENT, betaFixtureUrl, OPTISCALER_NEXT_HASH } from '../platform/contentFixture'
 import type { ContentVersion, Manifest } from '../shared/manifest'
@@ -14,6 +14,23 @@ import type { ContentVersion, Manifest } from '../shared/manifest'
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
 const STABLE = PROFILE_MANIFEST.versions[0]
+
+it('installs a Beta-only first deployment only after the player explicitly chooses Beta and scans its files', async () => {
+  const platform = createFakePlatform(machine(betaContentHost(), manifestHost({ ...BETA_MANIFEST, versions: [BETA_CONTENT] }), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT)))
+  const core = createCore(platform)
+  await core.scan()
+  expect(core.getState().channel).toBe('stable')
+  await core.continueSetup()
+  expect(core.getState().error).toMatch(/No content is published/)
+  expect(platform.downloads).toEqual([])
+  await core.setChannel('beta')
+  await core.scan()
+  await core.continueSetup()
+  await core.review()
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ channel: 'beta', error: null, deployment: { status: 'complete', contentVersion: BETA_CONTENT.id } })
+  expect((await readSettings(platform)).channel).toBe('beta')
+})
 
 describe('announcements across both channels', () => {
   const version = (id: string, patch: Partial<ContentVersion> = {}): ContentVersion => ({ ...TEST_CONTENT, id, ...patch })

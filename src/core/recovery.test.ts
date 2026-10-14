@@ -35,10 +35,10 @@ function recoveryMachine() {
 }
 
 /** A killed process cannot run its catch/finally blocks, so `crash` never settles. */
-function crashPoint() {
+function crashPoint(platform: FakePlatform) {
   let reached!: () => void
   const crashed = new Promise<void>((resolve) => { reached = resolve })
-  return { crashed, crash: () => { reached(); return new Promise<never>(() => {}) } }
+  return { crashed, crash: () => { platform.crash(); reached(); return new Promise<never>(() => {}) } }
 }
 
 /** Interrupt a game-folder mutation, leaving cache and backup operations available. */
@@ -84,7 +84,7 @@ it.each([0, 1, 2, 3, 4, 5, 6])('recovers a process killed at recipe boundary %i 
   const core = createCore(platform)
   await core.scan()
   await core.review(false)
-  const { crashed, crash } = crashPoint()
+  const { crashed, crash } = crashPoint(platform)
   interruptApply(platform, boundary, crash)
   void core.deploy()
   await crashed
@@ -104,7 +104,7 @@ it('blocks other startup work and deployment until recovery can restore a locked
   const core = createCore(platform)
   await core.scan()
   await core.review(false)
-  const { crashed, crash } = crashPoint()
+  const { crashed, crash } = crashPoint(platform)
   interruptApply(platform, 4, crash)
   void core.deploy()
   await crashed
@@ -138,7 +138,7 @@ it('keeps a folder the deployment created once it holds a file Lucent does not o
   const core = createCore(platform)
   await core.scan()
   await core.review(false)
-  const { crashed, crash } = crashPoint()
+  const { crashed, crash } = crashPoint(platform)
   interruptApply(platform, 2, crash)
   void core.deploy()
   await crashed
@@ -230,7 +230,7 @@ it('a crash while staging an atomic copy leaves no temporary bytes in the game f
   await core.scan()
   await core.review(false)
   const copy = platform.copyFile.bind(platform)
-  const { crashed, crash } = crashPoint()
+  const { crashed, crash } = crashPoint(platform)
   platform.copyFile = async (from, to, replace, stagingDirectory?: string) => {
     if (to.startsWith(`${GAME}\\`)) {
       const directory = stagingDirectory ?? to.slice(0, to.lastIndexOf('\\'))
@@ -296,7 +296,7 @@ it('recovers a crash before startup scans, even when the launcher now points to 
   await core.scan()
   await core.review()
   const copy = platform.copyFile.bind(platform)
-  const { crashed, crash } = crashPoint()
+  const { crashed, crash } = crashPoint(platform)
   platform.copyFile = async (from, to, replace) => {
     await copy(from, to, replace)
     if (to.endsWith('ReShade.download')) await crash()

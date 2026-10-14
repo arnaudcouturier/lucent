@@ -8,6 +8,9 @@ import { loadManifest } from './manifest'
 import { joinPath } from './paths'
 import { requireGameStopped } from './gameAccess'
 import { xivLauncherGamePath } from './xivLauncher'
+import { withOperationLock } from './operation'
+import { fileCount } from './format'
+import { openActivityLog, type LogLevel } from './log'
 
 export type HeadlessOutcome =
   | { kind: 'no-deployment' | 'healthy' | 'repaired' }
@@ -17,14 +20,31 @@ export type HeadlessOutcome =
 /** Runs a headless check or repair of the game folder XIVLauncher launches, then notifies the outcome. Never throws. */
 export async function runHeadless(platform: Platform, mode: HeadlessMode): Promise<HeadlessOutcome> {
   let outcome: HeadlessOutcome
-  try { outcome = await (mode === 'check' ? check(platform) : repair(platform)) }
+  try { outcome = await withOperationLock(platform, () => mode === 'check' ? check(platform) : repair(platform)) }
   catch (error) { outcome = { kind: 'failed', reason: failureReason(error) } }
+  // The window's Logs section is the only place a run with no window can be read afterwards.
+  const line = logLineFor(mode, outcome)
+  if (line) {
+    const log = openActivityLog(platform)
+    log.write(line.level, `${mode === 'check' ? 'XIVLauncher started XIV' : 'XIV closed'}: ${line.text}`)
+    await log.flushed()
+  }
   const notification = notificationFor(mode, outcome)
   if (notification) {
     try { await platform.notify(notification.title, notification.body) }
     catch { /* Nobody is left to tell; the window shows the same state on next open. */ }
   }
   return outcome
+}
+
+function logLineFor(mode: HeadlessMode, outcome: HeadlessOutcome): { level: LogLevel; text: string } | null {
+  switch (outcome.kind) {
+    case 'healthy': return { level: 'info', text: mode === 'check' ? 'health check healthy' : 'nothing to repair' }
+    case 'drift': return { level: 'warning', text: `drift in ${fileCount(outcome.files.length)}, to repair when XIV closes` }
+    case 'repaired': return { level: 'success', text: 'repair finished' }
+    case 'failed': return { level: 'error', text: `Lucent couldn’t ${mode}. ${outcome.reason}` }
+    default: return null
+  }
 }
 
 function notificationFor(mode: HeadlessMode, outcome: HeadlessOutcome): { title: string; body: string } | null {

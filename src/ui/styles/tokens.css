@@ -13,16 +13,18 @@
   --line: #24262c; /* dividers inside cards */
   --line-strong: #31343c; /* unchecked controls */
   --overlay: #1d1f24; /* menus and dialogs */
+  --terminal: #0b0c0f; /* the Logs terminal, the darkest surface */
   --scrim: rgba(0, 0, 0, 0.5); /* behind a dialog */
 
   /* Ink */
   --ink: #f4f4f5;
   --ink-2: #a0a0a6; /* secondary */
-  --ink-3: #6e7078; /* labels and meta */
+  --ink-3: #93969e; /* labels and meta; 4.9:1 or better on every surface */
 
   /* The only accent: primary action, selection, progress, focus ring, healthy */
   --accent: #f47521;
   --accent-hover: #ff8638;
+  --accent-top: #f98135; /* a quiet highlight at the top of a primary button */
   --accent-press: #dd6512;
   --accent-tint: rgba(244, 117, 33, 0.13);
   --accent-wash: rgba(244, 117, 33, 0.055); /* a selected row */
@@ -36,6 +38,11 @@
 
   --danger: #ff6a5f; /* Uninstall */
   --danger-hover: #ff8077;
+  --ring-danger: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --danger-wash: rgba(255, 106, 95, 0.1); /* an outlined danger button on hover */
+  --danger-edge: inset 0 0 0 1px rgba(255, 106, 95, 0.18); /* the Uninstall card */
+  --danger-ring-outline: inset 0 0 0 1px rgba(255, 106, 95, 0.4);
+  --danger-ring-outline-hover: inset 0 0 0 1px rgba(255, 106, 95, 0.6);
 
   /* Window chrome */
   --caption-hover: rgba(255, 255, 255, 0.06);
@@ -50,7 +57,20 @@
   --ring-card: 0 0 0 1px rgba(255, 255, 255, 0.065), 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
   --ring-button: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.35);
   --ring-overlay: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 32px rgba(0, 0, 0, 0.5);
-  --ring-primary: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(244, 117, 33, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ring-primary: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --primary-divider: rgba(11, 11, 12, 0.14); /* split action separator */
+  --primary-hover-wash: rgba(255, 255, 255, 0.1);
+  --primary-press-wash: rgba(11, 11, 12, 0.08);
+
+  /* Secondary and ghost buttons: a faint fill inside a 1px ring, lifting on hover */
+  --control: rgba(255, 255, 255, 0.055);
+  --control-hover: rgba(255, 255, 255, 0.09);
+  --ghost-hover: rgba(255, 255, 255, 0.055);
+  --ring-control: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 1px 2px rgba(0, 0, 0, 0.16);
+  --ring-subtle: inset 0 0 0 1px rgba(255, 255, 255, 0.045); /* a selected nav item, a switch track */
+  --knob-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --sheen: rgba(255, 255, 255, 0.22); /* the light that sweeps across a progress bar */
+  --ring-control-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
   /* Type: Geist for the UI, Geist Mono for paths, versions, numbers and keycaps */
   --sans: 'Geist Variable', system-ui, sans-serif;
@@ -78,12 +98,15 @@
   /* Radius */
   --r-chip: 6px;
   --r-control: 8px;
+  --r-button: 10px; /* buttons sit a touch rounder than the controls they sit beside */
   --r-card: 10px;
   --r-window: 8px; /* what Windows 11 imposes */
 
   /* Layout */
-  --window-width: 880px; /* the smallest the window gets */
-  --window-height: 580px;
+  --window-width: 1000px; /* the default app and browser preview size */
+  --window-height: 680px;
+  --window-min-width: 880px;
+  --window-min-height: 600px;
   --content-max: 720px; /* the pane's column once the window grows wider */
   --content-max-height: 880px; /* and once it grows taller, centred */
   /* The pane's side padding: 32px, growing to centre the column in a wide window. */

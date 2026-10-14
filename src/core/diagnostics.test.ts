@@ -4,6 +4,8 @@ import { PlatformError } from './platform'
 import { createFakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { PROFILE_MANIFEST } from '../platform/contentFixture'
+import { collectDiagnostics } from './diagnostics'
+import { dataPaths, readDeployment } from './deployment'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -71,6 +73,22 @@ it('checks current file bytes and game version rather than copying the old healt
   expect(platform.clipboard).toContain('Health check: Drift')
   expect(platform.clipboard).toContain('Drift: winmm.dll')
   expect(platform.clipboard).toContain('Actual: e43fc7c4f19085e3af24d5bbbbaef088056e63d8420a7ff015d71a70657bd6c0')
+})
+
+it('collecting diagnostics from an older UI snapshot never persists its health stamps over a newer journal', async () => {
+  const { platform, core } = await deployed()
+  const stale = core.getState()
+  const current = (await readDeployment(platform, ROOT))!
+  current.contentVersion = '2026.10.13'
+  current.profile = 'balanced'
+  const path = (await dataPaths(platform, ROOT)).record
+  const text = JSON.stringify(current, null, 2)
+  await platform.writeText(path, text)
+  platform.setModifiedTime(`${GAME}\\winmm.dll`, 1000)
+  await platform.writeText(`${GAME}\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  const diagnostics = await collectDiagnostics(platform, stale, '0.1.0', 'stable')
+  expect(diagnostics).toContain('Health check: Healthy')
+  expect(await platform.readText(path)).toBe(text)
 })
 
 it('does not open an issue when Windows refuses to copy diagnostics', async () => {

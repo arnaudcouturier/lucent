@@ -57,7 +57,8 @@ it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update', 'switc
   expect(platform.downloads).toEqual(downloads)
 })
 
-it('stops uninstall and preserves recovery when XIV starts between game writes', async () => {
+// Game writes go in batches and the check runs before each one, so XIV starting during a batch stops the next.
+it('stops uninstall and preserves recovery when XIV starts between batches of game writes', async () => {
   const m = fixture()
   const platform = createFakePlatform(m)
   const core = createCore(platform)
@@ -72,7 +73,7 @@ it('stops uninstall and preserves recovery when XIV starts between game writes',
     if (path.startsWith(GAME)) { removed.push(path); m.gameRunning = true }
   }
   await core.uninstall()
-  expect(removed).toHaveLength(1)
+  expect(removed.length).toBeGreaterThan(0)
   expect(core.getState().recoveryRequired).toBe(true)
   m.gameRunning = false
   platform.removeFile = remove
@@ -104,6 +105,28 @@ it('asks once for a non-writable game folder and resumes deployment with the sam
   expect(await platform.readText(`${game}\\winmm.dll`)).toBe('OptiScaler')
   expect(await platform.listFiles(game)).not.toContain('reshade64.dll')
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
+})
+
+it('keeps the reviewed takeover paths through elevation instead of authorizing files found by the elevated Scan', async () => {
+  const m = machine(fixture(), { readOnlyDirectories: [GAME], files: { [`${GAME}\\winmm.dll`]: 'Reviewed user file' } })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review(false)
+  await core.deploy()
+  expect(platform.elevationRequests).toHaveLength(1)
+  const resume = JSON.parse(await platform.readText(platform.elevationRequests[0]))
+  expect(resume.request.reviewedPaths).toContain('winmm.dll')
+  m.elevated = true
+  await platform.writeText(`${GAME}\\dxgi.dll`, 'Unreviewed ReShade')
+  await platform.writeText(`${GAME}\\ReShade.ini`, '[GENERAL]\n')
+  const resumed = createCore(platform)
+  await resumed.scan()
+  expect(resumed.getState()).toMatchObject({ activity: { kind: 'scan' }, deployment: null, plan: null })
+  expect(resumed.getState().error).toMatch(/dxgi.dll.*Run Scan again/)
+  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('Reviewed user file')
+  expect(await platform.readText(`${GAME}\\dxgi.dll`)).toBe('Unreviewed ReShade')
+  expect(platform.downloads).toHaveLength(0)
 })
 
 it.each(['repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {

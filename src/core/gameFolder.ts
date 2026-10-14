@@ -12,7 +12,7 @@ export interface GameFolder {
   version: string | null
 }
 
-const STEAM_APP_ID = '39210'
+export const STEAM_APP_ID = '39210'
 
 /** The DX11 game executable, relative to the game folder. Its presence is what makes a folder the game folder. */
 export const GAME_EXECUTABLE = 'game\\ffxiv_dx11.exe'

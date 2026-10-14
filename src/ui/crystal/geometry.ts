@@ -1,4 +1,4 @@
-// Original Ember silhouette: an irregular spire, a floating cluster, and plain studded hoops.
+// Original Ember silhouette: an irregular spire, a floating cluster, and two orbiting shards.
 // Coordinates are in world units; the renderer projects them into a small canvas.
 export type Vec3 = [number, number, number]
 export type Point = [number, number]
@@ -74,10 +74,8 @@ export const CLUSTER = [
   mesh: SATELLITE,
   transform: compose(scale(c.size), rotateY(c.spin), rotateZ(-c.lean), move([c.radius, c.y, 0]), rotateY(c.azimuth)),
 }))
-export const RINGS = [
-  { radius: 1.12, y: 0, tilt: 0.3, precession: 0.22, spin: 0.5, width: 0.08, phase: 0.6, studs: 6 },
-  { radius: 0.6, y: 1.02, tilt: -0.42, precession: -0.36, spin: -0.8, width: 0.045, phase: 2.2, studs: 4 },
-]
+/** The tilted, precessing path the two shards follow around the spire; nothing draws the path itself. */
+export const ORBIT = { radius: 1.14, tilt: 0.3, precession: 0.22, speed: 0.3, phase: 0.6 }
 
 export function hull(points: Point[]): Point[] {
   const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])

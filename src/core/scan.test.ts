@@ -185,10 +185,16 @@ describe('The state is observable', () => {
     const seen: string[] = []
     const unsubscribe = core.subscribe(() => seen.push(core.getState().gameFolder.status))
 
-    platform.hold()
+    let started!: () => void
+    let release!: () => void
+    const running = new Promise<void>((resolve) => { started = resolve })
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const processCheck = platform.isGameRunning.bind(platform)
+    platform.isGameRunning = async () => { started(); await held; return processCheck() }
     const scanning = core.scan()
+    await running
     expect(core.getState().gameFolder).toEqual({ status: 'scanning' })
-    platform.release()
+    release()
     await scanning
     unsubscribe()
     const notifications = seen.length
@@ -244,6 +250,22 @@ describe('The player picks the game folder', () => {
     await core.chooseGameFolder()
 
     expect(core.getState()).toMatchObject({ gameFolder: { status: 'found', path: 'F:\\Second copy', source: 'picked' }, rejectedFolder: null })
+  })
+
+  it('remembers a picked folder on later Scans, ahead of the folder auto-detection finds', async () => {
+    const platform = createFakePlatform(machine(xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), vanillaGame('F:\\Second copy')))
+    const core = createCore(platform)
+    await core.scan()
+    platform.answerPicker('F:\\Second copy')
+    await core.chooseGameFolder()
+
+    const reopened = createCore(platform)
+    await reopened.scan()
+    expect(reopened.getState()).toMatchObject({ gameFolder: { status: 'found', path: 'F:\\Second copy', source: 'picked' }, error: null })
+    // A channel change rescans nothing, and the next Scan still returns to the pick.
+    await reopened.setChannel('beta')
+    await reopened.scan()
+    expect(reopened.getState()).toMatchObject({ gameFolder: { status: 'found', path: 'F:\\Second copy', source: 'picked' }, channel: 'beta' })
   })
 
   it('forgets an earlier refusal when Scan runs again', async () => {

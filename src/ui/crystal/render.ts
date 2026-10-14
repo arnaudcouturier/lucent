@@ -1,5 +1,5 @@
 import type { CrystalState } from '../../core/crystal'
-import { CLUSTER, RINGS, SHARD, SPIRE, TAU, compose, cross, dot, hull, move, normalize, rotateX, rotateY, rotateZ, scale, subtract, type Mesh, type Point, type Transform, type Vec3 } from './geometry'
+import { CLUSTER, ORBIT, SHARD, SPIRE, TAU, compose, cross, dot, hull, move, normalize, rotateX, rotateY, rotateZ, scale, subtract, type Mesh, type Point, type Transform, type Vec3 } from './geometry'
 import { ACCENT_COLOR, GLASS_EDGE, LIGHT_COLOR, LIT_EDGE, WARM_COLOR, shade, type Material } from './materials'
 
 export const WIDTH = 248
@@ -11,27 +11,26 @@ const LIGHT = normalize([-0.45, 0.65, 0.62])
 const HALF_LIGHT = normalize([LIGHT[0], LIGHT[1], LIGHT[2] + 1])
 const DARK_FACETS = new Set([2, 9, 13, 20, 26, 31])
 
-/** Separate phases avoid jumps when speed changes and let the small ring stall in place. */
+/** Separate phases avoid jumps when speed changes. `fill` is the light level on screen, easing toward progress. */
 export interface Motion {
   spin: number
-  largeRing: number
-  smallRing: number
-  smallFloat: number
+  orbit: number
   float: number
   effects: number
   fall: number
+  fill: number
 }
-export const initialMotion = (): Motion => ({ spin: 0.5, largeRing: 0, smallRing: 0, smallFloat: 0, float: 0, effects: 0, fall: 0 })
+export const initialMotion = (): Motion => ({ spin: 0.5, orbit: 0, float: 0, effects: 0, fall: 0, fill: 0 })
+
+/** The fill's time constant: progress arrives in steps, and the light glides between them. */
+const FILL_EASE_SECONDS = 0.45
 
 export function advanceMotion(motion: Motion, seconds: number, state: CrystalState) {
+  motion.fill = state.mode === 'fill' ? motion.fill + (state.fill - motion.fill) * (1 - Math.exp(-seconds / FILL_EASE_SECONDS)) : 0
   if (state.mode === 'disabled') return
   const pace = state.mode === 'busy' ? 3.2 : state.mode === 'drift' ? 0.35 : 1
   motion.spin += seconds * 0.16 * pace
-  motion.largeRing += seconds * pace
-  if (state.mode !== 'drift') {
-    motion.smallRing += seconds * pace
-    motion.smallFloat += seconds
-  }
+  motion.orbit += seconds * pace
   motion.float += seconds
   motion.effects += seconds
   motion.fall = state.mode === 'drift' ? Math.min(1, motion.fall + seconds / 0.9) : 0
@@ -120,8 +119,7 @@ function glow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, r
 export function drawCrystal(ctx: CanvasRenderingContext2D, state: CrystalState, motion: Motion) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   const glass = state.mode === 'glass' || state.mode === 'scan' || state.mode === 'disabled' || state.mode === 'fill'
-  const material: Material = glass ? 'glass' : 'ember'
-  const metal: Material = state.mode === 'disabled' ? 'steel' : 'gold'
+  const material: Material = state.mode === 'disabled' ? 'steel' : glass ? 'glass' : 'ember'
   const bob = Math.sin(motion.float * 0.9) * 0.035
   const world = (local: Transform) => compose(local, rotateY(motion.spin), move([0, bob, 0]))
   const main = place(SPIRE, world((point) => point), state.mode === 'drift' ? DARK_FACETS : undefined)
@@ -129,84 +127,40 @@ export function drawCrystal(ctx: CanvasRenderingContext2D, state: CrystalState, 
   const facets = [main, ...cluster].flatMap((mesh) => mesh.facets).sort((a, b) => a.depth - b.depth)
   const outline = hull(main.points)
   const top = main.points[0], bottom = main.points[main.points.length - 1]
-  const fillY = bottom[1] - (bottom[1] - top[1] + 6) * state.fill
-  const core = state.mode === 'drift' ? 0.45 : state.mode === 'fill' ? state.fill : glass ? 0 : 0.9
+  const fill = state.mode === 'fill' ? Math.min(1, Math.max(0, motion.fill)) : 0
+  const fillY = bottom[1] - (bottom[1] - top[1] + 6) * fill
+  const core = state.mode === 'drift' ? 0.45 : state.mode === 'fill' ? fill : glass ? 0 : 0.9
   const breathe = 0.9 + 0.1 * Math.sin(motion.effects * TAU / 5)
   if (core > 0) {
     glow(ctx, main.center[0], main.center[1], SIZE * 1.5, SIZE * 1.9, core * 0.16 * breathe)
     glow(ctx, CENTER[0], CENTER[1] + SIZE * 1.25, SIZE * 0.7, SIZE * 0.08, core * 0.2)
   }
   if (state.mode === 'update') {
-    const pulse = (motion.effects % 2.8) / 2.8
-    ctx.beginPath()
-    ctx.ellipse(main.center[0], main.center[1], SIZE * (1 + pulse * 0.55), SIZE * (1.4 + pulse * 0.65), 0, 0, TAU)
-    ctx.strokeStyle = WARM_COLOR
-    ctx.lineWidth = 1
-    ctx.globalAlpha = (1 - pulse) * 0.6
-    ctx.stroke()
-    ctx.globalAlpha = 1
+    // An available update swells the light instead of drawing a ring around the crystal.
+    const swell = 0.5 - 0.5 * Math.cos(motion.effects * TAU / 2.8)
+    glow(ctx, main.center[0], main.center[1], SIZE * (1.55 + swell * 0.3), SIZE * (1.95 + swell * 0.35), 0.05 + swell * 0.12)
   }
 
+  // Two shards ride an unseen orbit that precesses around the spire.
   const layers: Layer[] = []
-  RINGS.forEach((ring, ringIndex) => {
-    const phase = ringIndex === 0 ? motion.largeRing : motion.smallRing
-    const beta = ring.phase + phase * ring.precession
-    const spin = phase * ring.spin
-    // The small hoop's complete transform stays fixed on drift, including its vertical position.
-    const ringBob = ringIndex === 1 ? Math.sin(motion.smallFloat * 0.9) * 0.035 : bob
-    const transform = compose(rotateX(ring.tilt), rotateY(beta), move([0, ring.y + ringBob, 0]))
-    const pointAt = (angle: number) => camera(transform([Math.cos(angle) * ring.radius, 0, Math.sin(angle) * ring.radius]))
-    const segments = 56
-    for (let i = 0; i < segments; i++) {
-      const a = pointAt(i * TAU / segments), b = pointAt((i + 1) * TAU / segments)
-      const start = project(a), end = project(b)
-      const depth = (a[2] + b[2]) / 2
-      const brightness = 0.28 + 0.5 * Math.max(0, Math.cos(i * TAU / segments - beta - 0.4)) + (depth > 0 ? 0.12 : 0)
-      layers.push({ depth, paint() {
-        const dx = end[0] - start[0], dy = end[1] - start[1], length = Math.hypot(dx, dy) || 1
-        ctx.beginPath()
-        ctx.moveTo(start[0] - dx / length * 0.4, start[1] - dy / length * 0.4)
-        ctx.lineTo(end[0] + dx / length * 0.4, end[1] + dy / length * 0.4)
-        ctx.strokeStyle = shade(metal, brightness)
-        ctx.lineWidth = ring.width * SIZE * 5 / (5 - depth)
-        ctx.lineCap = 'butt'
-        ctx.stroke()
-      } })
-    }
-    for (let i = 0; i < ring.studs; i++) {
-      const angle = spin + i * TAU / ring.studs
-      const position = pointAt(angle), point = project(position), tangent = project(pointAt(angle + 0.05))
-      const rotation = Math.atan2(tangent[1] - point[1], tangent[0] - point[0])
-      const size = ring.width * SIZE * 5 / (5 - position[2])
-      layers.push({ depth: position[2] + 0.001, paint() {
+  const orbit = compose(rotateX(ORBIT.tilt), rotateY(ORBIT.phase + motion.orbit * ORBIT.precession), move([0, bob, 0]))
+  const pointAt = (angle: number) => camera(orbit([Math.cos(angle) * ORBIT.radius, 0, Math.sin(angle) * ORBIT.radius]))
+  for (let i = 0; i < 2; i++) {
+    const angle = motion.orbit * ORBIT.speed + 0.6 + i * Math.PI
+    const fall = state.mode === 'drift' && i === 0 ? motion.fall : 0
+    const shard = place(SHARD, compose(scale(0.22), rotateY(motion.orbit * 1.4), rotateZ(-0.55 + fall * 1.45), move([ORBIT.radius + fall * 0.25, 0.05 - fall * 1.05, 0]), rotateY(-angle), orbit))
+    layers.push({ depth: pointAt(angle)[2], paint() {
+      for (const facet of shard.facets.sort((a, b) => a.depth - b.depth)) paintFacet(ctx, facet, fall > 0 ? 'dark' : material)
+      if (fill > 0) {
         ctx.save()
-        ctx.translate(...point)
-        ctx.rotate(rotation)
-        polygon(ctx, [[-size * 1.15, 0], [0, -size * 0.7], [size * 1.15, 0], [0, size * 0.7]])
-        ctx.fillStyle = shade(metal, position[2] > 0 ? 0.92 : 0.45)
-        ctx.fill()
+        ctx.beginPath()
+        ctx.rect(0, fillY, WIDTH, HEIGHT)
+        ctx.clip()
+        for (const facet of shard.facets) paintFacet(ctx, facet, 'ember')
         ctx.restore()
-      } })
-    }
-    if (ringIndex === 0) {
-      for (let i = 0; i < 2; i++) {
-        const angle = spin * 0.6 + 0.6 + i * Math.PI
-        const fall = state.mode === 'drift' && i === 0 ? motion.fall : 0
-        const shard = place(SHARD, compose(scale(0.22), rotateY(phase * 1.4), rotateZ(-0.55 + fall * 1.45), move([ring.radius + 0.02 + fall * 0.25, 0.05 - fall * 1.05, 0]), rotateY(-angle), transform))
-        layers.push({ depth: pointAt(angle)[2], paint() {
-          for (const facet of shard.facets.sort((a, b) => a.depth - b.depth)) paintFacet(ctx, facet, fall > 0 ? 'dark' : material)
-          if (state.mode === 'fill' && state.fill > 0) {
-            ctx.save()
-            ctx.beginPath()
-            ctx.rect(0, fillY, WIDTH, HEIGHT)
-            ctx.clip()
-            for (const facet of shard.facets) paintFacet(ctx, facet, 'ember')
-            ctx.restore()
-          }
-        } })
       }
-    }
-  })
+    } })
+  }
   layers.sort((a, b) => a.depth - b.depth)
   for (const layer of layers) if (layer.depth < 0) layer.paint()
 
@@ -228,7 +182,7 @@ export function drawCrystal(ctx: CanvasRenderingContext2D, state: CrystalState, 
   }
   ctx.restore()
   paintBody(true, material)
-  if (state.mode === 'fill' && state.fill > 0) {
+  if (fill > 0) {
     ctx.save()
     ctx.beginPath()
     ctx.rect(0, fillY, WIDTH, HEIGHT)
@@ -237,7 +191,7 @@ export function drawCrystal(ctx: CanvasRenderingContext2D, state: CrystalState, 
     paintBody(true, 'ember')
     ctx.restore()
   }
-  if (state.mode === 'scan' || (state.mode === 'fill' && state.fill > 0 && state.fill < 1)) {
+  if (state.mode === 'scan' || (fill > 0 && fill < 0.999)) {
     ctx.save()
     polygon(ctx, outline)
     ctx.clip()

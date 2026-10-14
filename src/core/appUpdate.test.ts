@@ -127,10 +127,16 @@ it('replaces and relaunches the verified executable, cleaning the previous one a
   const platform = createFakePlatform(appReleaseHost())
   const core = createCore(platform)
   await core.scan()
-  platform.hold()
+  let started!: () => void
+  let release!: () => void
+  const downloading = new Promise<void>((resolve) => { started = resolve })
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const download = platform.downloadFile.bind(platform)
+  platform.downloadFile = async (url, to, progress) => { started(); await held; return download(url, to, progress) }
   const updating = core.updateApp()
+  await downloading
   expect(statusCard(core.getState())).toEqual({ kind: 'busy', operation: 'app-update', progress: 0 })
-  platform.release()
+  release()
   await updating
   expect(core.getState()).toMatchObject({ error: null, busy: false })
   expect(await platform.readText(FAKE_EXE_PATH)).toBe(APP_EXE_TEXT)

@@ -1,4 +1,4 @@
-import { assertGamePath, validateManifest, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanStep } from './planner'
@@ -57,7 +57,8 @@ export interface DeploymentRecord {
   backupFolder?: string
 }
 export type DeploymentPhase = 'downloading' | 'backing-up' | 'applying' | 'checking'
-export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null }
+/** `done` of `total` counts bytes while downloading, and files in every other phase. */
+export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null; done?: number; total?: number }
 
 export function failureReason(error: unknown): string {
   if (error instanceof PlatformError) {
@@ -75,6 +76,7 @@ export function failureReason(error: unknown): string {
 }
 
 export class DeploymentError extends Error {
+  readonly needsScan: boolean
   constructor(error: unknown, readonly recoveryRequired: boolean, recoveryError?: unknown) {
     const reason = failureReason(error)
     // XIV starting mid-install blocks both the step and its undo; say so once.
@@ -83,7 +85,22 @@ export class DeploymentError extends Error {
       ? `Recovery could not finish.${recovery} Keep Lucent’s journal and backups; try recovery again once the problem is resolved.`
       : 'Lucent restored the game folder to how it was before.'}`)
     this.name = 'DeploymentError'
+    this.needsScan = error instanceof UnreviewedFilesError
   }
+}
+
+/** First-deployment takeovers must have appeared in Scan; a live rescan cannot authorize more. */
+export class UnreviewedFilesError extends Error {
+  constructor(paths: string[]) {
+    super(`${paths.length ? `Protecting a user file: ${paths.join(', ')}. ` : ''}The game folder changed since Scan. Run Scan again to review its files before installing.`)
+    this.name = 'UnreviewedFilesError'
+  }
+}
+
+export function assertReviewedTakeovers(plan: Plan, reviewedPaths: readonly string[]) {
+  const reviewed = new Set(reviewedPaths.map(fileKey))
+  const unexpected = plan.filesToBackup.filter((path) => !reviewed.has(fileKey(path)))
+  if (unexpected.length) throw new UnreviewedFilesError(unexpected)
 }
 
 async function hashText(text: string): Promise<string> {
@@ -131,14 +148,13 @@ async function removeReadableBackup(platform: Platform, record: DeploymentRecord
     const folder = joinPath(readableBackups, record.backupFolder)
     if (!await maybeStat(platform, folder)) return
     const files = await platform.listFiles(folder)
-    for (const relative of files) await platform.removeFile(joinPath(folder, relative))
+    await platform.removeMany(files.map((relative) => joinPath(folder, relative)))
     const directories = new Set(files.flatMap((relative) => {
       const parts = joinPath(relative).split('\\')
       return parts.slice(1).map((_, i) => parts.slice(0, i + 1).join('\\'))
     }))
-    for (const relative of [...directories].sort((a, b) => b.split('\\').length - a.split('\\').length)) await platform.removeDirectoryIfEmpty(joinPath(folder, relative))
-    await platform.removeDirectoryIfEmpty(folder)
-    await platform.removeDirectoryIfEmpty(readableBackups)
+    await platform.removeDirectoriesIfEmpty([...[...directories].sort((a, b) => b.split('\\').length - a.split('\\').length)
+      .map((relative) => joinPath(folder, relative)), folder, readableBackups])
   } catch { /* Leftover copies are harmless, and the next deployment of this folder replaces them. */ }
 }
 
@@ -213,6 +229,8 @@ export async function recoverDeployments(platform: Platform, beforeRecovery?: (r
   const recovered: DeploymentRecord[] = []
   for await (const record of deploymentRecords(platform)) {
     if (record.status !== 'applying') continue
+    // A game folder that no longer holds the game has nothing to restore into; leave its record for Scan to report.
+    if (!await isGameFolder(platform, record.gameFolder)) continue
     await beforeRecovery?.(record)
     await undoDeployment(platform, record)
     recovered.push(record)
@@ -258,14 +276,12 @@ export async function lostDeployment(platform: Platform): Promise<DeploymentReco
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {
   const root = joinPath(gameFolder, 'game')
   const files = await platform.listFiles(root)
-  for (const relative of files) await platform.resolveGamePath(root, relative)
+  await platform.resolveGamePaths(root, files)
   const { cache } = await dataPaths(platform, gameFolder)
-  const cachedFiles: string[] = []
-  for (const file of content.files) {
-    const path = joinPath(cache, file.sha256)
-    const stat = await maybeStat(platform, path)
-    if (stat?.kind === 'file' && stat.size === file.size && await platform.hashFile(path) === file.sha256) cachedFiles.push(file.sha256)
-  }
+  const stats = await platform.statMany(content.files.map((file) => joinPath(cache, file.sha256)))
+  const sized = content.files.filter((file, i) => stats[i]?.kind === 'file' && stats[i]!.size === file.size)
+  const hashes = await platform.hashMany(sized.map((file) => joinPath(cache, file.sha256)))
+  const cachedFiles = sized.filter((file, i) => hashes[i] === file.sha256).map((file) => file.sha256)
   const ownedFiles = record?.status === 'complete' ? Object.keys(record.files) : []
   return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, files, ownedFiles) }
 }
@@ -275,9 +291,55 @@ export function releaseAsset(file: ContentVersion['files'][number]): string {
 }
 
 async function undoDirectories(platform: Platform, gameFolder: string, created: string[]) {
+  if (!created.length) return
   const root = joinPath(gameFolder, 'game')
   const directories = [...created].sort((a, b) => b.split('/').length - a.split('/').length)
-  for (const relative of directories) await platform.removeDirectoryIfEmpty(await platform.resolveGamePath(root, relative))
+  await platform.removeDirectoriesIfEmpty(await platform.resolveGamePaths(root, directories))
+}
+
+/**
+ * Journal entries and game files handled per batch. A batch amortises the round trips, the game check and the
+ * durable checkpoint across many files, which is most of what an install or uninstall of a thousand files costs.
+ */
+const FILE_BATCH = 96
+
+/**
+ * Undoes these journal entries, whose paths are all different, so their files can be put back together: each one is
+ * removed if the step created it, or restored from its verified backup. The checks are the sequential undo's.
+ */
+async function undoEntries(platform: Platform, record: DeploymentRecord, backups: string, indices: number[]) {
+  const work: { relative: string; before: string | null; after: string | null | undefined }[] = []
+  for (const index of indices) {
+    const entry = record.journal[index]
+    // A carried-over preset is a user file once the deployment is complete; only a failed deployment takes it back.
+    if (record.uninstalling && entry.step.kind === 'carry') continue
+    for (const [relative, before] of Object.entries(entry.before).reverse()) work.push({ relative, before, after: entry.after[relative] })
+  }
+  if (!work.length) return
+  const targets = await platform.resolveGamePaths(joinPath(record.gameFolder, 'game'), work.map((w) => w.relative))
+  const stats = await platform.statMany(targets)
+  const hashes = await platform.hashMany(targets.filter((_, k) => stats[k]))
+  let hashed = 0
+  const removals: string[] = []
+  const restores: { relative: string; target: string; backup: string; replace: boolean }[] = []
+  work.forEach(({ relative, before, after }, k) => {
+    const current = stats[k] ? hashes[hashed++] : null
+    if (current === before) return
+    if (current !== after) {
+      if (!record.uninstalling) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
+      // A file Lucent added stays Lucent's even after a mod rewrites it; a replaced original is newer than the deployment.
+      if (before !== null && current !== null) return
+    }
+    if (before === null) removals.push(targets[k])
+    else restores.push({ relative, target: targets[k], backup: before, replace: current !== null })
+  })
+  const backupHashes = [...new Set(restores.map((r) => r.backup))]
+  const verified = await platform.hashMany(backupHashes.map((hash) => joinPath(backups, hash)))
+  backupHashes.forEach((hash, k) => {
+    if (verified[k] !== hash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${restores.find((r) => r.backup === hash)!.relative}`)
+  })
+  await platform.removeMany(removals)
+  await platform.copyMany(restores.map((r) => ({ from: joinPath(backups, r.backup), to: r.target, replace: r.replace })), parentPath(record.gameFolder))
 }
 
 export async function undoDeployment(platform: Platform, record: DeploymentRecord): Promise<void> {
@@ -285,40 +347,32 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   const paths = await dataPaths(platform, record.gameFolder)
   const root = joinPath(record.gameFolder, 'game')
   const start = record.changeStart ?? 0
-  // Flipping a preallocated byte needs no free space, so a full data disk cannot stop the undo.
-  const checkpoint = (entry: number | 'all') => record.undoCheckpoints && start === 0
-    ? platform.writeFileByte(checkpointsPath(paths.record, record.undoCheckpoints.id), entry === 'all' ? record.undoCheckpoints.size - 1 : entry, UNDONE)
+  // Flipping preallocated bytes needs no free space, so a full data disk cannot stop the undo.
+  const checkpoint = (entries: number[] | 'all') => record.undoCheckpoints && start === 0
+    ? platform.writeFileBytes(checkpointsPath(paths.record, record.undoCheckpoints.id), entries === 'all' ? [record.undoCheckpoints.size - 1] : entries, UNDONE)
     : platform.writeText(paths.record, JSON.stringify(record, null, 2))
-  if (record.uninstalling) {
-    for (const path of record.generatedFiles ?? []) {
-      const target = await platform.resolveGamePath(root, path)
-      if ((await maybeStat(platform, target))?.kind === 'file') await platform.removeFile(target)
-    }
+  if (record.uninstalling && record.generatedFiles?.length) {
+    const targets = await platform.resolveGamePaths(root, record.generatedFiles)
+    const stats = await platform.statMany(targets)
+    await platform.removeMany(targets.filter((_, i) => stats[i]?.kind === 'file'))
   }
-  for (let i = record.journal.length - 1; i >= start; i--) {
-    const entry = record.journal[i]
-    if (entry.undone) continue
-    // A carried-over preset is a user file once the deployment is complete; only a failed deployment takes it back.
-    const keep = record.uninstalling && entry.step.kind === 'carry'
-    for (const [relative, before] of keep ? [] : Object.entries(entry.before).reverse()) {
-      const target = await platform.resolveGamePath(root, relative)
-      const stat = await maybeStat(platform, target)
-      const current = stat ? await platform.hashFile(target) : null
-      if (current === before) continue
-      if (current !== entry.after[relative]) {
-        if (!record.uninstalling) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
-        // A file Lucent added stays Lucent's even after a mod rewrites it; a replaced original is newer than the deployment.
-        if (before !== null && current !== null) continue
-      }
-      if (before === null) await platform.removeFile(target)
-      else {
-        const backup = joinPath(paths.backups, before)
-        if (await platform.hashFile(backup) !== before) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
-        await platform.copyFile(backup, target, current !== null, parentPath(record.gameFolder))
-      }
+  // Newest first, in batches whose entries touch different paths: within a batch no undo depends on another.
+  // A batch interrupted before its checkpoint is simply undone again, since an undone file already matches `before`.
+  for (let i = record.journal.length - 1; i >= start;) {
+    const batch: number[] = []
+    const touched = new Set<string>()
+    for (; i >= start && batch.length < FILE_BATCH; i--) {
+      const entry = record.journal[i]
+      if (entry.undone) continue
+      const keys = Object.keys(entry.before).map(fileKey)
+      if (keys.some((key) => touched.has(key))) break
+      for (const key of keys) touched.add(key)
+      batch.push(i)
     }
-    entry.undone = true
-    await checkpoint(i)
+    if (!batch.length) continue
+    await undoEntries(platform, record, paths.backups, batch)
+    for (const index of batch) record.journal[index].undone = true
+    await checkpoint(batch)
   }
   if (record.changeStart !== undefined) {
     record.journal.length = start
@@ -337,13 +391,14 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
 export async function deployContent(
   platform: Platform, gameFolder: string, content: ContentVersion, signatures: ExistingSetupSignature[], tier: Tier, includeReShade: boolean, profile: ProfileId | null,
-  graphics: GpuAdapter, source: ContentSource, report: (progress: DeploymentProgress) => void,
+  graphics: GpuAdapter, source: ContentSource, reviewedPaths: readonly string[], report: (progress: DeploymentProgress) => void, gameVersion: string | null = null,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const previous = await readDeployment(platform, gameFolder)
   if (previous && previous.status !== 'rolled-back') throw new Error('This game folder already has a deployment. Reopen Lucent to inspect it.')
   const scan = await scanDeployment(platform, gameFolder, content, null, signatures)
   const plan = planDeployment(content, tier, includeReShade, scan, profile)
+  assertReviewedTakeovers(plan, reviewedPaths)
   const paths = await dataPaths(platform, gameFolder)
   const present = new Set(scan.files.map(fileKey))
   const backupFolder = plan.filesToBackup.length ? await backupFolderName(platform, gameFolder) : undefined
@@ -366,13 +421,14 @@ export async function deployContent(
   await discardCheckpoints(platform, paths.record, previous?.undoCheckpoints)
   try {
     // Scan listed every file from before the deployment that it overwrites or removes; those are the only ones Lucent takes over.
-    const originals = new Set(plan.filesToBackup.map(fileKey))
-    const readable = backupFolder ? { folder: await readableBackupPath(platform, gameFolder, backupFolder), pending: new Set(originals) } : undefined
-    await applySteps({ platform, record, save, report, owned: originals, readable }, plan.steps)
+    const originals = new Set(reviewedPaths.map(fileKey))
+    if (backupFolder) await copyReadableBackup(platform, gameFolder, await readableBackupPath(platform, gameFolder, backupFolder), plan.filesToBackup, report)
+    await applySteps({ platform, record, save, report, owned: originals, firstDeployment: true, from: backupFolder ? 0.5 : 0.4 }, plan.steps)
     record.files = await stampFiles(platform, record, plan.expectedFiles, report)
     record.ownedConfigs = await readOwnedConfigs(platform, gameFolder, plan)
     // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
-    const complete: DeploymentRecord = { ...record, status: 'complete', undoCheckpoints: undefined }
+    // Every file was just hashed, so the record is healthy for this game version and the next check needn't hash again.
+    const complete: DeploymentRecord = { ...record, status: 'complete', undoCheckpoints: undefined, gameVersion }
     await platform.writeText(paths.record, JSON.stringify(complete, null, 2))
     await discardCheckpoints(platform, paths.record, record.undoCheckpoints)
     report({ phase: 'checking', progress: 1, file: null })
@@ -385,18 +441,145 @@ export async function deployContent(
   }
 }
 
-/** Downloads every planned file the cache lacks, verifying each, before the game folder changes. */
-async function cachePlannedFiles(platform: Platform, cache: string, plan: Plan, cachedFiles: string[], source: ContentSource, report: (progress: DeploymentProgress) => void) {
-  for (let i = 0; i < plan.files.length; i++) {
-    const file = plan.files[i]
-    const path = joinPath(cache, file.sha256)
-    report({ phase: 'downloading', progress: i / plan.files.length * 0.4, file: null })
-    if (!cachedFiles.includes(file.sha256)) await cacheFile(platform, cache, file, source, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / plan.files.length * 0.4, file: null }))
-    else if ((await platform.stat(path)).size !== file.size || await platform.hashFile(path) !== file.sha256) {
-      await platform.removeFile(path)
-      throw new PlatformError('hash-mismatch', 'A downloaded file failed its hash check. The game folder has not been changed.', path)
+/**
+ * Files fetched at once. A content version is about a thousand files, most a few kilobytes, so one at a time
+ * spends nearly all its time waiting on GitHub's per-file round trips; eight hide that without hammering it.
+ */
+const PARALLEL_DOWNLOADS = 8
+/** Waits before retrying a download that failed on the network; a dropped connection usually recovers at once. */
+const DOWNLOAD_RETRY_MS = [250, 1000]
+
+/** Runs `work` over the items, `limit` at a time. Stops starting new ones after a failure, and throws it once every running one has settled. */
+async function inParallel<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
+  let next = 0
+  let failure: { error: unknown } | null = null
+  const worker = async () => {
+    while (!failure && next < items.length) {
+      const item = items[next++]
+      try { await work(item) } catch (error) { failure ??= { error } }
     }
   }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  if (failure) throw (failure as { error: unknown }).error
+}
+
+/** Downloads files into the cache, several at once and the largest first, reporting the bytes received of their total. */
+async function downloadFiles(platform: Platform, cache: string, files: ContentFile[], source: ContentSource, progress: (received: number, total: number) => void) {
+  const unique = [...new Map(files.map((f) => [f.sha256, f])).values()].sort((a, b) => b.size - a.size)
+  const total = unique.reduce((sum, f) => sum + f.size, 0)
+  const received = new Map<string, number>()
+  let bytes = 0
+  progress(0, total)
+  await inParallel(unique, PARALLEL_DOWNLOADS, (file) => cacheFile(platform, cache, file, source, (count) => {
+    const now = Math.min(count, file.size)
+    bytes += now - (received.get(file.sha256) ?? 0)
+    received.set(file.sha256, now)
+    progress(bytes, total)
+  }))
+  await verifyCached(platform, cache, unique)
+}
+
+/** Checks cached files against their size and hash, a batch at a time, and removes the first damaged one it finds. */
+async function verifyCached(platform: Platform, cache: string, files: ContentFile[]) {
+  for (let i = 0; i < files.length; i += FILE_BATCH) {
+    const batch = files.slice(i, i + FILE_BATCH)
+    const paths = batch.map((file) => joinPath(cache, file.sha256))
+    const stats = await platform.statMany(paths)
+    const wrongSize = batch.findIndex((file, k) => stats[k]?.kind !== 'file' || stats[k]!.size !== file.size)
+    const hashes = wrongSize < 0 ? await platform.hashMany(paths) : []
+    const damaged = wrongSize >= 0 ? wrongSize : batch.findIndex((file, k) => hashes[k] !== file.sha256)
+    if (damaged >= 0) {
+      await platform.removeFile(paths[damaged])
+      throw new PlatformError('hash-mismatch', 'A downloaded file failed its hash check. The game folder has not been changed.', paths[damaged])
+    }
+  }
+}
+
+/** Downloads every planned file the cache lacks, verifying each, before the game folder changes. */
+async function cachePlannedFiles(platform: Platform, cache: string, plan: Plan, cachedFiles: string[], source: ContentSource, report: (progress: DeploymentProgress) => void) {
+  const cached = new Set(cachedFiles)
+  report({ phase: 'downloading', progress: 0, file: null })
+  await verifyCached(platform, cache, plan.files.filter((f) => cached.has(f.sha256)))
+  await downloadFiles(platform, cache, plan.files.filter((f) => !cached.has(f.sha256)), source, (done, total) => report({ phase: 'downloading', progress: total ? done / total * 0.4 : 0.4, file: null, done, total }))
+}
+
+/**
+ * A first deployment's readable backup: a copy of every original it will replace or remove, made before the first game
+ * write as its own stage. The journal backs each file up again, by hash, right before its step; uninstall uses only that.
+ */
+async function copyReadableBackup(platform: Platform, gameFolder: string, folder: string, originals: string[], report: (progress: DeploymentProgress) => void) {
+  const paths = await platform.resolveGamePaths(joinPath(gameFolder, 'game'), originals)
+  const stats = await platform.statMany(paths)
+  const copies = originals.flatMap((relative, i) => stats[i]?.kind === 'file' ? [{ from: paths[i], to: joinPath(folder, relative), replace: true }] : [])
+  for (let i = 0; i < copies.length; i += FILE_BATCH) {
+    report({ phase: 'backing-up', progress: 0.4 + i / copies.length * 0.1, file: null, done: i, total: copies.length })
+    await platform.copyMany(copies.slice(i, i + FILE_BATCH))
+  }
+}
+
+/** Records the directories these paths need that don't exist yet, before any step can create them. */
+async function recordCreatedDirectories(platform: Platform, record: DeploymentRecord, root: string, relatives: string[]) {
+  const known = new Set(record.createdDirectories!.map(fileKey))
+  const candidates: string[] = []
+  for (const relative of relatives) {
+    const parts = relative.replace(/\\/g, '/').split('/')
+    for (let length = 1; length < parts.length; length++) {
+      const directory = parts.slice(0, length).join('/')
+      if (!known.has(fileKey(directory))) { known.add(fileKey(directory)); candidates.push(directory) }
+    }
+  }
+  if (!candidates.length) return
+  const stats = await platform.statMany(await platform.resolveGamePaths(root, candidates))
+  candidates.forEach((directory, i) => { if (!stats[i]) record.createdDirectories!.push(directory) })
+}
+
+type FileStep = Extract<PlanStep, { kind: 'copy' | 'delete' }>
+const fileStepPath = (step: FileStep) => step.kind === 'copy' ? step.to : step.path
+
+/**
+ * Applies copies and deletions of different paths together: every file they replace or remove is hashed and backed up,
+ * all their intents are journaled in one durable write, then the files change at once. Recovery is unchanged: a
+ * journaled step that never ran still matches `before`, so undoing it does nothing.
+ */
+async function applyFileSteps({ platform, record, save, owned, firstDeployment }: Execution, batch: FileStep[]) {
+  const { gameFolder } = record
+  const { backups, cache } = await dataPaths(platform, gameFolder)
+  const root = joinPath(gameFolder, 'game')
+  const relatives = batch.map(fileStepPath)
+  relatives.forEach(assertGamePath)
+  await recordCreatedDirectories(platform, record, root, relatives)
+  const targets = await platform.resolveGamePaths(root, relatives)
+  const stats = await platform.statMany(targets)
+  stats.forEach((stat, i) => {
+    if (stat && (!owned.has(fileKey(relatives[i])) || stat.kind !== 'file')) throw firstDeployment
+      ? new UnreviewedFilesError([relatives[i]]) : new Error(`Protecting a user file: ${relatives[i]}. The folder changed since Review.`)
+  })
+  const hashes = await platform.hashMany(targets.filter((_, i) => stats[i]))
+  let hashed = 0
+  const before = stats.map((stat) => stat ? hashes[hashed++] : null)
+  // One backup per distinct content, verified before any intent relies on it.
+  const toBackUp = new Map<string, string>()
+  before.forEach((hash, i) => { if (hash && !toBackUp.has(hash)) toBackUp.set(hash, targets[i]) })
+  if (toBackUp.size) {
+    const items = [...toBackUp].map(([hash, from]) => ({ from, to: joinPath(backups, hash), replace: true }))
+    await platform.copyMany(items)
+    const verified = await platform.hashMany(items.map((item) => item.to))
+    ;[...toBackUp.keys()].forEach((hash, i) => {
+      if (verified[i] !== hash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relatives[before.indexOf(hash)]}`)
+    })
+  }
+  batch.forEach((step, i) => {
+    const entryBefore: JournalEntry['before'] = Object.create(null)
+    entryBefore[relatives[i]] = before[i]
+    record.journal.push({ step, before: entryBefore, after: { [relatives[i]]: step.kind === 'copy' ? step.file : null } })
+  })
+  await save()
+  await requireGameStopped(platform)
+  // Resolve again after the durable journal write, immediately before the files change.
+  const destinations = await platform.resolveGamePaths(root, relatives)
+  await platform.removeMany(destinations.filter((_, i) => batch[i].kind === 'delete'))
+  await platform.copyMany(batch.flatMap((step, i) => step.kind === 'copy' ? [{ from: joinPath(cache, step.file), to: destinations[i], replace: before[i] !== null }] : []), parentPath(gameFolder))
+  for (const relative of relatives) owned.add(fileKey(relative))
 }
 
 interface Execution {
@@ -407,79 +590,94 @@ interface Execution {
   report: (progress: DeploymentProgress) => void
   /** Game-folder paths Lucent may overwrite or remove; every other existing file is the player's. */
   owned: Set<string>
-  /** A first deployment also copies each original it backs up into the player's readable backup, once per path. */
-  readable?: { folder: string; pending: Set<string> }
+  /** A new user file during a first deployment returns the player to Scan after recovery. */
+  firstDeployment?: boolean
+  /** Where the steps start on the overall progress, which they carry to 0.8. */
+  from?: number
 }
 
 /** Applies planned steps through the journal: each intent and its verified backup are durable before the step. */
-async function applySteps({ platform, record, save, report, owned, readable }: Execution, steps: PlanStep[]) {
+async function applySteps(execution: Execution, steps: PlanStep[]) {
+  const { report, from = 0.4 } = execution
+  for (let i = 0; i < steps.length;) {
+    report({ phase: 'applying', progress: from + i / steps.length * (0.8 - from), file: null, done: i, total: steps.length })
+    // Consecutive copies and deletions of different paths don't depend on each other, so they run as a batch. Every
+    // other step reads what came before it (a rename, a config edit, a carried preset) and runs alone.
+    const batch: FileStep[] = []
+    const paths = new Set<string>()
+    for (let step = steps[i]; (step?.kind === 'copy' || step?.kind === 'delete') && !paths.has(fileKey(fileStepPath(step))) && batch.length < FILE_BATCH; step = steps[i + batch.length]) {
+      paths.add(fileKey(fileStepPath(step)))
+      batch.push(step)
+    }
+    if (batch.length) { await applyFileSteps(execution, batch); i += batch.length }
+    else { await applyStep(execution, steps[i]); i++ }
+  }
+}
+
+/** One step on its own, journaled with its verified backups before it takes effect. */
+async function applyStep({ platform, record, save, owned, firstDeployment }: Execution, step: PlanStep) {
   const { gameFolder } = record
   const { backups, cache } = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i]
-    const relatives = stepWritePaths(step)
-    const before: JournalEntry['before'] = Object.create(null)
-    report({ phase: 'backing-up', progress: 0.4 + i / steps.length * 0.4, file: relatives[0] })
-    for (const relative of relatives) {
-      assertGamePath(relative)
-      const parts = relative.replace(/\\/g, '/').split('/')
-      for (let length = 1; length < parts.length; length++) {
-        const directory = parts.slice(0, length).join('/')
-        if (!record.createdDirectories!.some((p) => fileKey(p) === fileKey(directory))
-          && !await maybeStat(platform, await platform.resolveGamePath(root, directory))) record.createdDirectories!.push(directory)
-      }
-      const path = await platform.resolveGamePath(root, relative)
-      const stat = await maybeStat(platform, path)
-      if (stat && (!owned.has(fileKey(relative)) || stat.kind !== 'file')) throw new Error(`Protecting a user file: ${relative}. The folder changed since Review.`)
-      before[relative] = stat ? await platform.hashFile(path) : null
-      if (before[relative]) {
-        const backup = joinPath(backups, before[relative]!)
-        await platform.copyFile(path, backup)
-        if (await platform.hashFile(backup) !== before[relative]) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
-        if (readable?.pending.delete(fileKey(relative))) await platform.copyFile(path, joinPath(readable.folder, relative), true)
-      }
+  const relatives = stepWritePaths(step)
+  const before: JournalEntry['before'] = Object.create(null)
+  for (const relative of relatives) assertGamePath(relative)
+  await recordCreatedDirectories(platform, record, root, relatives)
+  for (const relative of relatives) {
+    const path = await platform.resolveGamePath(root, relative)
+    const stat = await maybeStat(platform, path)
+    if (stat && (!owned.has(fileKey(relative)) || stat.kind !== 'file')) throw firstDeployment
+      ? new UnreviewedFilesError([relative]) : new Error(`Protecting a user file: ${relative}. The folder changed since Review.`)
+    before[relative] = stat ? await platform.hashFile(path) : null
+    if (before[relative]) {
+      const backup = joinPath(backups, before[relative]!)
+      await platform.copyFile(path, backup)
+      if (await platform.hashFile(backup) !== before[relative]) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relative}`)
     }
-    let configText: string | null = null
-    if (step.kind === 'ini_set') {
-      const config = readIni(await platform.readText(await platform.resolveGamePath(root, step.file)))
-      config.set(step.section, step.key, step.value)
-      configText = config.toString()
-    }
-    const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }
-      : step.kind === 'carry' ? { [step.to]: await platform.hashFile(await platform.resolveGamePath(root, step.from)) }
-      : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
-      : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) }
-      : step.kind === 'write' ? { [step.path]: await hashText(step.text) } : { [step.path]: null }
-    if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
-    record.journal.push({ step, before, after })
-    await save()
-    report({ phase: 'applying', progress: 0.4 + (i + 0.5) / steps.length * 0.4, file: relatives[0] })
-    await requireGameStopped(platform)
-    // Resolve again after the durable journal write, immediately before the mutation.
-    if (step.kind === 'carry') await platform.copyFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), false, parentPath(gameFolder))
-    else if (step.kind === 'copy') await platform.copyFile(joinPath(cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
-    else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
-    else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
-    else if (step.kind === 'write') await platform.writeText(await platform.resolveGamePath(root, step.path), step.text, parentPath(gameFolder))
-    else await platform.removeFile(await platform.resolveGamePath(root, step.path))
-    for (const relative of relatives) owned.add(fileKey(relative))
   }
+  let configText: string | null = null
+  if (step.kind === 'ini_set') {
+    const config = readIni(await platform.readText(await platform.resolveGamePath(root, step.file)))
+    config.set(step.section, step.key, step.value)
+    configText = config.toString()
+  }
+  const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }
+    : step.kind === 'carry' ? { [step.to]: await platform.hashFile(await platform.resolveGamePath(root, step.from)) }
+    : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
+    : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) }
+    : step.kind === 'write' ? { [step.path]: await hashText(step.text) } : { [step.path]: null }
+  if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
+  record.journal.push({ step, before, after })
+  await save()
+  await requireGameStopped(platform)
+  // Resolve again after the durable journal write, immediately before the mutation.
+  if (step.kind === 'carry') await platform.copyFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), false, parentPath(gameFolder))
+  else if (step.kind === 'copy') await platform.copyFile(joinPath(cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
+  else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
+  else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
+  else if (step.kind === 'write') await platform.writeText(await platform.resolveGamePath(root, step.path), step.text, parentPath(gameFolder))
+  else await platform.removeFile(await platform.resolveGamePath(root, step.path))
+  for (const relative of relatives) owned.add(fileKey(relative))
 }
 
 /** Checks every file the plan expects against the hash the journal last wrote there, and stamps it. */
 async function stampFiles(platform: Platform, record: DeploymentRecord, expectedFiles: Plan['expectedFiles'], report: (progress: DeploymentProgress) => void) {
   const root = joinPath(record.gameFolder, 'game')
+  const lastWrite = new Map<string, string | null>()
+  for (const entry of record.journal) for (const [path, hash] of Object.entries(entry.after)) lastWrite.set(fileKey(path), hash)
   const files: Record<string, FileStamp> = {}
-  for (let i = 0; i < expectedFiles.length; i++) {
-    const file = expectedFiles[i]
-    report({ phase: 'checking', progress: 0.8 + i / expectedFiles.length * 0.2, file: file.path })
-    const path = await platform.resolveGamePath(root, file.path)
-    const stamp = { ...await platform.stat(path), sha256: await platform.hashFile(path) }
-    const lastWrite = [...record.journal].reverse().flatMap((entry) => Object.entries(entry.after)).find(([p]) => fileKey(p) === fileKey(file.path))
-    const expected = file.sha256 ?? lastWrite?.[1]
-    if (stamp.sha256 !== expected) throw new PlatformError('hash-mismatch', `The deployed file failed its hash check: ${file.path}`)
-    files[file.path] = stamp
+  for (let i = 0; i < expectedFiles.length; i += FILE_BATCH) {
+    report({ phase: 'checking', progress: 0.8 + i / expectedFiles.length * 0.2, file: null, done: i, total: expectedFiles.length })
+    const batch = expectedFiles.slice(i, i + FILE_BATCH)
+    const paths = await platform.resolveGamePaths(root, batch.map((file) => file.path))
+    const stats = await platform.statMany(paths)
+    const missing = batch.findIndex((_, k) => !stats[k])
+    if (missing >= 0) throw new PlatformError('not-found', `The deployed file is missing: ${batch[missing].path}`, paths[missing])
+    const hashes = await platform.hashMany(paths)
+    batch.forEach((file, k) => {
+      if (hashes[k] !== (file.sha256 ?? lastWrite.get(fileKey(file.path)))) throw new PlatformError('hash-mismatch', `The deployed file failed its hash check: ${file.path}`)
+      files[file.path] = { ...stats[k]!, sha256: hashes[k] }
+    })
   }
   return files
 }
@@ -696,15 +894,18 @@ export async function updateDeployment(
   }
 }
 
-/** Downloads a content asset into the cache (or copies it from local dev content) and verifies it. */
-async function cacheFile(platform: Platform, cache: string, file: ContentVersion['files'][number], source: ContentSource, progress: (received: number) => void) {
+/** Downloads a content asset into the cache, or copies it from local dev content; `downloadFiles` verifies it. */
+async function cacheFile(platform: Platform, cache: string, file: ContentFile, source: ContentSource, progress: (received: number) => void) {
   const path = joinPath(cache, file.sha256)
   if (source.kind === 'local') await platform.copyFile(joinPath(source.filesDirectory, file.sha256), path)
-  else await platform.downloadFile(releaseAsset(file), path, progress)
-  if ((await platform.stat(path)).size !== file.size || await platform.hashFile(path) !== file.sha256) {
-    await platform.removeFile(path)
-    throw new PlatformError('hash-mismatch', 'A downloaded file failed its hash check. The game folder has not been changed.', path)
+  else for (let attempt = 0; ; attempt++) {
+    try { await platform.downloadFile(releaseAsset(file), path, progress); break } catch (error) {
+      if (!(error instanceof PlatformError && error.kind === 'network') || attempt >= DOWNLOAD_RETRY_MS.length) throw error
+      progress(0)
+      await new Promise((resolve) => setTimeout(resolve, DOWNLOAD_RETRY_MS[attempt]))
+    }
   }
+  progress(file.size)
 }
 
 /**
@@ -729,14 +930,16 @@ export async function repairDeployment(
   })
   for (const target of targets) if (target.config !== null) target.sha256 = await hashText(target.config)
   const assets = [...new Set(targets.filter((t) => t.config === null).map((t) => t.sha256))]
-  for (let i = 0; i < assets.length; i++) {
-    report({ phase: 'downloading', progress: i / assets.length * 0.4, file: null })
-    const cached = joinPath(paths.cache, assets[i])
-    if ((await maybeStat(platform, cached))?.kind === 'file' && await platform.hashFile(cached) === assets[i]) continue
-    const file = content?.files.find((f) => f.sha256 === assets[i])
+  const missing: ContentFile[] = []
+  for (const asset of assets) {
+    const cached = joinPath(paths.cache, asset)
+    if ((await maybeStat(platform, cached))?.kind === 'file' && await platform.hashFile(cached) === asset) continue
+    const file = content?.files.find((f) => f.sha256 === asset)
     if (!file || !source) throw new PlatformError('network', 'Lucent couldn’t download a content file for the repair.')
-    await cacheFile(platform, paths.cache, file, source, (received) => report({ phase: 'downloading', progress: (i + Math.min(1, received / Math.max(1, file.size))) / assets.length * 0.4, file: null }))
+    missing.push(file)
   }
+  // A missing asset without a source already stopped the repair above.
+  await downloadFiles(platform, paths.cache, missing, source!, (done, total) => report({ phase: 'downloading', progress: total ? done / total * 0.4 : 0.4, file: null, done, total }))
   await requireGameStopped(platform)
   // `record` journals the repair while it applies; `repaired` replaces it once every file is back.
   const repaired = structuredClone(record)
@@ -747,7 +950,7 @@ export async function repairDeployment(
   try {
     for (let i = 0; i < targets.length; i++) {
       const { relative, config, sha256 } = targets[i]
-      report({ phase: 'applying', progress: 0.4 + i / targets.length * 0.5, file: relative })
+      report({ phase: 'applying', progress: 0.4 + i / targets.length * 0.5, file: relative, done: i, total: targets.length })
       const path = await platform.resolveGamePath(root, relative)
       const stat = await maybeStat(platform, path)
       if (stat && stat.kind !== 'file') throw new Error(`Protecting a user folder: ${relative}`)
@@ -776,6 +979,20 @@ export async function repairDeployment(
     }
     throw new DeploymentError(error, false)
   }
+}
+
+/** The game-folder files that were there before the deployment and that uninstall puts back: each path whose first step found a file. */
+export function replacedOriginals(record: Pick<DeploymentRecord, 'journal'>): string[] {
+  const seen = new Set<string>()
+  const originals: string[] = []
+  for (const entry of record.journal) {
+    for (const [path, before] of Object.entries(entry.before)) {
+      if (seen.has(fileKey(path))) continue
+      seen.add(fileKey(path))
+      if (before !== null) originals.push(path)
+    }
+  }
+  return originals
 }
 
 /** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */
