@@ -76,6 +76,11 @@ const frameGenerationHome = (base: Machine, gpu: string, custom = false) => asyn
   await reopened.scan()
   return reopened
 }
+const recommendedProfileHome = (gpu: string) => async () => {
+  const core = await scanned(machine(MACHINES.screen144Hdr, frameGenerationContentHost(), graphicsCard(gpu)))()
+  await core.continueSetup()
+  return core
+}
 const multipleLaunchers = async () => {
   const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
   await platform.writeText(`${await platform.envFolder('LocalAppData')}\\XIVLauncher\\current\\XIVLauncher.exe`, 'XIVLauncher')
@@ -380,6 +385,8 @@ const STATES: GalleryState[] = [
     await core.continueSetup()
     return core
   } },
+  { key: 'profile-v2-rtx4090', label: 'Profile · RTX 4090 · Ultra recommended', setup: recommendedProfileHome('NVIDIA GeForce RTX 4090') },
+  { key: 'profile-v2-rtx4070', label: 'Profile · RTX 4070 · Balanced fallback', setup: recommendedProfileHome('NVIDIA GeForce RTX 4070') },
   { key: 'review', label: 'Review · ReShade included', setup: workflow('review') },
   { key: 'review-no-reshade', label: 'Review · ReShade excluded', setup: workflow('review', MACHINES.steam, false) },
   { key: 'review-radeon', label: 'Review · ReShade required', setup: workflow('review', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
