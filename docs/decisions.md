@@ -34,7 +34,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
    - Game detection order: XIVLauncher `%APPDATA%\XIVLauncher\launcherConfigV3.json` (`GamePath`), Steam libraries (app 39210), Square Enix launcher uninstall registry entry, default paths, manual picker validated by `game\ffxiv_dx11.exe`.
    - Existing mods detected: GPosingway, leftover GShade files, regular ReShade (`dxgi.dll` etc.), other OptiScaler installs, swapped DLSS DLLs.
    - Scan is **the only place that lists what the deployment does to files already there** (settled 2026-10-13): every file it backs up, then replaces or removes, where the readable copy goes, and the presets it keeps. One "Existing setup" row with a folder tree behind "Show files"; nothing repeats it on Review.
-2. **Profile**: every first-run choice, so Review only reviews (settled 2026-10-13). The performance profile (Fidelity / Balanced / Performance), then "Include ReShade" (on by default; not offered when the tier requires it) and "Add Lucent to the Start menu" (on by default; not offered once Lucent is in the Start menu). A tier without profiles shows the step as **Options**; it's skipped when nothing is left to choose.
+2. **Profile**: every first-run choice, so Review only reviews (settled 2026-10-13). The performance profile (Ultra / Fidelity / Balanced / Performance, preselected for the graphics card), then "Include ReShade" (on by default; not offered when the tier requires it) and "Add Lucent to the Start menu" (on by default; not offered once Lucent is in the Start menu). A tier without profiles shows the step as **Options**; it's skipped when nothing is left to choose.
 3. **Review**: read only. Files backed up / added, download size, and a summary of the choices.
 4. **Install**, then a done screen that teaches the in-game keys, read from the configs it just deployed (settled 2026-10-13: hardcoded Insert/Home had drifted from the content's Shift+F2), and links to the guide on the site.
    - Install shows four stages: Downloading, Backing up (the readable backup, only when there is one), Applying, Checking. Progress reaches the UI at most ten times a second and the bar, figures and crystal ease between reports.
@@ -47,7 +47,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 ## Main screen
 
 - **Layout** (settled 2026-10-13; the ⋯ menu hid features too important to tuck away): the rail keeps the crystal and navigates between six sections, **Home**, **Keys**, **Versions**, **Logs**, **Settings** and **Help**, with a dot on a section that needs the player (caution on Home for drift or a missing folder, accent on Versions for an update). The graphics card and the setup Lucent applies for it sit in a small card at the rail's foot; that is where the tier badge appears.
-  - **Home**: the status card, **Launch XIV**, the performance profile and Enabled.
+  - **Home**: the status card, **Launch XIV**, the performance profile, Frame generation, HDR (on an HDR monitor) and Enabled.
   - **Keys**: every in-game key, read from the game folder's configs each time the section opens.
   - **Versions**: content, game version and channel, then roll back or apply a version.
   - **Logs**: a terminal that tails Lucent's activity log and the logs the deployed tools write in the game folder.
@@ -55,12 +55,48 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
   - **Help**: the guide, Report a bug, Copy diagnostics, then Credits.
 - **Launch XIV** (settled 2026-10-13, replacing "no Launch game button"): starts XIV the way the player does, without closing Lucent. XIVLauncher when it's installed and its readable config points to this game folder; Steam for a Steam copy; otherwise the Square Enix launcher in `boot`. The label below Launch follows the selected launcher. When several apply, an arrow beside Launch opens the choice; Settings also offers it, and the choice is remembered. While XIV runs the button reads "In game".
 - **Status card** with one contextual action: healthy or Disabled → a quiet **Scan** (a full hash check now, settled 2026-10-13, so a problem shows without reopening Lucent; also under Settings → Game folder); drift → **Repair**; update available → **Update**. The changelog shows **inline in the status card** with **Skip** and **Update** buttons (no modal).
-- **Performance profile** as three radio rows. **Custom** appears as a temporary fourth row, "Custom · based on X", that says what changed; it disappears once a profile is picked.
+- **Performance profile** as a segmented control with one line describing the choice (settled 2026-10-13, replacing three radio rows; see Frame generation, frame cap, HDR and profiles). **Custom** lights no segment, and the line says "Custom · based on X" and what changed; it goes once a profile is picked.
 - **Master switch labelled "Enabled"**. Turning it off leaves the deployment **Disabled**: files present but inactive. The state persists through repair, update and profile changes, and a health check on a disabled deployment expects the disabled state. Not called "Vanilla mode", because "vanilla" means a game folder with no deployment (and is also an Alive preset name).
 - No separate DLSS 5 toggle (OptiScaler's overlay has one), no preset display.
 - **Logs** (settled 2026-10-13): Lucent keeps an **activity log**, `%LOCALAPPDATA%\Lucent\lucent.log`: a line for what Scan found, each command and its outcome, every error and notice the window shows, and every file it writes, renames or removes in the game folder. It is a file, not memory, so the window, a relaunch with administrator access and XIVLauncher's headless runs all add to one account, and a first install can be read afterwards. Past 512 KB it is cut back to its last 2,000 lines when Lucent opens. It never leaves the machine (no telemetry) and is not part of Copy diagnostics.
   - The section shows it as a terminal: Geist Mono on the darkest surface, a timestamp per second rather than per line, file lines dimmed, a finished command in the accent, warnings and errors in the caution colours (no new colour), and a caret at the end. It follows new lines until the player scrolls up, then offers **Latest**. **Copy** puts the shown lines on the clipboard.
   - The logs the deployed tools write (`OptiScaler.log`, `ReShade.log`: the content version's generated files that end in `.log`) sit beside it as tabs, read from the game folder every second while the section is open.
+
+## Frame generation, frame cap, HDR and profiles
+
+Settled in a design grilling session on 2026-10-13.
+
+- **Frame generation** is its own group on Home, below the performance profile: a segmented control of **Off · 2× · 3× · 4× · 5× · 6× · Dynamic**, filtered to what the player's card can run. It is separate from the profile: switching profile doesn't change it, and it never makes a profile Custom. Like profiles, it is locked while XIV runs, and the first-run Profile step doesn't offer it.
+  - The options are manifest data per tier, filtered by GPU model, since RTX 30 and RTX 40 share a tier but not an unlock. RTX 40: 2× native, 3×–6× through the fork's built-in `AdaMfgUnlock`, Dynamic only once it is verified on the RTX 4090. RTX 50: all of them, natively. RTX 20, RTX 30 and Radeon: 2× through FSR frame generation, then 3×, 4× and Dynamic through XeFG with the fork's unlock (XIV's practical XeFG ceiling is 4×). NVIDIA's frame generation doesn't run below RTX 40 in this fork, so RTX 30 had none before this.
+  - Multipliers that need an unlock carry a yellow **Experimental** tag. No confirmation dialog.
+  - One line under the control says what the choice means at the frame cap: "XIV renders up to 56 fps, shown at 224 on your 240 Hz screen", or "Aims for 224 fps on your 240 Hz screen" for Dynamic. Every supported multiplier stays offered, even one that renders XIV slowly; the line makes the trade-off visible.
+  - Default, for a first deployment and for existing deployments on update: 2× on screens of 120 Hz and up, Off below.
+  - A multiplier changed in OptiScaler's overlay is a user change: the control shows what is on disk, and a combination it can't show reads **Custom**.
+  - Rejected: building frame generation into the profiles; sdli1995's `dlssg_sm86` runtime for RTX 20/30 (an external component nobody here can test, with Dynamic in only one variant).
+- **Frame cap**: `[Framerate] FramerateLimit`, `[DLSSG] FramerateTargetDMFG` and `[XeFG] DynamicTargetFPS` are all `floor(R − R²/3600)` for refresh rate R: 138 at 144 Hz, 224 at 240 Hz. That is the cap Reflex applies itself with G-Sync or FreeSync and V-Sync. OptiScaler's limiter is Reflex-based (Anti-Lag 2 on Radeon), and frame generation's pacing needs the headroom; the older "3 fps below refresh" rule (237 at 240 Hz) is for limiters without Reflex. Lucent can't see the driver's V-Sync or VRR settings, so it uses one rule. The cap applies with frame generation Off too, and the Dynamic target equals it, so Dynamic aims at a number it can reach.
+  - R is the refresh rate of the monitor XIV runs on (from `FFXIV.cfg`'s `MainAdapter` or window position, or its `Refreshrate` in exclusive fullscreen), falling back to the primary monitor.
+  - It is a **screen-derived setting**: Lucent rewrites it at every write to `OptiScaler.ini`, when Lucent opens, on Launch XIV and at XIVLauncher's check when the game starts, only when the value changed, with a line in the activity log. A change made in the overlay is overwritten. It replaces the hardcoded 138 and 144 that only fit a 144 Hz screen.
+- **HDR** is a group on Home below Frame generation, shown only when XIV's monitor supports HDR: **Off · HDR · Scene HDR**, Scene HDR tagged Experimental. The default, HDR, is the fork's original SDR expansion (`[HDR] FfxivHDR = true`, `Mode = 0`); Scene HDR is its RenoDX scene method (`Mode = 1`). With Windows HDR off, the line says how to turn it on (Win+Alt+B); OptiScaler falls back to SDR by itself.
+  - Peak brightness (`PeakNits`) is screen-derived, from the monitor's reported peak luminance, and the line points to the Windows HDR Calibration app for a monitor that reports it wrongly. Paper white, contrast, saturation, vibrance and highlight expansion stay as the content tunes them; players adjust them live in OptiScaler's overlay, and Lucent keeps those as user changes. Lucent has no brightness slider: a change there could only be seen at the next launch.
+  - OptiScaler's HDR needs NVIDIA frame generation, XeFG or none. While HDR is on, 2× on RTX 20, RTX 30 and Radeon uses XeFG instead of FSR frame generation, without the player seeing a difference.
+  - While HDR is on, Lucent turns Windows Auto HDR off for `ffxiv_dx11.exe` only (the per-app graphics setting) and restores it when HDR goes Off or on uninstall. RTX HDR can't be changed reliably; on NVIDIA cards the line mentions it.
+  - Scene HDR's inputs for Neural Rendering, DLSS and ReShade stay off in the content, and the HDR screenshot key stays unbound.
+- **Performance profiles** become four, each step giving up one thing:
+
+  | Profile | Neural Rendering | Upscaling, 1080p and below | 1440p | 4K and up |
+  |---|---|---|---|---|
+  | **Ultra** | 2 passes | Quality | Quality | Quality |
+  | **Fidelity** | 1 pass | Quality | Quality | Quality |
+  | **Balanced** | 1 pass | Quality | Balanced | Balanced |
+  | **Performance** | 1 pass, spatial compression, residual frame generation | Balanced | Balanced | Performance |
+
+  - Upscaling quality is `[QualityOverrides] ForcePerfQuality`, which the fork applies live through XIV's native resolution path. XIV's own 3D resolution slider stops having an effect, and the guide says so. No DLAA: Neural Rendering stalls at DLAA with split mode. The values are content data, tuned during the Beta test; the resolution column is picked from XIV's screen, like the frame cap.
+  - The default profile comes from the graphics card: the content lists the cards each profile is recommended for, and an unlisted card gets Balanced. The first-run Profile step preselects it and tags it "Recommended for your RTX 4070". Existing deployments keep their profile, except that players on the old two-pass Fidelity move to Ultra, so nobody loses a pass without choosing to.
+  - The content carries the four profiles in a new manifest field that Lucent 0.1.x ignores, with a raised `minAppVersion`, so older apps keep working and offer the app update first.
+- **Home layout**: the profile, Frame generation and HDR read as one family of segmented controls, each with one line describing the current choice. Custom lights no segment, and its line says "Custom · based on Balanced: Passes set to 2". The first-run Profile step keeps descriptive rows. That is the starting point; the final layout is whichever reads cleanest at real size in 1000×680.
+- **Keys**: OptiScaler's keys are single virtual keys, without modifiers. Neural Rendering moves to **Delete**: it sits in the same place on every keyboard, laptops and 75% boards included, XIV doesn't use it, and it pairs with Insert for OptiScaler's menu. `\` was a different key on each layout (`*` on AZERTY, `^` on QWERTZ). The FPS overlay keys (`FpsShortcutKey`, `FpsCycleShortcutKey`, Page Up and Page Down by default) are unbound because they are XIV's zoom; End stays the frame generation toggle. Keys and the Done screen name keys as Windows does for the player's keyboard layout ("Suppr" on a French keyboard).
+- **Check for updates**: the card's subtitle is the status line: "Checking…", "Up to date · checked 5 min ago" (the quiet check on open counts), an available update, or a yellow error. The callout at the top of Settings no longer carries the result; nobody saw it there.
+- **Testing**: a Beta content version with a checklist for the RTX 4090: each multiplier, Dynamic, both HDR methods and the four profiles. Whatever fails there doesn't ship for RTX 40. RTX 20, RTX 50 and Radeon get these options with their first content.
 
 ## Deployment engine
 
@@ -88,7 +124,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 - **App updates**: published to GitHub Releases. **Notify only** — nothing downloads until the user clicks Update. Users can skip a version or stay on one.
 - **Content updates**: notify only, pinnable, one-click rollback to either of the last two cached content versions.
-- **Checking** (settled 2026-10-13): Lucent checks on open, after an update, a skip or a channel change, and when the player clicks **Settings → Check now**. No background service. A manual check reports when it can't reach GitHub; the check on open stays quiet.
+- **Checking** (settled 2026-10-13): Lucent checks on open, after an update, a skip or a channel change, and when the player clicks **Settings → Check now**. No background service. A manual check reports when it can't reach GitHub; the check on open stays quiet. The result shows in the Check for updates card's status line.
 - **One channel switch covers both**: Stable or Beta. Beta users get beta app versions *and* beta content versions, so beta content that needs new app features can be tested before that app version ships to stable. **Leaving Beta changes nothing deployed**: the beta content stays, and Lucent then announces only a Stable version newer than the current one (never a downgrade); a running beta app is likewise offered only a newer stable release.
 - **Rollback pins** the version rolled back to and **skips** the version left behind, so Lucent stops announcing it. The next newer version is announced normally. Skipped versions can still be applied manually from the Versions section.
 - Manifest carries `minAppVersion`; content that needs a newer app is only offered after the app is updated.
@@ -146,7 +182,7 @@ Settled by the look prototype on 2026-10-12: variant **D · Ember**, kept as the
 
 ## Deferred
 
-Nothing is deferred. The shader set is settled under Deployment engine, and each tier's performance profile settings come from its tested content in the manifest (RTX 30/40 publishes all three).
+Nothing is deferred. The shader set is settled under Deployment engine, and each tier's performance profile settings come from its tested content in the manifest (RTX 30/40 publishes all of them).
 
 ---
 

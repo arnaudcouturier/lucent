@@ -15,7 +15,7 @@ The class of GPU a deployment targets (RTX 50, RTX 30/40, RTX 20, Radeon, Other)
 _Avoid_: GPU profile, hardware profile
 
 **Tier status**:
-How proven a tier is: Stable, Experimental or Community-verified.
+How proven a tier is: Stable, Experimental or Community-verified. An option can be Experimental too, such as a frame generation multiplier that needs an unlock.
 _Avoid_: beta (that word belongs to channels)
 
 **Scan**:
@@ -86,13 +86,29 @@ _Avoid_: managed key, override, tweak
 A config setting that a content version forces back to its shipped value, overriding any user change.
 _Avoid_: forced key, breaking key
 
+**Screen-derived setting**:
+A config setting Lucent computes from the monitor XIV runs on, such as the frame cap or HDR peak brightness, and rewrites whenever it differs. It is never a user change.
+_Avoid_: auto setting, computed key
+
 **Performance profile**:
-One of Fidelity, Balanced or Performance: a named set of config setting values that the user picks.
+One of Ultra, Fidelity, Balanced or Performance: a named set of config setting values that the user picks. Some of its values depend on the resolution of the screen XIV runs on.
 _Avoid_: preset (that word belongs to ReShade), quality mode
 
 **Custom**:
 The state of a performance profile after a user change to one of its settings.
 _Avoid_: modified, manual
+
+**Frame generation mode**:
+Off, a fixed multiplier (2× to 6×) or Dynamic: the player's choice of how many frames OptiScaler generates, separate from the performance profile.
+_Avoid_: FG preset, MFG level
+
+**Frame cap**:
+The highest frame rate XIV presents, generated frames included: a screen-derived setting just below the refresh rate.
+_Avoid_: FPS limit, frame limiter
+
+**HDR mode**:
+Off, HDR or Scene HDR: how OptiScaler presents XIV on an HDR monitor.
+_Avoid_: OptiHDR (upstream's name)
 
 **Preset**:
 A ReShade preset file that defines a visual look. Lucent installs all of them and activates none.
