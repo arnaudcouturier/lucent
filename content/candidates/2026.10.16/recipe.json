@@ -2,12 +2,13 @@
   "basedOnContent": "2026.10.15",
   "id": "2026.10.16",
   "channel": "beta",
-  "minAppVersion": "0.3.0-beta.1",
+  "minAppVersion": "0.3.0-beta.2",
   "changelog": [
     "The four performance profiles are replaced by specific Neural Rendering settings: the DLSS preset (DLAA, Ultra Quality, Quality, Balanced, Performance or Ultra Performance), the number of passes (1 to 3) and the Neural Rendering resolution (75%, 100% or 125%).",
     "Spatial compression and residual frame generation are now their own switches, with a plain explanation of what each does. Residual frame generation is Experimental and only on RTX 40 and 50 cards with frame generation on.",
     "On RTX 40, 3× to 6× and Dynamic frame generation sit behind a separate Unlock multi-frame generation switch, so 2× works with or without it.",
-    "Existing OptiScaler.ini files keep their values on update; Reset setup… offers the new choices and writes them."
+    "The FPS overlay now toggles with Page Up, and the Keys screen and the last screen of setup show it. Page Down stays XIV’s zoom key.",
+    "Existing OptiScaler.ini files keep their values on update; Reset setup… offers the new choices and writes them, including the Page Up key."
   ],
   "configUpdateRules": [
     {
@@ -27,6 +28,9 @@
       "update": "keep",
       "rationale": "No Shader Toggler layout change; keep the player's effect groups and keybinds."
     }
+  ],
+  "iniSettings": [
+    { "file": "OptiScaler.ini", "section": "Menu", "key": "FpsShortcutKey", "value": "0x21" }
   ],
   "neuralRenderingControls": {
     "presetKey": { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality" },

@@ -6,7 +6,7 @@
 //     --recipe content\candidates\2026.10.16\recipe.json --output C:\LucentContent\candidate-2026.10.16
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import type { MfgUnlock, NeuralRenderingControls } from '../src/shared/manifest'
+import type { IniSetting, MfgUnlock, NeuralRenderingControls } from '../src/shared/manifest'
 import type { PublishInput } from './publish-content'
 
 interface ControlsRecipe {
@@ -16,6 +16,8 @@ interface ControlsRecipe {
   minAppVersion: string
   changelog: string[]
   configUpdateRules: { path: string; when?: 'reshade'; update: 'keep' | 'addMissingKeys' | 'replace'; rationale: string }[]
+  /** Baseline values written after the files are copied, such as a key binding. */
+  iniSettings?: IniSetting[]
   neuralRenderingControls: NeuralRenderingControls
   mfgUnlock: MfgUnlock
 }
@@ -44,6 +46,10 @@ tier.ownedConfigs = tier.ownedConfigs.map((config) => {
   if (!rule) throw new Error(`No update rule for ${config.path}.`)
   return { ...config, update: rule.update }
 })
+if (recipe.iniSettings?.length) {
+  if (!tier.recipe) throw new Error('Expected an explicit recipe to add INI settings to.')
+  tier.recipe = [...tier.recipe, ...recipe.iniSettings.map((setting) => ({ kind: 'ini_set' as const, ...setting }))]
+}
 delete tier.performanceProfiles
 delete tier.performanceProfilesV2
 tier.neuralRenderingControls = recipe.neuralRenderingControls

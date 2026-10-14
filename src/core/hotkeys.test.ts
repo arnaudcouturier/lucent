@@ -32,18 +32,18 @@ const CONFIGS = { optiScaler: OPTISCALER, reShade: RESHADE }
 describe('The Done screen teaches the keys the new configs bind', () => {
   it('reads OptiScaler and ReShade binds, modifiers included', () => {
     expect(shown(deploymentHotkeys(DEPLOYED, CONFIGS))).toEqual([
-      'OptiScaler Menu: Insert', 'OptiScaler Neural Rendering on or off: \\', 'OptiScaler Frame generation on or off: End',
+      'OptiScaler Menu: Insert', 'OptiScaler Neural Rendering on or off: \\', 'OptiScaler Frame generation on or off: End', 'OptiScaler FPS overlay: Page Up',
       'ReShade Menu: Shift+F2', 'ReShade Effects on or off: Shift+F3',
     ])
   })
 
   it('leaves out an unbound Neural Rendering toggle and frame generation that is off', () => {
     const config = OPTISCALER.replace('ToggleKey = 0xDC', 'ToggleKey = auto').replace('Enabled = true\n\n[Menu]', 'Enabled = false\n\n[Menu]')
-    expect(shown(deploymentHotkeys(record('neural-rendering', false), { optiScaler: config, reShade: null }))).toEqual(['OptiScaler Menu: Insert'])
+    expect(shown(deploymentHotkeys(record('neural-rendering', false), { optiScaler: config, reShade: null }))).toEqual(['OptiScaler Menu: Insert', 'OptiScaler FPS overlay: Page Up'])
   })
 
   it('falls back to each tool’s defaults when a config is missing', () => {
-    expect(shown(deploymentHotkeys(record('upscaling'), { optiScaler: null, reShade: null }))).toEqual(['OptiScaler Menu: Insert', 'ReShade Menu: Home'])
+    expect(shown(deploymentHotkeys(record('upscaling'), { optiScaler: null, reShade: null }))).toEqual(['OptiScaler Menu: Insert', 'OptiScaler FPS overlay: Page Up', 'ReShade Menu: Home'])
     expect(shown(deploymentHotkeys(record(null), { optiScaler: null, reShade: null }))).toEqual(['ReShade Menu: Home'])
   })
 })
@@ -88,7 +88,7 @@ describe('Keyboard layout names', () => {
   it('uses Windows names for keys and ReShade modifiers on the active layout', () => {
     const names = { 0x2d: 'Inser', 0xdc: '*', 0x23: 'Fin', 0x10: 'Maj', 0x71: 'F2', 0x72: 'F3' }
     expect(shown(deploymentHotkeys(DEPLOYED, CONFIGS, names))).toEqual([
-      'OptiScaler Menu: Inser', 'OptiScaler Neural Rendering on or off: *', 'OptiScaler Frame generation on or off: Fin',
+      'OptiScaler Menu: Inser', 'OptiScaler Neural Rendering on or off: *', 'OptiScaler Frame generation on or off: Fin', 'OptiScaler FPS overlay: Page Up',
       'ReShade Menu: Maj+F2', 'ReShade Effects on or off: Maj+F3',
     ])
   })

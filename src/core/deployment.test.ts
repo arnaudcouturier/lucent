@@ -203,9 +203,9 @@ it('undoes earlier steps when a later write fails', async () => {
 })
 
 it.each([
-  ['AMD Radeon RX 7900 XTX', 0x1002, true, ['Insert', 'Home']],
+  ['AMD Radeon RX 7900 XTX', 0x1002, true, ['Insert', 'Page Up', 'Home']],
   ['Intel Arc A770', 0x8086, true, ['Home']],
-  ['NVIDIA GeForce RTX 4090', 0x10de, false, ['Insert']],
+  ['NVIDIA GeForce RTX 4090', 0x10de, false, ['Insert', 'Page Up']],
 ])('fits the hotkeys and required ReShade to %s', async (name, vendor, required, keys) => {
   const core = createCore(createFakePlatform(machine(deploymentMachine(), graphicsCard(name, vendor))))
   await core.scan()
@@ -243,7 +243,7 @@ it('uses the platform keyboard names on both the Done and Keys screens', async (
   await core.scan()
   await core.review()
   await core.deploy()
-  expect(core.getState().hotkeys.map((binding) => binding.keys?.join('+'))).toEqual(['Inser', 'Accueil'])
+  expect(core.getState().hotkeys.map((binding) => binding.keys?.join('+'))).toEqual(['Inser', 'Page Up', 'Accueil'])
   expect(lookups[0]).toContain(0x2d)
   expect(lookups[0]).toContain(0x24)
 

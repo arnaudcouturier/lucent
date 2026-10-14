@@ -83,7 +83,7 @@ function bindingCodes(configs: KeyConfigs, overlay: Overlay): BindingCodes[] {
       { action: 'Menu', section: 'Menu', key: 'ShortcutKey', fallback: 0x2d, hint: overlay === 'neural-rendering' ? 'Neural Rendering, upscaling and frame generation' : 'FSR upscaling and frame generation', essential: true },
       ...(overlay === 'neural-rendering' ? [{ action: 'Neural Rendering on or off', section: 'DlssNr', key: 'ToggleKey', fallback: null, essential: true }] : []),
       { action: 'Frame generation on or off', section: 'Menu', key: 'FGShortcutKey', fallback: 0x23, essential: truthy(config.get('FrameGen', 'Enabled')) },
-      { action: 'FPS overlay', section: 'Menu', key: 'FpsShortcutKey', fallback: 0x21, essential: false },
+      { action: 'FPS overlay', section: 'Menu', key: 'FpsShortcutKey', fallback: 0x21, essential: true },
       { action: 'FPS overlay style', section: 'Menu', key: 'FpsCycleShortcutKey', fallback: 0x22, essential: false },
     ]
     for (const { action, section, key, fallback, hint, essential } of actions) {
