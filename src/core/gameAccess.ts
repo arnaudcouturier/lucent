@@ -1,6 +1,6 @@
 import { PlatformError, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
-import { assertGamePath, FRAME_GENERATION_IDS, PROFILE_IDS, type FrameGenerationId, type ProfileId } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, PROFILE_IDS, type FrameGenerationId, type HdrMode, type ProfileId } from '../shared/manifest'
 import type { State } from './core'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
@@ -48,6 +48,7 @@ export type GameWriteRequest = { gameFolder: string } & (
   | { kind: 'tier'; tier: string; contentVersion: string }
   | { kind: 'profile'; profile: ProfileId }
   | { kind: 'frame-generation'; mode: FrameGenerationId }
+  | { kind: 'hdr'; mode: HdrMode }
   | { kind: 'enabled'; enabled: boolean }
 )
 
@@ -77,12 +78,13 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   const request = value?.request
   const hasSid = typeof value?.userSid === 'string' && /^S-1-\d+(?:-\d+)+$/.test(value.userSid)
   if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || (value.schemaVersion === 2 && !hasSid) || !request || typeof request.gameFolder !== 'string'
-    || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'tier', 'profile', 'frame-generation', 'enabled'].includes(request.kind)
+    || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'tier', 'profile', 'frame-generation', 'hdr', 'enabled'].includes(request.kind)
     || ((request.kind === 'deploy' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
     || (request.kind === 'tier' && typeof request.tier !== 'string')
     || (request.kind === 'deploy' && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !(PROFILE_IDS as readonly string[]).includes(request.profile))))
     || (request.kind === 'profile' && !(PROFILE_IDS as readonly string[]).includes(request.profile))
     || (request.kind === 'frame-generation' && !FRAME_GENERATION_IDS.includes(request.mode))
+    || (request.kind === 'hdr' && !['off', 'hdr', 'scene-hdr'].includes(request.mode))
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')
   if (request.kind === 'deploy') {
     if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')

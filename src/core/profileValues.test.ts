@@ -57,12 +57,13 @@ it('does not change settings owned by another feature during resolution sync', (
   expect(profileResolutionSettingsForHeight(balanced, 1440, read(), read(), (_file, _section, key) => key === 'ForcePerfQuality')).toEqual([])
 })
 
-it('keeps frame-generation and screen-derived keys out of profile ownership', () => {
+it('keeps frame-generation, screen-derived, and HDR keys out of profile ownership', () => {
   const owned = profileOwnedElsewhereSettingKeys(recipe({
     frameGenerationOptions: [{ id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'DlssNr', key: 'Enabled', value: 'false' }] }],
     screenDerivedSettings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'FramerateLimit', value: 'frameCap' }],
+    hdrOptions: [{ id: 'hdr', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' }] }],
   }))
-  expect(owned).toEqual(new Set(['optiscaler.ini|dlssnr|enabled', 'optiscaler.ini|framegen|frameratelimit']))
+  expect(owned).toEqual(new Set(['optiscaler.ini|dlssnr|enabled', 'optiscaler.ini|framegen|frameratelimit', 'optiscaler.ini|hdr|ffxivhdr']))
 })
 
 it('chooses the first GPU recommendation and falls back to Balanced', () => {

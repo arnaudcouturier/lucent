@@ -50,6 +50,8 @@ export function profileOwnedElsewhereSettingKeys(recipe: TierRecipe): Set<string
   return new Set([
     ...frameGenerationSettingKeys(recipe.frameGenerationOptions ?? []),
     ...(recipe.screenDerivedSettings ?? []).map(({ file, section, key }) => `${file.replace(/\\/g, '/').toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`),
+    ...(recipe.hdrOptions ?? []).flatMap((option) => option.settings.map(({ file, section, key }) =>
+      [file.replace(/\\/g, '/').toLowerCase(), section.toLowerCase(), key.toLowerCase()].join('|'))),
   ])
 }
 

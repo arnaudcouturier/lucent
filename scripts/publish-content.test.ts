@@ -162,7 +162,10 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
     }))
     tier.frameGenerationOptions = [
       { id: 'off', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameMode', value: 'off' }] },
-      { id: '2x', experimental: true, settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameMode', value: '2x' }],
+      { id: '2x', experimental: true, settings: [
+        { file: 'ReShade.ini', section: 'GENERAL', key: 'FrameMode', value: '2x' },
+        { file: 'ReShade.ini', section: 'GENERAL', key: 'FrameHDRMode', value: 'off' },
+      ],
         hdrSettings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameHDRMode', value: '2x' }] },
     ]
     tier.screenDerivedSettings = [

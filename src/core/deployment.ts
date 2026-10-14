@@ -1,4 +1,4 @@
-import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type FrameGenerationOption, type IniSetting, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type IniSetting, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
@@ -11,6 +11,7 @@ import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { defaultFrameGenerationMode, effectiveFrameGenerationSettings, frameGenerationOptionsForGpu, matchFrameGenerationMode } from './frameGeneration'
 import { profileOwnedElsewhereSettingKeys, profileResolutionSettingsForHeight, profileSettingsForHeight, profilesForRecipe, selectProfileForUpdate } from './profileValues'
+import { autoHdrDisableWasApplied, isAutoHdrOnlyChange, matchHdrMode, restoreAutoHdr } from './hdr'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -184,9 +185,11 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
       || (!!entry.step === !!entry.registry)) throw new Error('The deployment journal is damaged.')
     if (entry.registry && (entry.registry.kind !== 'user-gpu-preferences'
       || typeof entry.registry.userSid !== 'string' || !/^S-1-(?:\d+-){1,14}\d+$/.test(entry.registry.userSid)
-      || typeof entry.registry.name !== 'string' || !entry.registry.name.trim()
+      || typeof entry.registry.name !== 'string' || fileKey(normalizePath(entry.registry.name)) !== fileKey(normalizePath(joinPath(value.gameFolder, 'game', 'ffxiv_dx11.exe')))
+      || /[\r\n\0]/.test(entry.registry.name)
       || (entry.registry.before !== null && typeof entry.registry.before !== 'string')
       || (entry.registry.after !== null && typeof entry.registry.after !== 'string')
+      || !isAutoHdrOnlyChange(entry.registry.before, entry.registry.after)
       || Object.keys(entry.before).length !== 0 || Object.keys(entry.after).length !== 0)) throw new Error('The deployment registry journal is damaged.')
     for (const [path, hash] of [...Object.entries(entry.before), ...Object.entries(entry.after)]) {
       assertGamePath(path)
@@ -327,7 +330,23 @@ async function undoEntries(platform: Platform, record: DeploymentRecord, backups
   for (const index of indices) {
     const entry = record.journal[index]
     // A carried-over preset is a user file once the deployment is complete; only a failed deployment takes it back.
-    if (entry.registry) throw new Error('Recovery of a registry change is unavailable in this app version.')
+    if (entry.registry) {
+      const { userSid, name, before, after } = entry.registry
+      await requireGameStopped(platform)
+      const current = await platform.readUserGpuPreferences(userSid, name)
+      const restored = restoreAutoHdr(current, before, after)
+      if (restored !== current) {
+        await requireGameStopped(platform)
+        if (await platform.readUserGpuPreferences(userSid, name) !== current) {
+          throw new Error('The per-game graphics preferences changed during recovery. Keep the journal and try recovery again.')
+        }
+        await platform.writeUserGpuPreferences(userSid, name, restored)
+        if (await platform.readUserGpuPreferences(userSid, name) !== restored) {
+          throw new Error('Windows did not restore the per-game Auto HDR preference. Keep the journal and try recovery again.')
+        }
+      }
+      continue
+    }
     if (record.uninstalling && entry.step?.kind === 'carry') continue
     if (!entry.step) throw new Error('The deployment journal is damaged.')
     for (const [relative, before] of Object.entries(entry.before).reverse()) work.push({ relative, before, after: entry.after[relative] })
@@ -368,6 +387,18 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   const checkpoint = (entries: number[] | 'all') => record.undoCheckpoints && start === 0
     ? platform.writeFileBytes(checkpointsPath(paths.record, record.undoCheckpoints.id), entries === 'all' ? [record.undoCheckpoints.size - 1] : entries, UNDONE)
     : platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  const activeRegistryEntries = new Set<number>()
+  if (record.uninstalling) {
+    const latestByPreference = new Map<string, { index: number; before: string | null; after: string | null }>()
+    record.journal.forEach((entry, index) => {
+      const registry = entry.registry
+      if (!registry || registry.kind !== 'user-gpu-preferences' || entry.undone) return
+      latestByPreference.set(`${registry.userSid}|${fileKey(registry.name)}`, { index, before: registry.before, after: registry.after })
+    })
+    for (const transition of latestByPreference.values()) {
+      if (autoHdrDisableWasApplied(transition.before, transition.after)) activeRegistryEntries.add(transition.index)
+    }
+  }
   if (record.uninstalling && record.generatedFiles?.length) {
     const targets = await platform.resolveGamePaths(root, record.generatedFiles)
     const stats = await platform.statMany(targets)
@@ -380,7 +411,7 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     const touched = new Set<string>()
     for (; i >= start && batch.length < FILE_BATCH; i--) {
       const entry = record.journal[i]
-      if (entry.undone) continue
+      if (entry.undone || (record.uninstalling && entry.registry && !activeRegistryEntries.has(i))) continue
       const keys = Object.keys(entry.before).map(fileKey)
       if (keys.some((key) => touched.has(key))) break
       for (const key of keys) touched.add(key)
@@ -779,7 +810,7 @@ function writtenPath(step: PlanStep): string | null {
  */
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
-  graphics?: GpuAdapter, refreshHz = 60, outputHeight?: number,
+  graphics?: GpuAdapter, refreshHz = 60, outputHeight?: number, hdrOn = false,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
@@ -795,7 +826,13 @@ export async function updateDeployment(
   const frameGenerationMode = !options.length ? null
     : !oldOptions.length || (currentMode && !options.some((option) => option.id === currentMode))
       ? defaultFrameGenerationMode(options, refreshHz) : currentMode
-  const selection: PlanSelection = { gpuName, outputHeight, frameGenerationOptions: options, frameGenerationMode }
+  const currentHdr = record.recipe.hdrOptions?.length ? await hdrStateOnDisk(platform, record) : null
+  const hdrSettingsOverride = currentHdr?.mode === null && targetRecipe.hdrOptions?.length
+    ? await declaredSettingsOnDisk(platform, record, targetRecipe.hdrOptions.flatMap((option) => option.settings)) : undefined
+  const hdrSelection: Pick<PlanSelection, 'hdrMode' | 'hdrActive'> = currentHdr && targetRecipe.hdrOptions?.length
+    && (currentHdr.mode === null || targetRecipe.hdrOptions.some((option) => option.id === currentHdr.mode))
+    ? { hdrMode: currentHdr.mode, hdrActive: currentHdr.active } : {}
+  const selection: PlanSelection = { gpuName, outputHeight, frameGenerationOptions: options, frameGenerationMode, hdrOn, hdrSettingsOverride, ...hdrSelection }
   const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, selection)
   if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
@@ -1059,6 +1096,8 @@ export interface OwnedIniSideEffect {
   prepare(record: DeploymentRecord): Promise<JournalEntry | null>
   /** Applies the already-journaled side effect after the config writes succeed. */
   apply(record: DeploymentRecord): Promise<void>
+  /** Edits only the completed record copy, after all effects succeed, to retire relinquished ownership. */
+  commit?(record: DeploymentRecord): void
 }
 
 /**
@@ -1112,6 +1151,7 @@ export async function changeOwnedIniSettings(
     for (const plan of plans) if (plan.beforeHash === await hashText(changed.ownedConfigs[plan.file])) {
       changed.files[plan.stamped] = { ...await platform.stat(await platform.resolveGamePath(root, plan.file)), sha256: plan.beforeHash }
     }
+    sideEffect?.commit?.(changed)
     if (JSON.stringify(changed) !== JSON.stringify(record)) await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
     return changed
   }
@@ -1147,7 +1187,8 @@ export async function changeOwnedIniSettings(
       }
     }
     if (sideEffectIntent && sideEffect) await sideEffect.apply(record)
-    changed.journal = record.journal
+    changed.journal = [...record.journal]
+    sideEffect?.commit?.(changed)
     await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
     return changed
   } catch (error) {
@@ -1200,6 +1241,45 @@ export async function frameGenerationModeOnDisk(
     if (value !== undefined) onDisk.push({ ...setting, value })
   }
   return matchFrameGenerationMode(options, onDisk)
+}
+
+async function declaredSettingsOnDisk(platform: Platform, record: DeploymentRecord, settings: IniSetting[]): Promise<IniSetting[]> {
+  const textByFile = new Map<string, ReturnType<typeof readIni> | null>()
+  const values: IniSetting[] = []
+  const root = joinPath(record.gameFolder, 'game')
+  const seen = new Set<string>()
+  for (const setting of settings) {
+    const key = `${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const file = Object.keys(record.ownedConfigs).find((path) => fileKey(path) === fileKey(setting.file))
+    if (!file) continue
+    let ini = textByFile.get(fileKey(file))
+    if (ini === undefined) {
+      try { ini = readIni(await platform.readText(await platform.resolveGamePath(root, file))) }
+      catch { ini = null }
+      textByFile.set(fileKey(file), ini)
+    }
+    if (!ini) continue
+    const value = ini.get(setting.section, setting.key)
+    if (value !== undefined) values.push({ ...setting, value })
+  }
+  return values
+}
+
+/** Reads the Home HDR selector from every declared owned config; an unknown combination is Custom. */
+export async function hdrStateOnDisk(platform: Platform, record: DeploymentRecord): Promise<{ mode: HdrMode | null; active: boolean }> {
+  const options = record.recipe.hdrOptions ?? []
+  if (!options.length) return { mode: null, active: false }
+  const settings = options.flatMap((option) => option.settings)
+  const enabledSettings = settings.filter((setting) => setting.key.toLowerCase() === 'ffxivhdr')
+  const onDisk = await declaredSettingsOnDisk(platform, record, settings)
+  const valueId = (setting: IniSetting) => `${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`
+  const values = new Map(onDisk.map((setting) => [valueId(setting), setting.value]))
+  const valueFor = (file: string, section: string, key: string) => values.get(`${fileKey(file)}|${section.toLowerCase()}|${key.toLowerCase()}`)
+  const mode = matchHdrMode(options, valueFor)
+  const configured = enabledSettings.some((setting) => valueFor(setting.file, setting.section, setting.key)?.toLowerCase() === 'true')
+  return { mode, active: mode === 'off' ? false : mode !== null || configured }
 }
 
 /** Applies one mode from the deployed recipe without involving the performance profile. */
@@ -1342,12 +1422,13 @@ function ownedIniConfig(record: DeploymentRecord, setting: IniSetting): string {
   return file
 }
 
+export function resolvedPeakNits(peakNits: number | null): number {
+  const measured = peakNits !== null && Number.isFinite(peakNits) ? peakNits : 1100
+  return Math.min(4000, Math.max(400, Math.round(measured)))
+}
 function derivedValue(setting: ScreenDerivedSetting, screen: ResolvedScreen): string {
   if (setting.value === 'frameCap') return screen.frameCap.toFixed(6)
-  if (setting.value === 'peakNits') {
-    const measured = screen.peakNits !== null && Number.isFinite(screen.peakNits) ? screen.peakNits : 1100
-    return String(Math.min(4000, Math.max(400, Math.round(measured))))
-  }
+  if (setting.value === 'peakNits') return String(resolvedPeakNits(screen.peakNits))
   throw new Error(`Unknown screen-derived setting: ${setting.value}`)
 }
 

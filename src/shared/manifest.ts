@@ -314,6 +314,10 @@ function frameGenerationOption(value: unknown): FrameGenerationOption {
   if (option.hdrSettings !== undefined) {
     hdrSettings = array(option.hdrSettings, 'HDR frame-generation settings').map((value) => iniSetting(object(value, 'HDR frame-generation setting')))
     unique(hdrSettings.map(settingKey), 'HDR frame-generation setting keys')
+    const baseSettingKeys = new Set(settings.map(settingKey))
+    if (hdrSettings.some((setting) => !baseSettingKeys.has(settingKey(setting)))) {
+      invalid('HDR frame-generation settings must override keys declared in the normal frame-generation settings.')
+    }
   }
   return { id: option.id as FrameGenerationId, ...(gpuNamePatterns ? { gpuNamePatterns } : {}),
     ...(option.experimental !== undefined ? { experimental: option.experimental } : {}), settings,

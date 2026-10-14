@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { HdrOption } from '../shared/manifest'
-import { disableAutoHdr, matchHdrMode, restoreAutoHdr } from './hdr'
+import { disableAutoHdr, latestAutoHdrDisableIndex, matchHdrMode, restoreAutoHdr } from './hdr'
 
 const options: HdrOption[] = [
   { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
@@ -26,6 +26,29 @@ describe('HDR mode matching', () => {
   })
 })
 
+describe('HDR mode matching', () => {
+  it('matches declared HDR keys across more than one owned config', () => {
+    const multiFileOptions: HdrOption[] = [
+      { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
+      { id: 'hdr', settings: [
+        { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+        { file: 'Renderer.ini', section: 'HDR', key: 'Mode', value: '0' },
+      ] },
+      { id: 'scene-hdr', settings: [
+        { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+        { file: 'Renderer.ini', section: 'HDR', key: 'Mode', value: '1' },
+      ] },
+    ]
+    const values = new Map([
+      ['optiscaler.ini|hdr|ffxivhdr', 'true'],
+      ['renderer.ini|hdr|mode', '1'],
+    ])
+    expect(matchHdrMode(multiFileOptions, (file, section, key) => values.get(`${file.toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`))).toBe('scene-hdr')
+    values.set('renderer.ini|hdr|mode', '2')
+    expect(matchHdrMode(multiFileOptions, (file, section, key) => values.get(`${file.toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`))).toBeNull()
+  })
+})
+
 describe('Auto HDR entry ownership', () => {
   it('adds only the disabled AutoHDR token and preserves existing token spelling, order and terminator', () => {
     expect(disableAutoHdr('SwapEffectUpgradeEnable=257;GpuPreference=2;'))
@@ -37,6 +60,36 @@ describe('Auto HDR entry ownership', () => {
   it('leaves unrelated strings byte-for-byte intact when replacing the owned token', () => {
     expect(disableAutoHdr('  GpuPreference = 2;  AutoHDREnable = 2097 ;SwapEffectUpgradeEnable=257'))
       .toBe('  GpuPreference = 2;  AutoHDREnable = 2096 ;SwapEffectUpgradeEnable=257')
+  })
+
+  it.each([
+    ['2099', '2098'],
+    ['4294967295', '4294967294'],
+  ])('clears only the enabled bit of DWORD %s', (beforeToken, afterToken) => {
+    const before = `AutoHDREnable=${beforeToken};GpuPreference=2;`
+    const after = disableAutoHdr(before)
+    expect(after).toBe(`AutoHDREnable=${afterToken};GpuPreference=2;`)
+    expect(restoreAutoHdr(after, before, after)).toBe(before)
+  })
+
+  it('does not claim an already-disabled AutoHDR token', () => {
+    expect(disableAutoHdr('GpuPreference=2;AutoHDREnable=2096;')).toBe('GpuPreference=2;AutoHDREnable=2096;')
+    expect(latestAutoHdrDisableIndex([{ before: 'GpuPreference=2;AutoHDREnable=2096;', after: 'GpuPreference=2;AutoHDREnable=2096;' }])).toBeNull()
+  })
+
+  it('does not reuse a historical disable after an Off restore and later player edit', () => {
+    const before = 'GpuPreference=2;AutoHDREnable=2097;'
+    const disabled = disableAutoHdr(before)
+    const restored = restoreAutoHdr(disabled, before, disabled)!
+    const transitions = [
+      { before, after: disabled },
+      { before: disabled, after: restored },
+    ]
+    expect(latestAutoHdrDisableIndex(transitions)).toBeNull()
+    const playerDisabled = disableAutoHdr(restored)
+    expect(playerDisabled).toBe('GpuPreference=2;AutoHDREnable=2096;')
+    expect(latestAutoHdrDisableIndex([])).toBeNull()
+    expect(playerDisabled).toBe('GpuPreference=2;AutoHDREnable=2096;')
   })
 
   it('restores the exact previous string when nobody changed the value', () => {

@@ -14,10 +14,10 @@ import { Path } from './Path'
 import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { defaultFrameGenerationMode, frameGenerationDescription, frameGenerationOptionsForGpu } from '../core/frameGeneration'
-import { replacedOriginals } from '../core/deployment'
+import { replacedOriginals, resolvedPeakNits } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
-import type { FrameGenerationId } from '../shared/manifest'
+import type { FrameGenerationId, HdrMode } from '../shared/manifest'
 import type { State } from '../core/core'
 import { SegmentedControl } from './SegmentedControl'
 import { observeWindowFocus } from './shell'
@@ -47,10 +47,42 @@ function HomeScreen() {
     <FlowError />
     <ProfileSelector />
     <FrameGenerationSelector state={state} core={core} />
+    <HdrSelector state={state} core={core} />
     <EnabledRow />
   </Screen>
 }
 
+function HdrSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
+  const record = state.deployment
+  const screen = state.screen
+  const options = record?.recipe.hdrOptions
+  if (!record || state.activity.kind !== 'deployment' || !screen?.hdrSupported || !options?.length) return null
+  const mode = state.hdrMode
+  const labels: Record<HdrMode, string> = { off: 'Off', hdr: 'HDR', 'scene-hdr': 'Scene HDR' }
+  const peakNits = resolvedPeakNits(screen.peakNits)
+  const nvidia = record.graphics.vendorId === 0x10de || /NVIDIA/i.test(record.graphics.name)
+  const details = [
+    mode === null ? 'Custom HDR settings.' : '',
+    screen.hdrOn
+      ? peakNits.toLocaleString('en') + ' nits peak (400–4,000 range). If it looks wrong, use Windows HDR Calibration for this display.'
+      : 'Turn on HDR in Windows to use it (Win+Alt+B).',
+    nvidia ? 'Turn off RTX HDR in the NVIDIA app.' : '',
+  ].filter(Boolean).join(' ')
+  return <section className="frame-generation-section hdr-section card" aria-label="HDR">
+    <div className="frame-generation-heading">
+      <div><h2>HDR</h2><p>{details}</p></div>
+      {mode === null && <span className="frame-generation-custom">Custom</span>}
+    </div>
+    <SegmentedControl
+      ariaLabel="HDR mode"
+      options={options.map((option) => ({ id: option.id, label: labels[option.id], experimental: option.experimental }))}
+      value={mode}
+      disabled={!gameActionsAvailable(state)}
+      onChange={(id) => void core.selectHdrMode(id as HdrMode)}
+    />
+    {mode === null && <p className="frame-generation-note">Select a mode to replace these custom settings.</p>}
+  </section>
+}
 function FrameGenerationSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
   const record = state.deployment
   if (!record || state.activity.kind !== 'deployment') return null
@@ -61,7 +93,7 @@ function FrameGenerationSelector({ state, core }: { state: State; core: ReturnTy
   const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : record.graphics.name
   const options = frameGenerationOptionsForGpu(optionSource, gpuName)
   if (!options.length) return null
-  const labels: Record<FrameGenerationId, string> = { off: 'Off', '2x': '2x', '3x': '3x', '4x': '4x', '5x': '5x', '6x': '6x', dynamic: 'Dynamic' }
+  const labels: Record<FrameGenerationId, string> = { off: 'Off', '2x': '2×', '3x': '3×', '4x': '4×', '5x': '5×', '6x': '6×', dynamic: 'Dynamic' }
   const mode = state.frameGenerationMode
   const fallback = defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60)
   const description = mode

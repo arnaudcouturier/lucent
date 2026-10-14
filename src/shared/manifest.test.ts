@@ -120,6 +120,14 @@ describe('The shared manifest schema', () => {
     expect(parseManifest(JSON.stringify(input)).versions[0].tiers['rtx-30-40'].frameGenerationOptions).toBeUndefined()
   })
 
+  it('rejects HDR frame-generation overrides without a normal-mode value to restore', () => {
+    const options = [
+      { id: '2x', settings: [{ file: 'OptiScaler.ini', section: 'XeFG', key: 'UnlockMFG', value: 'true' }],
+        hdrSettings: [{ file: 'OptiScaler.ini', section: 'XeFG', key: 'DynamicMFG', value: 'false' }] },
+    ]
+    expect(() => parseManifest(JSON.stringify(frameGenerationManifest(options)))).toThrow(/must override keys declared/)
+  })
+
   it('reads all three HDR modes and the experimental Scene HDR marker', () => {
     const parsed = parseManifest(JSON.stringify(hdrManifest(hdrOptions)))
     expect(parsed.versions[0].tiers['rtx-30-40'].hdrOptions).toEqual(hdrOptions)

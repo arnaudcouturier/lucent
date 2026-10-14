@@ -103,7 +103,7 @@ A tier recipe may also declare `frameGenerationOptions`, a list of modes shown o
 `off`, `2x` through `6x`, or `dynamic`, plus nonempty `settings` targeting an owned config. Optional
 `gpuNamePatterns` are case-insensitive regular expressions; options without patterns apply to any GPU. If both a
 generic and GPU-specific option share an ID, the matching GPU-specific variant is used. `experimental: true` adds
-the yellow Experimental label. `hdrSettings` may override values for the same keys when Windows HDR is on. Lucent
+the yellow Experimental label. `hdrSettings` may override values for keys also declared in `settings` when Windows HDR is on; every override must have a normal-mode value so turning HDR off restores it. Lucent
 stores the currently selected mode and appends its settings after the performance profile, so frame-generation keys
 remain separate from profiles. Mode selection is not part of first-run setup: at 120 Hz or above the default is 2x,
 otherwise Off, falling back to the first offered mode. Lucent reads the config values on Home, when the window regains
@@ -121,12 +121,12 @@ The field is optional and is ignored by older app releases. Options are filtered
 the fixed Off, 2x–6x, Dynamic order. The Home description uses the resolved frame cap and refresh rate; multiplier
 modes describe `floor(frameCap / multiplier)` as the render rate.
 
-A tier may also declare optional `hdrOptions`: exactly one option each for `off`, `hdr` and `scene-hdr`. Each option
-has nonempty settings targeting owned configs; those settings are the complete INI values that identify and apply
-the mode. `scene-hdr` may be marked `experimental`. Older content without this field has no HDR selector. Lucent
-matches the current INI values to the declared options, and displays Custom when there is no unique match. Choosing
-an HDR mode writes its settings independently of the performance profile and frame-generation mode. For HDR and
-Scene HDR, Lucent also disables Windows Auto HDR for XIV; Off restores the player's prior Auto HDR preference.
+A tier may declare optional `hdrOptions` content data. New deployments select HDR by default; Home shows its mode
+selector only when the current display supports HDR. A declaration contains one option each for `off`, `hdr` and
+`scene-hdr`; each option owns the complete set of INI values that identifies and applies it. `scene-hdr` may set
+`experimental: true`. Older content without this field has no Home HDR selector. Lucent reads the current INI
+values to identify the selected mode, and an unrecognized combination is Custom. The mode keys are separate from
+performance-profile keys so choosing a mode never makes a profile Custom. Example:
 
 ```json
 "hdrOptions": [

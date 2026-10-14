@@ -1,11 +1,12 @@
 import { expect, it } from 'vitest'
-import { changeOwnedIniSettings, dataPaths, readDeployment } from './deployment'
+import { changeOwnedIniSettings, dataPaths, hdrStateOnDisk, readDeployment, uninstallDeployment } from './deployment'
 import { createCore } from './core'
 import { createFakePlatform } from '../platform/fake'
 import { graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { TEST_MANIFEST, FIXTURE_ASSETS, fixtureUrl, OPTISCALER_HASH, RESHADE_HASH, PRESET_HASH } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
 import { PlatformError } from './platform'
+import type { HdrOption } from '../shared/manifest'
 
 const ROOT = 'C:\\Games\\XIV'
 export function deploymentMachine() {
@@ -302,7 +303,7 @@ it('groups owned INI changes, preserves unrelated user edits, and journals side-
       writeCount++
       const applying = await readDeployment(platform, ROOT)
       expect(applying?.status).toBe('applying')
-      expect(applying?.journal.find((entry) => entry.registry)?.registry).toMatchObject({ kind: 'user-gpu-preferences', after: 'new' })
+      expect(applying?.journal.find((entry) => entry.registry)?.registry).toMatchObject({ kind: 'user-gpu-preferences', after: 'AutoHDREnable=2096;' })
     }
     await originalWrite(path, text, staging)
   }
@@ -311,7 +312,7 @@ it('groups owned INI changes, preserves unrelated user edits, and journals side-
     { file: 'ReShade.ini', section: 'FrameGen', key: 'Enabled', value: 'true' },
   ], undefined, {
     async prepare() {
-      return { registry: { kind: 'user-gpu-preferences', userSid: 'S-1-5-21-10-20-30-1001', name: `${ROOT}\\game\\ffxiv_dx11.exe`, before: null, after: 'new' }, before: {}, after: {} }
+      return { registry: { kind: 'user-gpu-preferences', userSid: 'S-1-5-21-10-20-30-1001', name: `${ROOT}\\game\\ffxiv_dx11.exe`, before: null, after: 'AutoHDREnable=2096;' }, before: {}, after: {} }
     },
     async apply() { applied = true },
   })
@@ -328,6 +329,77 @@ it('groups owned INI changes, preserves unrelated user edits, and journals side-
   expect(applied).toBe(true)
 })
 
+it('HDR disk matching reads declared settings from every owned config', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const record = (await readDeployment(platform, ROOT))!
+  record.recipe.hdrOptions = [
+    { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
+    { id: 'hdr', settings: [
+      { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+      { file: 'ReShade.ini', section: 'HDR', key: 'Mode', value: '0' },
+    ] },
+    { id: 'scene-hdr', settings: [
+      { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+      { file: 'ReShade.ini', section: 'HDR', key: 'Mode', value: '1' },
+    ] },
+  ] satisfies HdrOption[]
+  record.ownedConfigs['OptiScaler.ini'] = '[HDR]\nFfxivHDR=true\n'
+  await platform.writeText(`${ROOT}\\game\\OptiScaler.ini`, record.ownedConfigs['OptiScaler.ini'])
+  await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[HDR]\nMode=1\n')
+  expect(await hdrStateOnDisk(platform, record)).toEqual({ mode: 'scene-hdr', active: true })
+  await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[HDR]\nMode=2\n')
+  expect(await hdrStateOnDisk(platform, record)).toEqual({ mode: null, active: true })
+})
+
+it('retires Auto HDR ownership after Off so full uninstall preserves later player edits', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const exe = `${ROOT}\\game\\ffxiv_dx11.exe`
+  const sid = 'S-1-5-21-1000-1000-1000-1001'
+  const original = 'GpuPreference=2;AutoHDREnable=2097;'
+  const disabled = 'GpuPreference=2;AutoHDREnable=2096;'
+  await changeOwnedIniSettings(platform, ROOT, [], undefined, {
+    async prepare() { return { registry: { kind: 'user-gpu-preferences', userSid: sid, name: exe, before: original, after: disabled }, before: {}, after: {} } },
+    async apply() { await platform.writeUserGpuPreferences(sid, exe, disabled) },
+  })
+  const off = await changeOwnedIniSettings(platform, ROOT, [], undefined, {
+    async prepare() { return { registry: { kind: 'user-gpu-preferences', userSid: sid, name: exe, before: disabled, after: original }, before: {}, after: {} } },
+    async apply() { await platform.writeUserGpuPreferences(sid, exe, original) },
+    commit(record) { record.journal = record.journal.filter((entry) => entry.registry?.name.toLowerCase() !== exe.toLowerCase()) },
+  })
+  expect(off.journal.some((entry) => entry.registry)).toBe(false)
+  await platform.writeUserGpuPreferences(sid, exe, disabled)
+  await uninstallDeployment(platform, ROOT)
+  expect(await platform.readUserGpuPreferences(sid, exe)).toBe(disabled)
+})
+
+it('does not undo legacy Auto HDR transitions after the latest transition restored the player value', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const record = (await readDeployment(platform, ROOT))!
+  const exe = `${ROOT}\\game\\ffxiv_dx11.exe`
+  const sid = 'S-1-5-21-1000-1000-1000-1001'
+  const original = 'GpuPreference=2;AutoHDREnable=2097;'
+  const disabled = 'GpuPreference=2;AutoHDREnable=2096;'
+  record.journal.push(
+    { registry: { kind: 'user-gpu-preferences', userSid: sid, name: exe, before: original, after: disabled }, before: {}, after: {} },
+    { registry: { kind: 'user-gpu-preferences', userSid: sid, name: exe, before: disabled, after: original }, before: {}, after: {} },
+  )
+  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
+  await platform.writeUserGpuPreferences(sid, exe, disabled)
+  await uninstallDeployment(platform, ROOT)
+  expect(await platform.readUserGpuPreferences(sid, exe)).toBe(disabled)
+})
 it('recovers an unfinished journal on reopening and keeps cached assets for retry', async () => {
   const platform = createFakePlatform(deploymentMachine())
   const core = createCore(platform)
