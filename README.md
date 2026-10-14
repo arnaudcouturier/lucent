@@ -20,7 +20,7 @@
 
 <br>
 
-Lucent is a portable Windows app that manages graphics mods for XIV. It installs them in your game folder, repairs them after game patches and removes them cleanly. Every file it replaces is backed up first.
+Lucent is a portable Windows app that manages graphics mods for XIV. It installs them in your game folder and removes them cleanly. Every file it replaces is backed up first.
 
 ## Download
 
@@ -33,12 +33,17 @@ Lucent.exe isn't code-signed, so Windows warns on first launch. The site shows [
 
 ## Features
 
-Lucent manages two features so far. More can be added; if there's a tool you'd like it to handle, [open an issue](https://github.com/arnaudcouturier/lucent/issues).
+Lucent manages two features: DLSS 5 through OptiScaler, and ReShade with shaders and presets. It detects your graphics card and installs the setup made for it.
 
-| | |
-|:--|:--|
-| **DLSS 5 Neural Rendering** | Through OptiScaler, with frame generation and settings tuned for XIV. Three profiles: Fidelity, Balanced and Performance. Radeon cards get FSR upscaling and frame generation instead. |
-| **ReShade** | The add-on build, with iMMERSE, qUINT, SweetFX, ipsuShade and the Alive presets. No preset is active until you pick one. Optional on cards that get DLSS 5 or FSR. |
+| Card | OptiScaler | ReShade | Content |
+|:--|:--|:--|:--|
+| RTX 50 | DLSS 5 Neural Rendering, with the runtime file NVIDIA ships | Optional | Not yet |
+| RTX 30 / 40 | DLSS 5 Neural Rendering, with ShortFuse's compatibility build of NVIDIA's runtime | Optional | **Beta** |
+| RTX 20 | Same as RTX 30 / 40 | Optional | Not yet |
+| Radeon | No Neural Rendering. FSR upscaling and FSR frame generation instead | Always | Not yet |
+| Any other | Not installed | Always | Not yet |
+
+To use Beta content, turn on **Beta channel** on the Scan screen. The [site](https://arnaudcouturier.github.io/lucent/#features) reads this list from the manifest, so it is always current. If there's another tool you'd like Lucent to manage, [open an issue](https://github.com/arnaudcouturier/lucent/issues).
 
 ## What the manager does
 
@@ -50,18 +55,6 @@ Lucent manages two features so far. More can be added; if there's a tool you'd l
 | **Updates when you say** | New versions are offered, never forced. Versions rolls back. |
 | **Uninstalls cleanly** | Restores what it replaced and removes what it added. Your own presets and shaders stay. |
 | **No telemetry** | Open source. [Every file it installs](https://arnaudcouturier.github.io/lucent/files.html) is listed with its SHA-256. |
-
-## Supported cards
-
-| Card | Setup | Content |
-|:--|:--|:--|
-| RTX 50 | DLSS 5 Neural Rendering + ReShade | Not yet |
-| RTX 30 / 40 | DLSS 5 through the compatibility runtime + ReShade | **Beta** |
-| RTX 20 | DLSS 5 through the compatibility runtime + ReShade | Not yet |
-| Radeon | FSR upscaling and frame generation + ReShade | Not yet |
-| Any other | ReShade and presets | Not yet |
-
-To use Beta content, turn on **Beta channel** on the Scan screen. The [site](https://arnaudcouturier.github.io/lucent/#cards) reads this list from the manifest, so it is always current.
 
 ## Credits
 

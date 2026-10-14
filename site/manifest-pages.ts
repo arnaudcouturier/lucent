@@ -8,13 +8,13 @@ const count = (n: number) => n.toLocaleString('en')
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`
 const assetUrl = (release: string, sha256: string) => `https://github.com/arnaudcouturier/lucent/releases/download/${release}/${sha256}`
 
-/** What each tier deploys, in the player's words. Tiers are data; an unknown one falls back to its flags. */
-const TIER_OFFER: Record<string, string> = {
-  'rtx-50': 'DLSS 5 Neural Rendering with NVIDIA’s runtime, plus ReShade',
-  'rtx-30-40': 'DLSS 5 Neural Rendering through the compatibility runtime, plus ReShade',
-  'rtx-20': 'DLSS 5 Neural Rendering through the compatibility runtime, plus ReShade',
-  radeon: 'FSR upscaling and frame generation, plus ReShade',
-  other: 'ReShade with every preset',
+/** What OptiScaler does on each tier, in the player's words. Tiers are data; an unknown one falls back to its flags. */
+const TIER_OPTISCALER: Record<string, string> = {
+  'rtx-50': 'DLSS 5 Neural Rendering, with the runtime file NVIDIA ships',
+  'rtx-30-40': 'DLSS 5 Neural Rendering, with ShortFuse’s compatibility build of NVIDIA’s runtime',
+  'rtx-20': 'DLSS 5 Neural Rendering, with ShortFuse’s compatibility build of NVIDIA’s runtime',
+  radeon: 'No Neural Rendering. FSR upscaling and FSR frame generation instead',
+  other: 'Not installed',
 }
 const STATUS: Record<Tier['status'], string> = { stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified' }
 
@@ -49,9 +49,10 @@ function tiers(manifest: Manifest) {
     const versions = manifest.versions.filter((v) => v.tiers[tier.id])
     const availability = versions.some((v) => v.channel === 'stable') ? '<span class="tag is-accent">Available</span>'
       : versions.length ? '<span class="tag is-accent">In Beta</span>' : '<span class="tag">Coming</span>'
-    const offer = TIER_OFFER[tier.id] ?? (tier.neuralRendering ? 'DLSS 5 Neural Rendering, plus ReShade' : 'ReShade with every preset')
+    const optiScaler = TIER_OPTISCALER[tier.id] ?? (tier.neuralRendering ? 'DLSS 5 Neural Rendering' : 'Not installed')
     return `<li class="tier-row"><span class="tier-name">${escape(tier.gpuMatch === 'any' ? 'Any other card' : tier.label)}</span>
-      <span class="tier-offer">${escape(offer)}</span>
+      <span class="tier-feature"><small>OptiScaler</small>${escape(optiScaler)}</span>
+      <span class="tier-feature"><small>ReShade</small>${tier.requiresReShade ? 'Always installed' : 'Optional, on by default'}</span>
       <span class="tier-tags"><span class="tag ${tier.status === 'experimental' ? 'is-caution' : ''}">${STATUS[tier.status]}</span>${availability}</span></li>`
   })
   return `<ul class="tier-list">${rows.join('')}</ul>`

@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "publish:content": "tsx scripts/publish.ts",
+    "build:art": "tsx scripts/crystal-art.ts",
     "tauri": "tauri"
   },
   "dependencies": {

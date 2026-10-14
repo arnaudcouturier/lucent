@@ -449,94 +449,6 @@ kbd {
   font-size: 13px;
 }
 
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4) 0;
-  margin: 40px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.facts li {
-  display: grid;
-  gap: 4px;
-  padding-right: 24px;
-  margin-right: 24px;
-  border-right: 2px dotted rgba(255, 255, 255, 0.13);
-}
-
-.facts li:last-child {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.facts b {
-  color: var(--ink);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-.facts span {
-  color: var(--ink-3);
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* The products Lucent installs, on a band under the hero. */
-.band {
-  background: var(--canvas);
-  box-shadow: inset 0 1px 0 rgba(var(--accent-glow), 0.28), inset 0 -1px 0 rgba(var(--accent-glow), 0.28);
-}
-
-.band-inner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3) var(--space-8);
-  padding-top: 22px;
-  padding-bottom: 22px;
-}
-
-.band-label {
-  color: var(--ink-3);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.band ul {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-}
-
-/* Small gems between the names. */
-.band li + li::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin: 0 18px;
-  background: var(--accent);
-  transform: rotate(45deg) translateY(-2px);
-  opacity: 0.85;
-}
-
 /* ---------- The app, drawn in HTML: a 1000px window with 13px UI text ---------- */
 .mock-frame {
   container-type: inline-size;
@@ -590,11 +502,6 @@ kbd {
   height: 16.5em;
   margin: 0 -0.9em;
   background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.2), transparent);
-}
-
-.mock-stage img {
-  height: 14.5em;
-  width: auto;
 }
 
 .mock-nav { display: grid; gap: 0.15em; margin-top: 0.3em; }
@@ -751,13 +658,9 @@ kbd {
   margin-top: 1.15em;
 }
 
-
 .mock-stage img,
 .mock-crystal {
   display: block;
-}
-
-.mock-crystal {
   width: 100%;
   height: 100%;
 }
@@ -795,136 +698,11 @@ kbd {
   font-size: 13px;
 }
 
-/* Features: the things Lucent manages, side by side */
-.feature-pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.product {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 32px;
-}
-
-.product::before {
-  content: '';
-  position: absolute;
-  top: -180px;
-  right: -140px;
-  width: 380px;
-  height: 340px;
-  background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.1), transparent);
-  pointer-events: none;
-}
-
-.product > * {
-  position: relative;
-}
-
-.product-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.product-icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--accent-tint);
-  box-shadow: var(--accent-ring);
-  color: var(--accent);
-}
-
-.product-icon .i {
-  width: 22px;
-  height: 22px;
-}
-
-.product h3 {
-  margin-top: 28px;
-  font-size: 26px;
-  letter-spacing: -0.03em;
-}
-
-.product > p {
-  margin-top: 10px;
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-.checks {
-  display: grid;
-  gap: 10px;
-  margin: 24px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 14.5px;
-}
-
-.checks li {
-  position: relative;
-  padding-left: 28px;
-  color: var(--ink);
-}
-
-/* A Lucide check, as a mask so it takes the accent. */
-.checks li::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 0;
-  width: 17px;
-  height: 17px;
-  background: var(--accent);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.product-keys {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  margin: auto 0 0;
-  padding-top: 28px;
-}
-
-.product-keys > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.product-keys dt {
-  white-space: nowrap;
-}
-
-.product-keys dd {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 13px;
-}
-
-.product-keys::before {
-  content: '';
-  flex: 0 0 100%;
-  height: 1px;
-  margin-bottom: 18px;
-  background: var(--line);
-}
-
 .next-feature {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  margin-top: 20px;
+  margin-top: 28px;
   padding: 18px 24px;
   border: 1.5px dashed var(--line-strong);
   border-radius: var(--radius-card);
@@ -1038,7 +816,7 @@ kbd {
 
 .tier-row {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) auto;
+  grid-template-columns: 150px minmax(0, 1fr) 190px 220px;
   gap: var(--space-4);
   align-items: center;
   padding: 20px 0;
@@ -1053,13 +831,24 @@ kbd {
   font-weight: 600;
 }
 
-.tier-offer {
+.tier-feature {
+  display: grid;
+  gap: 2px;
   color: var(--ink-2);
   font-size: 14px;
 }
 
+.tier-feature small {
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .tier-tags {
   display: flex;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -1884,9 +1673,17 @@ kbd {
     margin-bottom: 32px;
   }
 
-  .feature-pair {
-    grid-template-columns: 1fr;
+  .tier-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: 'name tags' 'optiscaler reshade';
+    align-items: start;
+    row-gap: var(--space-3);
   }
+
+  .tier-name { grid-area: name; }
+  .tier-tags { grid-area: tags; justify-content: flex-end; }
+  .tier-row > :nth-child(2) { grid-area: optiscaler; }
+  .tier-row > :nth-child(3) { grid-area: reshade; }
 
   .feature-grid,
   .steps {
@@ -1925,37 +1722,8 @@ kbd {
     flex: 1 1 auto;
   }
 
-  .facts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .facts li {
-    padding: 0;
-    margin: 0;
-    border: 0;
-  }
-
-  .facts b {
-    font-size: 17px;
-  }
-
-  .facts span {
-    font-size: 10.5px;
-    letter-spacing: 0.05em;
-  }
-
   .credits-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .band li + li::before {
-    margin: 0 12px;
-  }
-
-  .band ul {
-    font-size: 15px;
   }
 
   .section {
@@ -1964,14 +1732,6 @@ kbd {
 
   .section-head {
     margin-bottom: 32px;
-  }
-
-  .product {
-    padding: 24px;
-  }
-
-  .product h3 {
-    font-size: 23px;
   }
 
   .next-feature {
@@ -1991,7 +1751,12 @@ kbd {
 
   .tier-row {
     grid-template-columns: 1fr;
-    gap: var(--space-2);
+    grid-template-areas: 'name' 'optiscaler' 'reshade' 'tags';
+    gap: var(--space-3);
+  }
+
+  .tier-tags {
+    justify-content: flex-start;
   }
 
   .files-callout {
