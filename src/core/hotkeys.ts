@@ -55,11 +55,6 @@ function optiScalerCode(config: Config, section: string, key: string, fallback: 
   return code && code > 0 ? code : null
 }
 
-function optiScalerKey(config: Config, section: string, key: string, fallback: number | null, names: Readonly<Record<number, string>>): string[] | null {
-  const code = optiScalerCode(config, section, key, fallback)
-  return code ? [keyName(code, names)] : null
-}
-
 /** ReShade stores a shortcut as `key,ctrl,shift,alt`; a key of 0 is unbound. */
 function reShadeCodes(config: Config, key: string, fallback: number | null): number[] | null {
   const value = config.get('INPUT', key)
@@ -68,40 +63,66 @@ function reShadeCodes(config: Config, key: string, fallback: number | null): num
   return [...(parts[1] ? [0x11] : []), ...(parts[2] ? [0x10] : []), ...(parts[3] ? [0x12] : []), parts[0]]
 }
 
-function reShadeKey(config: Config, key: string, fallback: number | null, names: Readonly<Record<number, string>>): string[] | null {
-  return reShadeCodes(config, key, fallback)?.map((code) => keyName(code, names)) ?? null
-}
-
 const truthy = (value: string | undefined) => value?.trim().toLowerCase() === 'true'
 type Overlay = DeploymentRecord['recipe']['overlay']
 
-/** Every action of the deployed tools with its key, unbound ones included where the tool always offers them. */
-function readBindings(configs: KeyConfigs, overlay: Overlay, names: Readonly<Record<number, string>>): KeyBinding[] {
-  const bindings: KeyBinding[] = []
+interface BindingCodes {
+  tool: KeyTool
+  action: string
+  hint?: string
+  virtualKeys: number[] | null
+  essential: boolean
+  includeWhenUnbound: boolean
+}
+
+/** One source for each action's config key, default, and screen visibility; labels and OS lookups derive from it. */
+function bindingCodes(configs: KeyConfigs, overlay: Overlay): BindingCodes[] {
+  const bindings: BindingCodes[] = []
   if (configs.optiScaler !== null && overlay) {
     // Defaults from OptiScaler's Config.h: the menu on Insert, frame generation on End, the FPS overlay on
     // Page Up and its style on Page Down, Neural Rendering unbound.
     const config = readIni(configs.optiScaler)
-    const tool = 'OptiScaler'
-    bindings.push({ tool, action: 'Menu', hint: overlay === 'neural-rendering' ? 'Neural Rendering, upscaling and frame generation' : 'FSR upscaling and frame generation', keys: optiScalerKey(config, 'Menu', 'ShortcutKey', 0x2d, names), essential: true })
-    if (overlay === 'neural-rendering') bindings.push({ tool, action: 'Neural Rendering on or off', keys: optiScalerKey(config, 'DlssNr', 'ToggleKey', null, names), essential: true })
-    bindings.push({ tool, action: 'Frame generation on or off', keys: optiScalerKey(config, 'Menu', 'FGShortcutKey', 0x23, names), essential: truthy(config.get('FrameGen', 'Enabled')) })
-    bindings.push({ tool, action: 'FPS overlay', keys: optiScalerKey(config, 'Menu', 'FpsShortcutKey', 0x21, names), essential: false })
-    bindings.push({ tool, action: 'FPS overlay style', keys: optiScalerKey(config, 'Menu', 'FpsCycleShortcutKey', 0x22, names), essential: false })
+    const actions = [
+      { action: 'Menu', section: 'Menu', key: 'ShortcutKey', fallback: 0x2d, hint: overlay === 'neural-rendering' ? 'Neural Rendering, upscaling and frame generation' : 'FSR upscaling and frame generation', essential: true },
+      ...(overlay === 'neural-rendering' ? [{ action: 'Neural Rendering on or off', section: 'DlssNr', key: 'ToggleKey', fallback: null, essential: true }] : []),
+      { action: 'Frame generation on or off', section: 'Menu', key: 'FGShortcutKey', fallback: 0x23, essential: truthy(config.get('FrameGen', 'Enabled')) },
+      { action: 'FPS overlay', section: 'Menu', key: 'FpsShortcutKey', fallback: 0x21, essential: false },
+      { action: 'FPS overlay style', section: 'Menu', key: 'FpsCycleShortcutKey', fallback: 0x22, essential: false },
+    ]
+    for (const { action, section, key, fallback, hint, essential } of actions) {
+      const code = optiScalerCode(config, section, key, fallback)
+      bindings.push({ tool: 'OptiScaler', action, hint, virtualKeys: code ? [code] : null, essential, includeWhenUnbound: true })
+    }
   }
   if (configs.reShade !== null) {
     // ReShade's own defaults: the overlay on Home, screenshots on Print Screen, everything else unbound.
     const config = readIni(configs.reShade)
-    const tool = 'ReShade'
-    bindings.push({ tool, action: 'Menu', hint: 'Choose a preset', keys: reShadeKey(config, 'KeyOverlay', 0x24, names), essential: true })
-    bindings.push({ tool, action: 'Effects on or off', keys: reShadeKey(config, 'KeyEffects', null, names), essential: true })
-    bindings.push({ tool, action: 'Screenshot', keys: reShadeKey(config, 'KeyScreenshot', 0x2c, names), essential: false })
-    for (const [action, key] of [['Next preset', 'KeyNextPreset'], ['Previous preset', 'KeyPreviousPreset'], ['Reload effects', 'KeyReload'], ['FPS counter', 'KeyFPS'], ['Frame time', 'KeyFrametime']]) {
-      const keys = reShadeKey(config, key, null, names)
-      if (keys) bindings.push({ tool, action, keys, essential: false })
+    const actions = [
+      { action: 'Menu', key: 'KeyOverlay', fallback: 0x24, hint: 'Choose a preset', essential: true, includeWhenUnbound: true },
+      { action: 'Effects on or off', key: 'KeyEffects', fallback: null, essential: true, includeWhenUnbound: true },
+      { action: 'Screenshot', key: 'KeyScreenshot', fallback: 0x2c, essential: false, includeWhenUnbound: true },
+      { action: 'Next preset', key: 'KeyNextPreset', fallback: null, essential: false, includeWhenUnbound: false },
+      { action: 'Previous preset', key: 'KeyPreviousPreset', fallback: null, essential: false, includeWhenUnbound: false },
+      { action: 'Reload effects', key: 'KeyReload', fallback: null, essential: false, includeWhenUnbound: false },
+      { action: 'FPS counter', key: 'KeyFPS', fallback: null, essential: false, includeWhenUnbound: false },
+      { action: 'Frame time', key: 'KeyFrametime', fallback: null, essential: false, includeWhenUnbound: false },
+    ]
+    for (const { action, key, fallback, hint, essential, includeWhenUnbound } of actions) {
+      bindings.push({ tool: 'ReShade', action, hint, virtualKeys: reShadeCodes(config, key, fallback), essential, includeWhenUnbound })
     }
   }
   return bindings
+}
+
+/** Every visible action with names for its virtual keys. */
+function readBindings(configs: KeyConfigs, overlay: Overlay, names: Readonly<Record<number, string>>): KeyBinding[] {
+  return bindingCodes(configs, overlay)
+    .filter((binding) => binding.includeWhenUnbound || binding.virtualKeys !== null)
+    .map(({ virtualKeys, includeWhenUnbound: _includeWhenUnbound, hint, ...binding }) => ({
+      ...binding,
+      ...(hint === undefined ? {} : { hint }),
+      keys: virtualKeys?.map((code) => keyName(code, names)) ?? null,
+    }))
 }
 
 /** The configs Lucent last wrote for this deployment, as `KeyConfigs`. */
@@ -116,27 +137,7 @@ export function deploymentHotkeys(record: Pick<DeploymentRecord, 'recipe' | 'own
 }
 
 function keyCodes(configs: KeyConfigs, overlay: Overlay): number[] {
-  const codes: number[] = []
-  if (configs.optiScaler !== null && overlay) {
-    const config = readIni(configs.optiScaler)
-    codes.push(
-      ...[optiScalerCode(config, 'Menu', 'ShortcutKey', 0x2d),
-        ...(overlay === 'neural-rendering' ? [optiScalerCode(config, 'DlssNr', 'ToggleKey', null)] : []),
-        optiScalerCode(config, 'Menu', 'FGShortcutKey', 0x23),
-        optiScalerCode(config, 'Menu', 'FpsShortcutKey', 0x21),
-        optiScalerCode(config, 'Menu', 'FpsCycleShortcutKey', 0x22)].filter((code): code is number => code !== null),
-    )
-  }
-  if (configs.reShade !== null) {
-    const config = readIni(configs.reShade)
-    for (const [key, fallback] of [
-      ['KeyOverlay', 0x24], ['KeyEffects', null], ['KeyScreenshot', 0x2c], ['KeyNextPreset', null],
-      ['KeyPreviousPreset', null], ['KeyReload', null], ['KeyFPS', null], ['KeyFrametime', null],
-    ] as const) {
-      codes.push(...(reShadeCodes(config, key, fallback) ?? []))
-    }
-  }
-  return [...new Set(codes)]
+  return [...new Set(bindingCodes(configs, overlay).flatMap(({ virtualKeys }) => virtualKeys ?? []))]
 }
 
 /** The virtual keys whose names are needed to show a fresh deployment's bindings. */
