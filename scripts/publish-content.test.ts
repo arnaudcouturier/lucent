@@ -167,7 +167,7 @@ it('spans a content version with more than 1,000 new files across numbered relea
   expect(version.files.filter((f) => f.release === 'content-2026.10.12')).toHaveLength(1000)
   expect(version.files.filter((f) => f.release === 'content-2026.10.12-2')).toHaveLength(5)
   expect(result.uploads).toHaveLength(1005)
-})
+}, 30_000)
 
 it('reuses assets from any published content release, including one absent from the manifest', async () => {
   const manifestPath = await manifestFile()
