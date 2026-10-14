@@ -585,6 +585,19 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .option-list.is-inline .option-row + .option-row { box-shadow: none; }
 .option-list .option-row { cursor: pointer; transition: background var(--duration) var(--ease); }
 .option-list .option-row:hover { background: var(--hover); }
+
+/* The minimum native window is 880×600. Keep the complete first-install choice
+   step readable there by reclaiming vertical rhythm before the pinned actions. */
+@media (max-height: 640px) {
+  .pane-content { padding-top: var(--space-4); padding-bottom: var(--space-2); }
+  .screen-head { margin-bottom: var(--space-3); }
+  .profile-cards { gap: var(--space-1); }
+  .profile-card { padding-top: 7px; padding-bottom: 7px; }
+  .choice-group { padding-top: 8px; padding-bottom: 8px; }
+  .choice-line { margin-top: var(--space-1); line-height: 1.3; }
+  .option-list.is-inline .option-row { padding-top: 8px; padding-bottom: 8px; }
+  .screen-actions.is-pinned { padding-top: var(--space-2); padding-bottom: var(--space-3); }
+}
 .option-list .option-row + .option-row { margin-top: 0; box-shadow: inset 0 1px 0 var(--line); }
 .option-list .option-row:first-child { border-radius: var(--r-card) var(--r-card) 0 0; }
 .option-list .option-row:last-child { border-radius: 0 0 var(--r-card) var(--r-card); }

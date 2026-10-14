@@ -42,18 +42,18 @@ const HDR_MANIFEST: Manifest = {
   })),
 }
 
-function hdrMachine(screen: Machine = MACHINES.screen144Hdr, extra: Machine = {}) {
+function hdrMachine(screen: Machine = MACHINES.screen144Hdr, extra: Machine = {}, gpuName = 'NVIDIA GeForce RTX 4080') {
   const host = {
     remoteText: {
       ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, content]) => [fixtureUrl(hash), content])),
       [MANIFEST_URL]: JSON.stringify(HDR_MANIFEST),
     },
   }
-  return machine(screen, host, graphicsCard('NVIDIA GeForce RTX 4080'), { userSid: TEST_SID }, extra)
+  return machine(screen, host, graphicsCard(gpuName), { userSid: TEST_SID }, extra)
 }
 
-async function deployed(screen: Machine = MACHINES.screen144Hdr, extra: Machine = {}) {
-  const m = hdrMachine(screen, extra)
+async function deployed(screen: Machine = MACHINES.screen144Hdr, extra: Machine = {}, gpuName?: string) {
+  const m = hdrMachine(screen, extra, gpuName)
   const platform = createFakePlatform(m)
   const core = createCore(platform)
   await core.scan()
@@ -100,13 +100,21 @@ it('deploys HDR Off on an SDR monitor, with the frame cap and peak brightness it
   expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*59\.000000/i)
 })
 
-it('deploys XeFG frame generation in place of FSR when Windows HDR is on', async () => {
+it('deploys XeFG frame generation when the HDR choice is on', async () => {
   const { platform: hdr } = await deployed()
   expect(await config(hdr)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
 
   const [monitor] = MACHINES.screen144Hdr.monitors!
   const { platform: sdr } = await deployed({ ...MACHINES.screen144Hdr, monitors: [{ ...monitor, hdrOn: false }] })
-  expect(await config(sdr)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*fsr2/i)
+  expect(await config(sdr)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
+})
+
+it('uses the chosen HDR provider on RTX 30 when Windows HDR is off', async () => {
+  const monitor = MACHINES.screen144Hdr.monitors![0]
+  const { platform } = await deployed({ ...MACHINES.screen144Hdr, monitors: [{ ...monitor, hdrOn: false }] }, {}, 'NVIDIA GeForce RTX 3080')
+
+  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*true/i)
+  expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
 })
 
 it('keeps a player’s HDR Off through a content update', async () => {

@@ -139,6 +139,16 @@ it('plans each first-install choice once, with the frame cap and peak brightness
     'QualityOverrides.ForcePerfQuality': '1',
   })
 
+  // HDR is a first-install choice. The monitor may report Windows HDR off at the
+  // time of installation; the chosen HDR mode still needs the HDR frame-generation
+  // provider so the deployed config is ready when Windows HDR is enabled.
+  const hdrChoiceWithWindowsHdrOff = planDeployment(content, tier, true, scan, 'balanced', true, {
+    gpuName: 'NVIDIA GeForce RTX 3080', frameGenerationOptions: options('NVIDIA GeForce RTX 3080'), frameGenerationMode: '2x',
+    hdrMode: 'hdr', hdrOn: false, screen: { frameCap: 59, peakNits: null },
+  })
+  expect(hdrChoiceWithWindowsHdrOff.frameGenerationMode).toBe('2x')
+  expect(values(hdrChoiceWithWindowsHdrOff)).toMatchObject({ 'HDR.FfxivHDR': 'true', 'FrameGeneration.Mode': 'xeFG2' })
+
   // The same tier gives an RTX 3080 no 4×: the plan writes no mode the card was not offered.
   const rtx30 = planDeployment(content, tier, true, scan, 'balanced', true, {
     gpuName: 'NVIDIA GeForce RTX 3080', frameGenerationOptions: options('NVIDIA GeForce RTX 3080'), frameGenerationMode: '4x', hdrMode: 'off', screen: { frameCap: 59, peakNits: null },
