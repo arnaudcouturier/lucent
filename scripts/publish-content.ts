@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { access, lstat, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { constants, createReadStream, createWriteStream } from 'node:fs'
+import { access, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { assertGamePath, parseManifest, validateManifest, type Component, type ContentFile, type ContentVersion, type IniSetting, type Manifest, type Step, type TierRecipe } from '../src/shared/manifest'
+import { assertGamePath, parseManifest, RESOLUTION_COLUMNS, validateManifest, type Component, type ContentFile, type ContentVersion, type IniSetting, type Manifest, type Step, type TierRecipe } from '../src/shared/manifest'
 import { fileKey, planDeployment } from '../src/core/planner'
 import { runCommand } from './command'
 import { activeEffects, unusedShaderFiles } from './shader-usage'
@@ -40,7 +40,7 @@ export interface PublishResult {
   uploads: ContentFile[]
   manifestText: string
 }
-export interface PublishOptions { manifestPath: string; dryRun?: boolean; host?: PublishHost; sevenZip?: string }
+export interface PublishOptions { manifestPath: string; dryRun?: boolean; dryRunFilesDirectory?: string; host?: PublishHost; sevenZip?: string }
 
 /** Local validation and an offline preview use exactly the manifest consumed by the app. */
 export async function publishContent(inputPath: string, options: PublishOptions): Promise<PublishResult> {
@@ -49,6 +49,7 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     const original = await readFile(options.manifestPath, 'utf8')
     const manifest = parseManifest(original)
     const input: PublishInput = JSON.parse((await readFile(inputPath, 'utf8')).replace(/^\uFEFF/, ''))
+    if (options.dryRunFilesDirectory && !options.dryRun) throw new Error('Local dry-run files can only be materialized in dry-run mode.')
     if (!/^\d{4}\.\d{2}\.\d{2}$/.test(input.id) || new Date(`${input.id.replace(/\./g, '-')}T00:00:00Z`).toISOString().slice(0, 10) !== input.id.replace(/\./g, '-')) throw new Error('Content version must be a real date in YYYY.MM.DD form.')
     if (!Object.keys(input.tiers).length) throw new Error('Content needs at least one tested tier.')
     if (new Set(input.components.map((c) => c.name)).size !== input.components.length) throw new Error('Component names must be unique.')
@@ -105,7 +106,12 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         components.set(index, f.component)
         return { kind: 'copy', file: f.hash, to: f.path, ...(f.when ? { when: f.when } : {}) }
       })
-      tiers[tierId] = { recipe, entryFiles: tier.entryFiles, ownedConfigs: tier.ownedConfigs, shippedPresets: tier.shippedPresets, generatedFiles: tier.generatedFiles, overlay: tier.overlay, performanceProfiles: tier.performanceProfiles, resetKeys: tier.resetKeys }
+      tiers[tierId] = {
+        recipe, entryFiles: tier.entryFiles, ownedConfigs: tier.ownedConfigs, shippedPresets: tier.shippedPresets,
+        generatedFiles: tier.generatedFiles, overlay: tier.overlay, performanceProfiles: tier.performanceProfiles,
+        performanceProfilesV2: tier.performanceProfilesV2, frameGenerationOptions: tier.frameGenerationOptions,
+        screenDerivedSettings: tier.screenDerivedSettings, hdrOptions: tier.hdrOptions, resetKeys: tier.resetKeys,
+      }
     }
     // Only what a recipe copies is published; a source file no tier deploys is never uploaded.
     const copied = new Set(Object.values(tiers).flatMap((t) => t.recipe.flatMap((step) => step.kind === 'copy' ? [step.file] : [])))
@@ -158,9 +164,15 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         for (const f of plan.expectedFiles.filter((f) => /\.ini$/i.test(f.path) && (fileKey(f.path).startsWith('reshade-presets/') || plan.recipe.shippedPresets.some((p) => fileKey(p.path) === fileKey(f.path))))) {
           const file = deployed.get(fileKey(f.path))!
           const text = await readFile(staged.get(file.hash)!.stagedPath, 'utf8')
-          const profiles = recipe.performanceProfiles?.length ? recipe.performanceProfiles : [{ settings: [] }]
-          for (const profile of profiles) {
-            const settings = [...file.settings, ...profile.settings.filter((s) => fileKey(s.file) === fileKey(f.path))]
+          const profileScenarios: IniSetting[][] = recipe.performanceProfilesV2 !== undefined
+            ? recipe.performanceProfilesV2.length
+              ? recipe.performanceProfilesV2.flatMap((profile) => RESOLUTION_COLUMNS.map((column) => profile.settings.map((setting) => ({
+                ...setting, value: typeof setting.value === 'string' ? setting.value : setting.value[column],
+              }))))
+              : [[]]
+            : recipe.performanceProfiles?.length ? recipe.performanceProfiles.map((profile) => profile.settings) : [[]]
+          for (const profileSettings of profileScenarios) {
+            const settings = [...file.settings, ...profileSettings.filter((s) => fileKey(s.file) === fileKey(f.path))]
             for (const shader of presetShaders(text, settings)) {
               if (!available.has(shaderKey(shader))) throw new Error(`Preset ${f.path} references missing shader: ${shader} (${tier.id})`)
             }
@@ -184,6 +196,22 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     }
     let uploads = next.versions.at(-1)!.files.filter((f) => f.release === release)
     if (options.dryRun) spanReleases(uploads)
+    if (options.dryRunFilesDirectory) {
+      await mkdir(options.dryRunFilesDirectory, { recursive: true })
+      for (const file of next.versions.at(-1)!.files) {
+        const source = staged.get(file.sha256)
+        if (!source || source.size !== file.size) throw new Error(`Local dry-run asset was not staged: ${file.sha256}`)
+        const destination = join(options.dryRunFilesDirectory, file.sha256)
+        try { await copyFile(source.stagedPath, destination, constants.COPYFILE_EXCL) }
+        catch (error) {
+          if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error
+          const existing = await readFile(destination)
+          if (existing.length !== file.size || createHash('sha256').update(existing).digest('hex') !== file.sha256) {
+            throw new Error(`Local dry-run asset already exists with different bytes: ${destination}`)
+          }
+        }
+      }
+    }
     if (!options.dryRun) {
       const host = options.host
       if (!host) throw new Error('A GitHub release host is required to publish.')
@@ -294,7 +322,12 @@ async function replaceManifest(path: string, text: string) {
 }
 
 function assertOptiScalerSource(path: string, component: Component) {
-  if (!/optiscaler/i.test(`${component.name} ${component.upstream} ${component.source} ${path}`) && !/(^|\/)winmm\.dll$/i.test(fileKey(path))) return
+  // Vendor runtimes are shipped in OptiScaler's directory but keep their own
+  // provenance and licences. Enforce the pinned GPL source only for files
+  // actually named as OptiScaler or the proxy entry point, not every file
+  // beneath an `OptiScaler/` source folder.
+  const filename = fileKey(path).split('/').at(-1)!
+  if (!/(?:optiscaler|winmm\.dll)/i.test(filename)) return
   const tag = /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:tree|releases\/tag)\/([^?#]+)$/.exec(component.source)
   if (!/^GPL-3\.0(?:-only|-or-later)?$/i.test(component.licence) || !tag || /^(main|master|HEAD|dev|develop)$/i.test(tag[1])) {
     throw new Error(`OptiScaler file ${path} needs a GPL source tag (component ${component.name}).`)

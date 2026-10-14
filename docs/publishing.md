@@ -125,8 +125,10 @@ Preset validation checks the effects each preset turns on (its `Techniques`,
 after any profile edit) against the files actually deployed by each tier, with and without
 optional ReShade.
 
-OptiScaler source folders, OptiScaler-named files and `winmm.dll` need a GPL-3.0 component whose
-`source` links to its exact GitHub source tag (`/tree/<tag>` or `/releases/tag/<tag>`).
+Files named for OptiScaler and `winmm.dll` need a GPL-3.0 component whose `source` links to its
+exact GitHub source tag (`/tree/<tag>` or `/releases/tag/<tag>`). The containing folder does not
+determine provenance: vendor DLLs stored under `OptiScaler/` retain their own component, licence,
+and source attribution.
 Links to repository roots or ordinary development branches do not satisfy this check. The
 source links are recorded in both the manifest and release notes.
 

@@ -12,6 +12,8 @@ const AUTHORS = [
       { name: 'Dagherbou', url: 'https://github.com/Dagherbou/OptiScaler_DLSSNR' },
     ],
   },
+  { group: 'AMD FidelityFX', people: [{ name: 'AMD', url: 'https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK' }] },
+  { group: 'Intel XeSS', people: [{ name: 'Intel', url: 'https://github.com/intel/xess' }] },
   { group: 'Compatibility runtime', people: [{ name: 'ShortFuse / RenoDX', url: 'https://github.com/clshortfuse/renodx' }] },
   { group: 'ReShade', people: [{ name: 'crosire', url: 'https://reshade.me/' }] },
   {

@@ -39,9 +39,10 @@ async function inputFile(manifestPath: string, change: (input: PublishInput) => 
 it('previews hash-named uploads and the shared manifest without GitHub or local manifest changes', async () => {
   const manifestPath = await manifestFile()
   const before = await readFile(manifestPath, 'utf8')
+  const localFiles = resolve(manifestPath, '..', 'hash-named-files')
   const host = releaseHost().host
   host.listContentReleases = async () => { throw new Error('Dry run contacted GitHub') }
-  const result = await publishContent(fixture, { manifestPath, dryRun: true, host })
+  const result = await publishContent(fixture, { manifestPath, dryRun: true, dryRunFilesDirectory: localFiles, host })
   expect(result.release).toBe('content-2026.10.12')
   expect(result.uploads).toHaveLength(4)
   expect(result.uploads.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true)
@@ -49,6 +50,9 @@ it('previews hash-named uploads and the shared manifest without GitHub or local 
     id: '2026.10.12', channel: 'stable', changelog: ['Tested fixture content.'],
     tiers: { other: { resetKeys: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'PresetPath' }] } },
   })
+  for (const file of parseManifest(result.manifestText).versions[0].files) {
+    expect((await readFile(resolve(localFiles, file.sha256))).length).toBe(file.size)
+  }
   expect(await readFile(manifestPath, 'utf8')).toBe(before)
 })
 
@@ -108,6 +112,27 @@ it('refuses an OptiScaler file without a GPL source tag', async () => {
   await expect(publishContent(resolve('scripts/fixtures/publish/missing-gpl-source/publish.json'), { manifestPath, dryRun: true })).rejects.toThrow(/OptiScaler.*GPL source tag/i)
 })
 
+it('keeps vendor DLL provenance when the DLL lives in OptiScaler’s runtime folder', async () => {
+  const manifestPath = await manifestFile()
+  const vendorFiles = resolve(manifestPath, '..', 'vendor-files')
+  await mkdir(resolve(vendorFiles, 'OptiScaler'), { recursive: true })
+  await writeFile(resolve(vendorFiles, 'OptiScaler', 'libxess_fg.dll'), 'Unmodified Intel XeSS runtime\n')
+  const input = await inputFile(manifestPath, (value) => {
+    value.components.push({
+      name: 'Intel XeSS frame generation',
+      upstream: 'Intel',
+      licence: 'Intel Simplified Software License',
+      source: 'https://github.com/intel/xess/tree/v1.3.1',
+    })
+    value.tiers.other.sources.push({ folder: vendorFiles, component: 'Intel XeSS frame generation' })
+  })
+  const result = await publishContent(input, { manifestPath, dryRun: true })
+  const version = parseManifest(result.manifestText).versions[0]
+  const xess = version.tiers.other.recipe.find((step) => step.kind === 'copy' && step.to === 'OptiScaler/libxess_fg.dll')
+  expect(xess).toBeDefined()
+  expect(version.components).toContainEqual(expect.objectContaining({ name: 'Intel XeSS frame generation', licence: 'Intel Simplified Software License' }))
+})
+
 function releaseHost() {
   const releases: ContentRelease[] = []
   const assets: Record<string, string> = {}
@@ -127,10 +152,40 @@ function releaseHost() {
 it('publishes the fixture and deploys it through the core to a healthy game folder', async () => {
   const manifestPath = await manifestFile()
   const remote = releaseHost()
-  const result = await publishContent(fixture, { manifestPath, host: remote.host })
+  const input = await inputFile(manifestPath, (value) => {
+    const tier = value.tiers.other
+    tier.performanceProfilesV2 = (['ultra', 'fidelity', 'balanced', 'performance'] as const).map((id) => ({
+      id, label: id, description: `${id} profile`,
+      settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'ProfileValue', value: {
+        '1080p': `${id}-1080`, '1440p': `${id}-1440`, '4k+': `${id}-4k`,
+      } }],
+    }))
+    tier.frameGenerationOptions = [
+      { id: 'off', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameMode', value: 'off' }] },
+      { id: '2x', experimental: true, settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameMode', value: '2x' }],
+        hdrSettings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'FrameHDRMode', value: '2x' }] },
+    ]
+    tier.screenDerivedSettings = [
+      { file: 'ReShade.ini', section: 'GENERAL', key: 'FrameCap', value: 'frameCap' },
+      { file: 'ReShade.ini', section: 'GENERAL', key: 'PeakNits', value: 'peakNits' },
+    ]
+    tier.hdrOptions = [
+      { id: 'off', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'HdrMode', value: 'off' }] },
+      { id: 'hdr', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'HdrMode', value: 'hdr' }] },
+      { id: 'scene-hdr', experimental: true, settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'HdrMode', value: 'scene-hdr' }] },
+    ]
+  })
+  const result = await publishContent(input, { manifestPath, host: remote.host })
   expect(remote.releases).toMatchObject([{ tag: 'content-2026.10.12', draft: false }])
   expect(remote.releases[0].files).toContainEqual({ sha256: '5570478b4db90c4450004ec383ca2f2861b75de9be30863982d5065dc6d0b54f', size: 22, release: 'content-2026.10.12' })
   expect(await readFile(manifestPath, 'utf8')).toBe(result.manifestText)
+  const publishedTier = parseManifest(result.manifestText).versions[0].tiers.other
+  expect(publishedTier).toMatchObject({
+    performanceProfilesV2: [{ id: 'ultra' }, { id: 'fidelity' }, { id: 'balanced', settings: [{ value: { '1080p': 'balanced-1080', '1440p': 'balanced-1440', '4k+': 'balanced-4k' } }] }, { id: 'performance' }],
+    frameGenerationOptions: [{ id: 'off' }, { id: '2x', experimental: true, hdrSettings: [{ key: 'FrameHDRMode' }] }],
+    screenDerivedSettings: [{ key: 'FrameCap', value: 'frameCap' }, { key: 'PeakNits', value: 'peakNits' }],
+    hdrOptions: [{ id: 'off' }, { id: 'hdr' }, { id: 'scene-hdr', experimental: true }],
+  })
   const root = 'C:\\Games\\XIV'
   const platform = createFakePlatform(machine(vanillaGame(root), xivLauncher(root), graphicsCard('Intel Arc A770', 0x8086), { remoteText: { [MANIFEST_URL]: result.manifestText, ...remote.assets } }))
   const core = createCore(platform)
@@ -138,6 +193,14 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
   await core.review()
   await core.deploy()
   expect(core.getState().error).toBeNull()
+  expect(core.getState().deployment?.recipe).toMatchObject({
+    performanceProfilesV2: [{ id: 'ultra' }, { id: 'fidelity' }, { id: 'balanced' }, { id: 'performance' }],
+    frameGenerationOptions: [{ id: 'off' }, { id: '2x', hdrSettings: [{ key: 'FrameHDRMode' }] }],
+    screenDerivedSettings: [{ key: 'FrameCap', value: 'frameCap' }, { key: 'PeakNits', value: 'peakNits' }],
+    hdrOptions: [{ id: 'off' }, { id: 'hdr' }, { id: 'scene-hdr', experimental: true }],
+  })
+  expect(await platform.readText(`${root}\\game\\ReShade.ini`)).toContain('ProfileValue=balanced-4k')
+  expect(await platform.readText(`${root}\\game\\ReShade.ini`)).toContain('FrameMode=off')
   expect(await platform.readText(`${root}\\game\\dxgi.dll`)).toBe('Inert ReShade fixture\n')
   const reopened = createCore(platform)
   await reopened.scan()
@@ -339,6 +402,22 @@ it('validates presets edited by every performance profile, including a reference
   expect((await publishContent(valid, { manifestPath, dryRun: true })).uploads).toHaveLength(4)
   const invalid = await makeInput(true)
   await expect(publishContent(invalid, { manifestPath, dryRun: true })).rejects.toThrow(/missing shader: Missing\.fx/i)
+})
+
+it.each(['1080p', '1440p', '4k+'] as const)('validates V2 preset edits at the %s resolution column', async (missingColumn) => {
+  const manifestPath = await manifestFile()
+  const input = await inputFile(manifestPath, (value) => {
+    const tier = value.tiers.other
+    tier.ownedConfigs.push({ path: 'reshade-presets/Example.ini' })
+    tier.performanceProfilesV2 = (['ultra', 'fidelity', 'balanced', 'performance'] as const).map((id) => ({
+      id, label: id, description: `${id} description`,
+      settings: [{ file: 'reshade-presets/Example.ini', section: 'GENERAL', key: 'Techniques', value: {
+        '1080p': 'Example@Example.fx', '1440p': 'Example@Example.fx', '4k+': 'Example@Example.fx',
+        [missingColumn]: id === 'performance' ? 'Missing@Missing.fx' : 'Example@Example.fx',
+      } }],
+    }))
+  })
+  await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/missing shader: Missing\.fx/i)
 })
 
 it('keeps the selected source component when identical file bytes are shared across tiers', async () => {

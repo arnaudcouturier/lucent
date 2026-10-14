@@ -163,7 +163,7 @@ Settled in a design grilling session on 2026-10-14.
 - **Never** add Defender exclusions. Submit each release to Microsoft for false-positive analysis.
 - A GitHub Pages site in the repo is the download page and explains the SmartScreen warning before users hit it.
 - **Diagnostics**: "Copy diagnostics" (versions, tier, file hashes, Windows/driver version, last 300 lines of `OptiScaler.log`) and "Report a bug" opening a pre-filled GitHub issue. Questions go in GitHub issues too (Discussions is not enabled).
-- **Credits** screen in the app and on the site: SirenBrink, y4my4my4m, Dagherbou (OptiScaler forks), ShortFuse / RenoDX (compatibility runtime), Marty McFly (iMMERSE), qUINT, SweetFX, the Alive author, ipsusu (ipsuShade). Upstream license files are deployed with their files. Courtesy heads-up to upstream authors before launch.
+- **Credits** screen in the app and on the site: SirenBrink, y4my4my4m, Dagherbou (OptiScaler forks), AMD (FidelityFX), Intel (XeSS), ShortFuse / RenoDX (compatibility runtime), Marty McFly (iMMERSE), qUINT, SweetFX, the Alive author, ipsusu (ipsuShade). Upstream license files are deployed with their files. Courtesy heads-up to upstream authors before launch.
 - Context: this community remembers GShade's 2023 malware incident; open source and zero telemetry are selling points.
 
 ## Visual direction
