@@ -61,6 +61,19 @@ const recommendedProfileHome = (gpu: string) => async () => {
   await core.continueSetup()
   return core
 }
+/** The first-install choices, with the player's picks made on the way; later stages carry on from there. */
+const choicesStep = (m: Machine, gpu: Machine, stage: 'profile' | 'review' | 'done' = 'profile', pick: (core: Core) => void = () => {}) => async () => {
+  const core = await scanned(machine(m, gpu))()
+  await core.continueSetup()
+  pick(core)
+  if (stage !== 'profile') await core.review()
+  if (stage === 'done') { await core.deploy() }
+  return core
+}
+const experimentalPicks = (core: Core) => {
+  core.selectFrameGenerationMode('4x')
+  core.selectHdrMode('scene-hdr')
+}
 const multipleLaunchers = async () => {
   const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
   await platform.writeText(`${await platform.envFolder('LocalAppData')}\\XIVLauncher\\current\\XIVLauncher.exe`, 'XIVLauncher')
@@ -363,6 +376,13 @@ const STATES: GalleryState[] = [
   } },
   { key: 'profile-v2-rtx4090', label: 'Profile · RTX 4090 · Ultra recommended', setup: recommendedProfileHome('NVIDIA GeForce RTX 4090') },
   { key: 'profile-v2-rtx4070', label: 'Profile · RTX 4070 · Balanced fallback', setup: recommendedProfileHome('NVIDIA GeForce RTX 4070') },
+  { key: 'choices-rtx40-240-hdr', label: 'Profile · RTX 40, 240 Hz HDR', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090')) },
+  { key: 'choices-rtx30-60', label: 'Profile · RTX 30, 60 Hz SDR', setup: choicesStep(MACHINES.choices60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
+  { key: 'choices-experimental', label: 'Profile · Experimental picks (4×, Scene HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', experimentalPicks) },
+  { key: 'choices-options', label: 'Options · tier without profiles (Radeon, HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002)) },
+  { key: 'choices-options-intel', label: 'Options · tier without profiles (Intel, ReShade only)', setup: choicesStep(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086)) },
+  { key: 'review-choices', label: 'Review · Experimental picks', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'review', experimentalPicks) },
+  { key: 'done-choices', label: 'Done · Experimental picks', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'done', experimentalPicks) },
   { key: 'review', label: 'Review · ReShade included', setup: workflow('review') },
   { key: 'review-no-reshade', label: 'Review · ReShade excluded', setup: workflow('review', MACHINES.steam, false) },
   { key: 'review-radeon', label: 'Review · ReShade required', setup: workflow('review', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },

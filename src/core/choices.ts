@@ -45,7 +45,12 @@ export function hdrDescription(mode: HdrMode, facts: HdrFacts): string[] {
     mode === 'hdr' ? 'Expands XIV’s SDR image to HDR.' : 'Uses OptiScaler’s scene method, which can look better but is less tested.',
     ...(facts.windowsHdrOn ? [] : ['Windows HDR is off, so XIV stays SDR until you turn it on (Win+Alt+B).']),
     'Lucent turns Windows Auto HDR off for XIV.',
-    `Peak brightness is set to ${nits} nits from your monitor; the Windows HDR Calibration app fixes a wrong value.`,
-    ...(facts.nvidia ? ['Turn RTX HDR off for XIV in the NVIDIA app; Lucent can’t change it.'] : []),
+    `Peak brightness is ${nits} nits, from your monitor; the Windows HDR Calibration app fixes a wrong value.`,
+    ...(facts.nvidia ? ['Turn RTX HDR off for XIV in the NVIDIA app; Lucent can’t.'] : []),
   ]
 }
+
+/** How a frame generation mode reads on the Profile step, Review and Done. */
+export const frameGenerationLabel = (mode: FrameGenerationId) => mode === 'off' ? 'Off' : mode === 'dynamic' ? 'Dynamic' : `${mode.slice(0, -1)}×`
+
+export const hdrLabel = (mode: HdrMode) => mode === 'off' ? 'Off' : mode === 'hdr' ? 'HDR' : 'Scene HDR'

@@ -9,6 +9,8 @@ import { Path } from './Path'
 import { EasedNumber, ProgressBar, percentLabel } from './Progress'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { sizeLabel } from '../core/format'
+import { frameGenerationLabel, hdrLabel } from '../core/choices'
+import { frameGenerationDescription } from '../core/frameGeneration'
 
 export function FlowError() {
   const [state, core] = useCore()
@@ -24,7 +26,7 @@ export function FlowError() {
 /** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
   const [state, core] = useCore()
-  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu } = state
+  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen } = state
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   const profile = profiles.find((p) => p.id === plan.profile)
@@ -37,12 +39,14 @@ export function ReviewScreen() {
     </dl>
     <dl className="card summary-list">
       {profile && <div><dt>Profile</dt><dd>{profile.label}</dd></div>}
+      {plan.frameGenerationMode && <div><dt>Frame generation</dt><dd>{frameGenerationLabel(plan.frameGenerationMode)}{screen && <small>{frameGenerationDescription(plan.frameGenerationMode, screen.frameCap, screen.refreshHz)}</small>}</dd></div>}
+      {plan.hdrMode && <div><dt>HDR</dt><dd>{hdrLabel(plan.hdrMode)}{plan.hdrMode === 'off' ? !screen?.hdrSupported && <small>XIV’s monitor doesn’t report HDR.</small> : <small>Windows Auto HDR is turned off for XIV.</small>}</dd></div>}
       <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
     </dl>
     <StatusCard />
     <FlowError />
-    <footer className="screen-actions">
+    <footer className="screen-actions is-pinned">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
       {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
     </footer>
@@ -116,14 +120,29 @@ export function KeyBindingList({ bindings }: { bindings: KeyBinding[] }) {
   </section>)}</div>
 }
 
+/** What the install set up, as the deployment record kept it. */
+function ChosenSetup() {
+  const [{ deployment, profiles }] = useCore()
+  if (!deployment) return null
+  const profile = profiles.find((p) => p.id === deployment.profile)
+  const chosen = [
+    profile && `${profile.label} profile`,
+    deployment.frameGenerationMode && `Frame generation ${frameGenerationLabel(deployment.frameGenerationMode)}`,
+    deployment.hdrMode && `HDR ${hdrLabel(deployment.hdrMode)}`,
+    deployment.includeReShade && 'ReShade',
+  ].filter((item): item is string => !!item)
+  return <ul className="chosen-setup" aria-label="What Lucent set up">{chosen.map((item) => <li key={item}>{item}</li>)}</ul>
+}
+
 export function DoneScreen() {
   const [{ hotkeys, deployment }, core] = useCore()
   const presetKey = hotkeys.find((h) => h.tool === 'ReShade' && h.action === 'Menu')?.keys
   return <Screen title="You’re ready" sub="Lucent is in place. Open XIV and use these keys in game.">
+    <ChosenSetup />
     <KeyBindingList bindings={hotkeys} />
     {deployment?.includeReShade && presetKey && <p className="screen-note">No preset is active. Press <Keys keys={presetKey} /> in game to choose one.</p>}
     <GuideLink>Every key and setting, explained, in the</GuideLink>
-    <footer className="screen-actions"><button className="btn is-primary" onClick={() => core.finish()}>Done<Check size={14} /></button></footer>
+    <footer className="screen-actions is-pinned"><button className="btn is-primary" onClick={() => core.finish()}>Done<Check size={14} /></button></footer>
   </Screen>
 }
 

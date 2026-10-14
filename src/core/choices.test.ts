@@ -52,8 +52,8 @@ describe('hdrDescription', () => {
     expect(summary).toBe('Expands XIV’s SDR image to HDR.')
     expect(notes).toEqual([
       'Lucent turns Windows Auto HDR off for XIV.',
-      'Peak brightness is set to 1,000 nits from your monitor; the Windows HDR Calibration app fixes a wrong value.',
-      'Turn RTX HDR off for XIV in the NVIDIA app; Lucent can’t change it.',
+      'Peak brightness is 1,000 nits, from your monitor; the Windows HDR Calibration app fixes a wrong value.',
+      'Turn RTX HDR off for XIV in the NVIDIA app; Lucent can’t.',
     ])
   })
   it('explains how to turn Windows HDR on when it is off, and skips RTX HDR off NVIDIA', () => {

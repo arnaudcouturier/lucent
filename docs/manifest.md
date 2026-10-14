@@ -52,7 +52,9 @@ The dev-only gallery includes every tier, an app-update request, invalid/unavail
 a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caution badge.
 The gallery also includes `screen-60-sdr`, `screen-144-hdr` and `screen-240-dual`; their toolbar shows the
 resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files. The Profile step has
-`profile-v2-rtx4090` and `profile-v2-rtx4070` previews for the card's recommended profile.
+`profile-v2-rtx4090` and `profile-v2-rtx4070` previews for the card's recommended profile, and `choices-*` states for the
+first-install choices: RTX 40 at 240 Hz with HDR, RTX 30 at 60 Hz, Experimental picks (4×, Scene HDR), and tiers
+without profiles (Options). `review-choices` and `done-choices` show them on Review and Done.
 
 ## Content versions
 
@@ -108,8 +110,9 @@ A tier recipe may also declare `frameGenerationOptions`, a list of modes the bas
 generic and GPU-specific option share an ID, the matching GPU-specific variant is used. `experimental: true` adds
 the yellow Experimental label. `hdrSettings` may override values for keys also declared in `settings` when Windows HDR is on; every override must have a normal-mode value so turning HDR off restores it. Lucent
 records the selected mode and appends its settings after the performance profile, so frame-generation keys
-remain separate from profiles. Mode selection is not part of first-run setup yet: at 120 Hz or above the default is 2x,
-otherwise Off, falling back to the first offered mode. There is no control to change it afterwards: an update reads the
+remain separate from profiles. The mode is a first-install choice on the Profile step, among the options the player's
+GPU matches: picking a multiplier tagged Experimental is the opt-in, with no dialog. The default is 2x at 120 Hz or
+above, otherwise Off, falling back to the first offered mode. Nothing changes it afterwards: an update reads the
 config values to find the mode the player kept, and keeps values that match no declared mode as they are.
 
 ```json
@@ -123,7 +126,8 @@ The field is optional and is ignored by older app releases. Options are filtered
 the fixed Off, 2x–6x, Dynamic order. A mode's one-line description uses the resolved frame cap and refresh rate; multiplier
 modes describe `floor(frameCap / multiplier)` as the render rate.
 
-A tier may declare optional `hdrOptions` content data. New deployments select HDR by default. A declaration contains one option each for `off`, `hdr` and
+A tier may declare optional `hdrOptions` content data. The Profile step offers them only when the monitor XIV runs on
+supports HDR, with HDR selected by default; a monitor without HDR deploys `off`. A declaration contains one option each for `off`, `hdr` and
 `scene-hdr`; each option owns the complete set of INI values that identifies and applies it. `scene-hdr` may set
 `experimental: true`. Older content without this field has no HDR settings. An update reads the current INI
 values to find the mode the player kept, and keeps an unrecognized combination as it is. The mode keys are separate from
@@ -177,7 +181,10 @@ The device-name restrictions follow [Microsoft's Windows file-naming rules](http
 ## Planning, journal and recovery
 
 `planDeployment` is a pure function of the content version, tier, ReShade choice, performance
-profile and scanned folder/cache facts. Review renders its counts and download size directly. Counts cover unique
+profile, frame generation and HDR choices, XIV's screen and scanned folder/cache facts. The deployment record stores the
+choices (`profile`, `frameGenerationMode`, `hdrMode`, `includeReShade`) so Reset can offer them again. The profile cards on
+the Profile step show each profile's `summary` at the player's resolution, so a summary should name the passes, the
+upscaling quality, and spatial compression and residual frame generation where the profile sets them. Review renders its counts and download size directly. Counts cover unique
 original files to back up and final added files, excluding temporary files created and renamed by
 the recipe. Downloads are deduplicated by hash; a cache entry counts only after its size and hash
 have been checked. Required-ReShade tiers force that choice on.

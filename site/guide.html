@@ -37,6 +37,7 @@
         <a href="#start">Getting started</a>
         <a href="#keys">Keybinds</a>
         <a href="#settings">Settings explained</a>
+        <a href="#choices">First-install choices</a>
         <a href="#profiles">Performance profiles</a>
         <a href="#everyday">Everyday use</a>
         <a href="#trouble">Quick fixes</a>
@@ -56,7 +57,7 @@
           <ol class="launch-steps">
             <li><span class="step-number" aria-hidden="true">1</span><div><h3>Open Lucent.</h3><p>It’s a single portable <code>Lucent.exe</code>. Windows warns on first launch; <a href="./index.html#smartscreen">here’s what to expect</a>. Close XIV first: Lucent never changes the game folder while the game runs.</p></div></li>
             <li><span class="step-number" aria-hidden="true">2</span><div><h3>Scan.</h3><p>Lucent finds your game folder (XIVLauncher, Steam, the Square Enix launcher or the default location; choose it yourself if needed), your graphics card and its tier. If only beta content is available, turn on <strong>Beta channel</strong> here. If another ReShade, GShade, OptiScaler or GPosingway is there, Scan lists every file Lucent will back up and replace, and the presets it keeps. <strong>Show files</strong> opens the full list.</p></div></li>
-            <li><span class="step-number" aria-hidden="true">3</span><div><h3>Choose a profile.</h3><p>Pick Ultra, Fidelity, Balanced or Performance (see <a href="#profiles">performance profiles</a>), whether to include ReShade, and whether to add Lucent to the Start menu.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">3</span><div><h3>Choose your setup.</h3><p>Pick a profile (Ultra, Fidelity, Balanced or Performance), a frame generation mode, HDR if your monitor has it, whether to include ReShade and whether to add Lucent to the Start menu. Lucent writes these choices once; see <a href="#choices">first-install choices</a>.</p></div></li>
             <li><span class="step-number" aria-hidden="true">4</span><div><h3>Review, then Install.</h3><p>Install downloads every file and checks it against its hash, copies the files it replaces to your Backups folder, applies each change through a journal it can undo, then checks every deployed file. If anything fails, your game folder goes back exactly as it was.</p></div></li>
             <li><span class="step-number" aria-hidden="true">5</span><div><h3>Play.</h3><p>Start XIV as usual. No ReShade preset is active until you pick one: press <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd> in game.</p></div></li>
           </ol>
@@ -91,6 +92,16 @@
           <p class="kicker">03 · Settings explained</p>
           <h2 id="settings-title">What Lucent sets, and why</h2>
           <p class="guide-text">Lucent writes three config files in the game’s <code>game</code> folder: <code>OptiScaler.ini</code>, <code>ReShade.ini</code> and <code>ReshadeEffectShaderToggler.ini</code>. You can change any setting in the OptiScaler or ReShade menu. When content updates, Lucent keeps your change unless the new content changes the same setting; a few settings, marked <span class="reset-tag">reset</span>, always return to Lucent’s value. The frame cap and frame-generation details below describe the pending Beta candidate <code>2026.10.15</code> (app <code>0.2.0-beta.1</code>); earlier content may use different values.</p>
+
+          <h3 class="guide-subhead" id="choices">First-install choices</h3>
+          <p class="guide-text">The Profile step is the only place Lucent offers options. It writes your choices into the config files once, when it installs; after that the files are yours. Change any setting in the OptiScaler or ReShade menu, or choose again with <strong>Settings → Reset setup…</strong>, which shows the same step with your earlier choices filled in, backs up your config files and writes the tested setup again. Repairing and launching never rewrite them.</p>
+          <dl class="setting-list is-plain">
+            <div><dt>Profile</dt><dd>The profile Lucent recommends for your graphics card is selected and tagged. Each shows what it sets, read only: Neural Rendering passes, the upscaling quality at your monitor’s resolution, and, for Performance, spatial compression and residual frame generation. Passes come with the profile; they aren’t a separate choice.</dd></div>
+            <div><dt>Frame generation</dt><dd>Off, 2× to 6×, or Dynamic, limited to what your card can run. A mode that needs an unlock carries a yellow <strong>Experimental</strong> tag, and picking it is your opt-in. The line under the choice shows what it means at your frame cap, for example “XIV renders up to 56 fps, shown at 224 on your 240 Hz screen”. The default is 2× on a 120 Hz screen or faster and Off below that; every mode your card supports stays on offer, even one that renders XIV slowly.</dd></div>
+            <div><dt>HDR</dt><dd>Off, HDR or Scene HDR (Experimental), offered only when the monitor XIV runs on supports HDR; HDR is the default. If Windows HDR is off, press <kbd>Win</kbd> + <kbd>Alt</kbd> + <kbd>B</kbd> to turn it on; until then XIV stays SDR. Picking HDR or Scene HDR turns Windows Auto HDR off for <code>ffxiv_dx11.exe</code> only, so the image isn’t expanded twice, and <strong>Uninstall</strong> puts it back. Lucent can’t change NVIDIA RTX HDR, so turn it off for XIV in the NVIDIA app.</dd></div>
+            <div><dt>Frame cap and peak brightness</dt><dd>Computed from the monitor XIV runs on at the moment Lucent writes the files, then never again. Use the OptiScaler menu if you change monitor or refresh rate.</dd></div>
+            <div><dt>ReShade and the Start menu</dt><dd>ReShade is included unless you turn it off (some cards need it). Adding Lucent to the Start menu is optional and only offered until Lucent is there.</dd></div>
+          </dl>
 
           <h3 class="guide-subhead" id="profiles">Performance profiles</h3>
           <p class="guide-text">Each profile balances Neural Rendering detail and upscaling quality. Upscaling values follow XIV’s output height: below 1300 uses the 1080p column, below 2000 uses 1440p, and 2000 or higher uses 4K+. Ultrawide 3440×1440 uses the 1440p column. Changing XIV’s own 3D resolution slider has no effect while Lucent manages upscaling. Lucent writes the profile once, when it sets up; after that, change any of these settings in the OptiScaler menu and Lucent leaves them as you set them.</p>
@@ -148,7 +159,7 @@
 
           <h3 class="guide-subhead">OptiScaler · HDR, menu and logging</h3>
           <dl class="setting-list">
-            <div><dt><code>FfxivHDR</code><span>true</span></dt><dd>The Beta candidate’s baseline turns HDR on; <code>Mode = 1</code> is the experimental Scene HDR method, and <code>FfxivHDR = false</code> turns it off. If Windows HDR is off, press <kbd>Win</kbd> + <kbd>Alt</kbd> + <kbd>B</kbd> to enable it. Peak Nits is computed when Lucent writes the config: it follows the display profile when available, clamps to 400–4,000, and defaults to 1100 when unavailable. If the monitor reports its peak incorrectly, use Windows HDR Calibration. NVIDIA RTX HDR is a separate driver feature; turn it off when using this path. Tune brightness and color live in the OptiScaler overlay (<kbd>Insert</kbd> → HDR): <code>PaperWhiteNits = 240</code>, <code>HighlightExpansion = 0.6</code>, <code>Contrast = 1.1</code>, <code>Saturation = 1.05</code> and <code>Vibrance = 0.25</code> shape the result.</dd></div>
+            <div><dt><code>FfxivHDR</code><span>true</span></dt><dd>HDR is a first-install choice, on by default when the monitor supports it: <code>Mode = 0</code> is HDR, <code>Mode = 1</code> is the experimental Scene HDR method, and <code>FfxivHDR = false</code> is Off. If Windows HDR is off, press <kbd>Win</kbd> + <kbd>Alt</kbd> + <kbd>B</kbd> to enable it. Peak Nits is computed when Lucent writes the config: it follows the display profile when available, clamps to 400–4,000, and defaults to 1100 when unavailable. If the monitor reports its peak incorrectly, use Windows HDR Calibration. NVIDIA RTX HDR is a separate driver feature that Lucent can’t change; turn it off for XIV when using this path. Tune brightness and color live in the OptiScaler overlay (<kbd>Insert</kbd> → HDR): <code>PaperWhiteNits = 240</code>, <code>HighlightExpansion = 0.6</code>, <code>Contrast = 1.1</code>, <code>Saturation = 1.05</code> and <code>Vibrance = 0.25</code> shape the result.</dd></div>
             <div><dt><code>LoadReshade</code><span>true</span></dt><dd>OptiScaler loads <code>ReShade64.dll</code> itself, so ReShade doesn’t need to be installed as <code>dxgi.dll</code>.</dd></div>
             <div><dt><code>Scale</code><span>1.2</span></dt><dd>The OptiScaler menu’s size.</dd></div>
             <div><dt><code>LogToFile</code><span class="reset-tag">reset</span></dt><dd>Off. A debug log can pass 100 MB; turn it on only to report a problem. Updates turn it off again.</dd></div>
@@ -189,7 +200,8 @@
             <div><dt>Updates</dt><dd>Lucent checks for new content and app versions when it opens, and <strong>Settings → Check now</strong> checks again. Nothing downloads until you click <strong>Update</strong>. <strong>Skip</strong> stops the announcement. <strong>Versions</strong> rolls back to an earlier version.</dd></div>
             <div><dt>Beta channel</dt><dd>On <strong>Scan</strong> before the first deployment when beta content is available, then in <strong>Settings</strong>. Offers beta app and content versions. Leaving Beta changes nothing installed.</dd></div>
             <div><dt>XIVLauncher auto-repair</dt><dd>In <strong>Settings</strong>, if you use XIVLauncher. Lucent checks your setup when the game starts and repairs it after the game closes.</dd></div>
-            <div><dt>Uninstall</dt><dd><strong>Settings → Uninstall</strong> restores every file Lucent backed up and removes everything it added. Your own presets and shaders stay. To remove Lucent itself, use Settings → Apps.</dd></div>
+            <div><dt>Reset setup…</dt><dd><strong>Settings → Reset setup…</strong> is how you choose profile, frame generation and HDR again. It shows the first-install choices with yours filled in, backs up your current config files, then writes the tested setup. Nothing else in Lucent changes them.</dd></div>
+            <div><dt>Uninstall</dt><dd><strong>Settings → Uninstall</strong> restores every file Lucent backed up and removes everything it added, and puts back Windows Auto HDR for XIV if Lucent turned it off. Your own presets and shaders stay. To remove Lucent itself, use Settings → Apps.</dd></div>
           </dl>
         </section>
 
@@ -201,7 +213,7 @@
             <div><dt>After a game patch</dt><dd>Open Lucent. If the card says files need repair, click <strong>Repair</strong>. Otherwise click <strong>Scan</strong> to check every file.</dd></div>
             <div><dt>Too slow</dt><dd>Press <kbd>Delete</kbd> (<kbd>Suppr</kbd> on French keyboards) to compare with Neural Rendering off, then lower the upscaling quality or turn on frame generation in the OptiScaler menu.</dd></div>
             <div><dt>The look is too strong</dt><dd>Choose a lighter preset with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd>, or turn effects off with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F3</kbd>.</dd></div>
-            <div><dt>Washed-out colours</dt><dd>With Windows HDR on, turn off RTX HDR and Auto HDR. OptiScaler handles HDR itself.</dd></div>
+            <div><dt>Washed-out colours</dt><dd>With Windows HDR on, turn off RTX HDR for XIV in the NVIDIA app. Lucent turns Windows Auto HDR off for XIV itself when you choose HDR, and OptiScaler handles HDR.</dd></div>
             <div><dt>Still stuck</dt><dd><strong>Help → Report a bug</strong> copies diagnostics and opens a GitHub issue. Questions go in a <a href="https://github.com/arnaudcouturier/lucent/issues">GitHub issue</a> too.</dd></div>
           </dl>
         </section>

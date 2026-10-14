@@ -29,6 +29,11 @@ for files the game itself generates. Use two real content versions for the updat
 
 - [ ] Deploy from a vanilla game folder, picking a profile on the Profile step; confirm the game
   picks up its settings.
+- [ ] On the Profile step, confirm the frame generation modes match the card (RTX 4090 vs RTX 3080), the
+  default is 2× at 120 Hz and up and Off below, HDR is offered only on an HDR monitor, and the line under each
+  choice reads correctly. Deploy with HDR on: Windows Auto HDR is off for `ffxiv_dx11.exe` afterwards, and
+  Uninstall puts it back. The step is usable at 1000×680 and 880×600 (it scrolls above its pinned actions in the
+  richest case).
 - [ ] In Keys, confirm the displayed shortcuts match the deployed configs. In game, use those
   shortcuts to open OptiScaler and ReShade, and confirm Neural Rendering is active.
 - [ ] On Home, confirm there are no setting controls: only the status card, Launch XIV and
