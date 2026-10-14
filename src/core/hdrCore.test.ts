@@ -92,10 +92,10 @@ function publishNextContent(m: Machine) {
   m.remoteText![MANIFEST_URL] = JSON.stringify({ ...HDR_MANIFEST, versions: [current, newer] })
 }
 
-it('deploys the default HDR settings on an SDR monitor, with the frame cap and peak brightness it reports', async () => {
+it('deploys HDR Off on an SDR monitor, with the frame cap and peak brightness it reports', async () => {
   const { platform } = await deployed(MACHINES.screen60Sdr)
 
-  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*true/i)
+  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*false/i)
   expect(await config(platform)).toMatch(/PeakNits\s*=\s*1100/i)
   expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*59\.000000/i)
 })
@@ -141,17 +141,18 @@ it('keeps an unmatched, unlit on-disk HDR combination through an update', async 
   expect(await config(platform)).toMatch(/Mode=77/i)
 })
 
-it('leaves the per-game Auto HDR value alone when it deploys, reopens and launches', async () => {
+it('turns the per-game Auto HDR off when it deploys, then leaves it alone when it reopens and launches', async () => {
   const original = 'GpuPreference=2;AutoHDREnable=1;'
+  const disabled = 'GpuPreference=2;AutoHDREnable=0;'
   const { core, platform } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
-  expect(await gpuPreferences(platform)).toBe(original)
+  expect(await gpuPreferences(platform)).toBe(disabled)
 
   await core.launchGame()
   const reopened = await reopen(platform)
   await reopened.launchGame()
 
   expect(reopened.getState().error).toBeNull()
-  expect(await gpuPreferences(platform)).toBe(original)
+  expect(await gpuPreferences(platform)).toBe(disabled)
 })
 
 it('restores the per-game Auto HDR value on deployment uninstall', async () => {

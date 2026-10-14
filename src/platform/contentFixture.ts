@@ -105,9 +105,9 @@ const FRAME_GENERATION_PROFILES = [
   {
     id: 'performance', label: 'Performance', description: 'Compression and residual frame generation for a higher frame rate.',
     summary: {
-      '1080p': 'One pass · Balanced upscaling',
-      '1440p': 'One pass · Balanced upscaling',
-      '4k+': 'One pass · Performance upscaling',
+      '1080p': 'One pass · Compression and residual frames · Balanced upscaling',
+      '1440p': 'One pass · Compression and residual frames · Balanced upscaling',
+      '4k+': 'One pass · Compression and residual frames · Performance upscaling',
     },
     settings: [profileSetting('Passes', '1'), profileSetting('SpatialCompression', 'true'), profileSetting('ResidualFG', 'true'),
       upscalingSetting({ '1080p': '1', '1440p': '1', '4k+': '0' })],
@@ -136,6 +136,11 @@ export const HDR_OPTIONS: HdrOption[] = [
   { id: 'scene-hdr', experimental: true, settings: [hdrSetting('HDR', 'FfxivHDR', 'true'), hdrSetting('HDR', 'Mode', '1')] },
 ]
 const peakNitsSetting = { file: 'OptiScaler.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' as const }
+const frameCapSettings = [
+  { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' as const },
+  { file: 'OptiScaler.ini', section: 'DLSSG', key: 'FramerateTargetDMFG', value: 'frameCap' as const },
+  { file: 'OptiScaler.ini', section: 'XeFG', key: 'DynamicTargetFPS', value: 'frameCap' as const },
+]
 
 /** Inert HDR choices for tests of the manifest schema; these values are never published. */
 export const HDR_FRAME_GENERATION_MANIFEST: Manifest = {
@@ -155,7 +160,7 @@ export const HDR_FRAME_GENERATION_MANIFEST: Manifest = {
         recipe,
         ownedConfigs,
         hdrOptions: HDR_OPTIONS,
-        screenDerivedSettings: [...(tier.screenDerivedSettings ?? []), peakNitsSetting],
+        screenDerivedSettings: [...(tier.screenDerivedSettings ?? []), ...frameCapSettings, peakNitsSetting],
         frameGenerationOptions: tier.frameGenerationOptions?.map((option) => option.id === '2x'
           ? { ...option, hdrSettings: [hdrSetting('FrameGeneration', 'Mode', 'xeFG2')] }
           : option),

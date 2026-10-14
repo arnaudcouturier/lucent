@@ -1,4 +1,4 @@
-import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type IniSetting, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type IniSetting, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
@@ -11,7 +11,7 @@ import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { defaultFrameGenerationMode, frameGenerationOptionsForGpu, matchFrameGenerationMode } from './frameGeneration'
 import { selectProfileForUpdate } from './profileValues'
-import { autoHdrDisableWasApplied, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, matchHdrMode, restoreAutoHdr } from './hdr'
+import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, matchHdrMode, restoreAutoHdr } from './hdr'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -39,6 +39,8 @@ export interface DeploymentRecord {
   enabled: boolean
   profile?: ProfileId | null
   frameGenerationMode?: FrameGenerationId | null
+  /** The first-install HDR choice, kept so Reset can offer it again. Absent from 0.1.1 deployments. */
+  hdrMode?: HdrMode | null
   /** An interrupted change to a complete deployment (a profile change or a repair) undoes only the journal entries from this index onward. */
   changeStart?: number
   /** During a change, the directories it created start at this index of `createdDirectories`; undoing the change removes them. */
@@ -198,6 +200,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   }
   if (value.frameGenerationMode !== undefined && value.frameGenerationMode !== null
     && !FRAME_GENERATION_IDS.includes(value.frameGenerationMode)) throw new Error('The frame-generation selection is damaged.')
+  if (value.hdrMode !== undefined && value.hdrMode !== null && !HDR_MODES.includes(value.hdrMode)) throw new Error('The HDR selection is damaged.')
   for (const path of [...Object.keys(value.files), ...Object.keys(value.ownedConfigs)]) assertGamePath(path)
   if (value.gameVersion !== undefined && value.gameVersion !== null && typeof value.gameVersion !== 'string') throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.createdDirectories !== undefined) {
@@ -440,7 +443,7 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
 export async function deployContent(
   platform: Platform, gameFolder: string, content: ContentVersion, signatures: ExistingSetupSignature[], tier: Tier, includeReShade: boolean, profile: ProfileId | null,
   graphics: GpuAdapter, source: ContentSource, reviewedPaths: readonly string[], report: (progress: DeploymentProgress) => void, gameVersion: string | null = null,
-  selection: PlanSelection = {},
+  selection: PlanSelection = {}, userSid?: string,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const previous = await readDeployment(platform, gameFolder)
@@ -448,6 +451,8 @@ export async function deployContent(
   const scan = await scanDeployment(platform, gameFolder, content, null, signatures)
   const plan = planDeployment(content, tier, includeReShade, scan, profile, true, selection)
   assertReviewedTakeovers(plan, reviewedPaths)
+  // HDR on turns Windows Auto HDR off for XIV. It is read before anything changes, so it can fail cleanly and the journal reserves its checkpoint.
+  const autoHdr = plan.hdrMode && plan.hdrMode !== 'off' ? await prepareAutoHdrOff(platform, gameFolder, userSid) : null
   const paths = await dataPaths(platform, gameFolder)
   const present = new Set(scan.files.map(fileKey))
   const backupFolder = plan.filesToBackup.length ? await backupFolderName(platform, gameFolder) : undefined
@@ -457,9 +462,9 @@ export async function deployContent(
   await requireGameStopped(platform)
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
-    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, recipe: plan.recipe, journal: [], createdDirectories: [],
+    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode, recipe: plan.recipe, journal: [], createdDirectories: [],
     cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files)],
-    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + 1 }, ownedConfigs: {}, files: {},
+    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + (autoHdr ? 1 : 0) + 1 }, ownedConfigs: {}, files: {},
     backupFolder,
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
@@ -473,6 +478,7 @@ export async function deployContent(
     const originals = new Set(reviewedPaths.map(fileKey))
     if (backupFolder) await copyReadableBackup(platform, gameFolder, await readableBackupPath(platform, gameFolder, backupFolder), plan.filesToBackup, report)
     await applySteps({ platform, record, save, report, owned: originals, firstDeployment: true, from: backupFolder ? 0.5 : 0.4 }, plan.steps)
+    if (autoHdr) await applyAutoHdrOff(platform, record, save, autoHdr)
     record.files = await stampFiles(platform, record, plan.expectedFiles, report)
     record.ownedConfigs = await readOwnedConfigs(platform, gameFolder, plan)
     // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
@@ -488,6 +494,30 @@ export async function deployContent(
     }
     throw new DeploymentError(error, false)
   }
+}
+
+/** The journal intent that turns Windows Auto HDR off for XIV; null when it is already off there. */
+async function prepareAutoHdrOff(platform: Platform, gameFolder: string, userSid?: string): Promise<JournalEntry | null> {
+  try {
+    const name = await platform.resolveGamePath(joinPath(gameFolder, 'game'), 'ffxiv_dx11.exe')
+    const sid = userSid ?? await platform.currentUserSid()
+    const before = await platform.readUserGpuPreferences(sid, name)
+    const after = disableAutoHdr(before)
+    return before === after ? null : { registry: { kind: 'user-gpu-preferences', userSid: sid, name, before, after }, before: {}, after: {} }
+  } catch (error) {
+    throw new Error(`Lucent couldn’t read the Windows Auto HDR setting for XIV. ${failureReason(error)}`)
+  }
+}
+
+/** Journals the intent durably, then writes the per-game value; recovery and Uninstall put the player's value back. */
+async function applyAutoHdrOff(platform: Platform, record: DeploymentRecord, save: () => Promise<void>, intent: JournalEntry) {
+  const { userSid, name, before, after } = intent.registry!
+  record.journal.push(intent)
+  await save()
+  await requireGameStopped(platform)
+  if (await platform.readUserGpuPreferences(userSid, name) !== before) throw new Error('Windows per-game graphics preferences changed while Lucent was turning Auto HDR off. Try again.')
+  await platform.writeUserGpuPreferences(userSid, name, after)
+  if (await platform.readUserGpuPreferences(userSid, name) !== after) throw new Error('Windows did not save the per-game Auto HDR preference. Try again.')
 }
 
 /**

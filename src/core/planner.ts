@@ -30,6 +30,8 @@ export interface Plan {
   includeReShade: boolean
   profile: ProfileId | null
   frameGenerationMode: FrameGenerationId | null
+  /** The HDR mode these steps write; null when the tier has no HDR, or an update carries a Custom combination. */
+  hdrMode: HdrMode | null
   steps: PlanStep[]
   files: ContentFile[]
   filesToDownload: ContentFile[]
@@ -204,7 +206,7 @@ export function planDeployment(
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
     contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null,
-    frameGenerationMode: selectedFrameGeneration?.id ?? null, steps, files, filesToDownload,
+    frameGenerationMode: selectedFrameGeneration?.id ?? null, hdrMode: selectedHdr?.id ?? null, steps, files, filesToDownload,
     filesToBackup: [...backups.values()], unclaimedPaths: [...unclaimed.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),

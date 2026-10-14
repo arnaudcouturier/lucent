@@ -103,7 +103,7 @@ it('keeps only the remaining choices on the Profile step for a tier without prof
   const platform = createFakePlatform(machine(profileMachine(), graphicsCard('Intel Arc A770', 0x8086)))
   const core = createCore(platform)
   await core.scan()
-  expect(setupChoices(core.getState())).toEqual({ profiles: false, reShade: false, startMenu: true, any: true })
+  expect(setupChoices(core.getState())).toEqual({ profiles: false, frameGeneration: false, hdr: false, reShade: false, startMenu: true, any: true })
   await core.continueSetup()
   expect(core.getState()).toMatchObject({ activity: { kind: 'profile' }, profiles: [], selectedProfile: null })
   await core.review()

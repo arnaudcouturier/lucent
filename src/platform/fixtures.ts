@@ -5,7 +5,7 @@ import type { MonitorInfo } from '../core/platform'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
 import { appBetaReleaseHost } from './appUpdateFixture'
-import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
+import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, HDR_FRAME_GENERATION_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -142,6 +142,11 @@ export function frameGenerationContentHost(): Machine {
   return { remoteText: { [MANIFEST_URL]: JSON.stringify(FRAME_GENERATION_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
 }
 
+/** Gallery-only first-install choices: four profiles, frame generation and HDR, backed by inert settings. */
+export function firstInstallContentHost(): Machine {
+  return { remoteText: { [MANIFEST_URL]: JSON.stringify(HDR_FRAME_GENERATION_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
+}
+
 /** The release host after the next content version is published: its manifest and its one new asset. */
 export function nextContentHost(): Machine {
   return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(NEXT_MANIFEST), [nextFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
@@ -161,7 +166,7 @@ export function squareEnixLauncher(installLocation: string): Machine {
   return { registry: { [`HKLM\\${SQUARE_ENIX_UNINSTALL_KEY}`]: { InstallLocation: installLocation, DisplayName: 'FINAL FANTASY XIV ONLINE' } } }
 }
 
-function screenGallery(refreshHz: number, hdrOn: boolean, dual = false): Machine {
+function screenGallery(refreshHz: number, hdrOn: boolean, dual = false, content: Machine = fixtureContentHost()): Machine {
   const primaryWidth = dual ? 1920 : refreshHz === 60 ? 1920 : refreshHz === 144 ? 2560 : 3840
   const primaryHeight = dual ? 1080 : refreshHz === 60 ? 1080 : refreshHz === 144 ? 1440 : 2160
   const first: MonitorInfo = {
@@ -180,7 +185,7 @@ function screenGallery(refreshHz: number, hdrOn: boolean, dual = false): Machine
     `FullScreenHeight ${selected.height}`, `Refreshrate ${refreshHz}`,
   ].join('\r\n')
   const root = steamGameFolder('D:\\SteamLibrary')
-  return machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(root), {
+  return machine(content, graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(root), {
     monitors: dual ? [first, second] : [first],
     files: { [`${DEFAULT_ENV.Documents}\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg`]: displayConfig },
   })
@@ -197,6 +202,9 @@ export const MACHINES = {
   screen60Sdr: screenGallery(60, false),
   screen144Hdr: screenGallery(144, true),
   screen240Dual: screenGallery(240, true, true),
+  /** First-install choices on a 240 Hz HDR panel (RTX 40) and a 60 Hz SDR one (RTX 30), with frame generation, HDR and four profiles. */
+  choices240Hdr: machine(screenGallery(240, true, false, firstInstallContentHost()), graphicsCard()),
+  choices60Sdr: machine(screenGallery(60, false, false, firstInstallContentHost()), graphicsCard('NVIDIA GeForce RTX 3080')),
   /** Beta content and an app pre-release are published; turn on Beta channel in Settings to be offered them. */
   beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>

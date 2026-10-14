@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { planDeployment } from './planner'
-import { TEST_CONTENT, TEST_MANIFEST, OPTISCALER_HASH } from '../platform/contentFixture'
+import { TEST_CONTENT, TEST_MANIFEST, OPTISCALER_HASH, HDR_FRAME_GENERATION_MANIFEST } from '../platform/contentFixture'
+import { frameGenerationOptionsForGpu } from './frameGeneration'
 import type { FrameGenerationOption, HdrOption } from '../shared/manifest'
 
 it('plans the final file count and downloads once per hash, including optional ReShade', () => {
@@ -139,4 +140,32 @@ it('counts originals once across rename, overwrite and delete, while protecting 
   expect(plan.filesToBackup).toEqual(['old.dll', 'obsolete.ini'])
   expect(plan.unclaimedPaths).toEqual([])
   expect(plan.expectedFiles).toEqual([{ path: 'winmm.dll', sha256: OPTISCALER_HASH }])
+})
+
+it('plans each first-install choice once, with the frame cap and peak brightness from the screen', () => {
+  const content = HDR_FRAME_GENERATION_MANIFEST.versions[0]
+  const tier = HDR_FRAME_GENERATION_MANIFEST.tiers.find((t) => t.id === 'rtx-30-40')!
+  const scan = { files: [], ownedFiles: [], cachedFiles: [] }
+  const values = (plan: ReturnType<typeof planDeployment>) => Object.fromEntries(plan.steps.flatMap((s) =>
+    s.kind === 'ini_set' ? [[`${s.section}.${s.key}`, s.value]] : []))
+  const options = (gpuName: string) => frameGenerationOptionsForGpu(content.tiers[tier.id].frameGenerationOptions!, gpuName)
+
+  const plan = planDeployment(content, tier, true, scan, 'balanced', true, {
+    gpuName: 'NVIDIA GeForce RTX 4090', frameGenerationOptions: options('NVIDIA GeForce RTX 4090'), frameGenerationMode: '4x',
+    hdrMode: 'scene-hdr', hdrOn: false, outputHeight: 1440, screen: { frameCap: 138, peakNits: 800 },
+  })
+  expect(plan).toMatchObject({ profile: 'balanced', frameGenerationMode: '4x', hdrMode: 'scene-hdr' })
+  expect(values(plan)).toMatchObject({
+    'FrameGeneration.Mode': '4x', 'FrameGeneration.Backend': 'rtx40', 'HDR.FfxivHDR': 'true', 'HDR.Mode': '1',
+    'Framerate.FramerateLimit': '138.000000', 'DLSSG.FramerateTargetDMFG': '138.000000', 'XeFG.DynamicTargetFPS': '138.000000', 'HDR.PeakNits': '800',
+    'QualityOverrides.ForcePerfQuality': '1',
+  })
+
+  // The same tier gives an RTX 3080 no 4×: the plan writes no mode the card was not offered.
+  const rtx30 = planDeployment(content, tier, true, scan, 'balanced', true, {
+    gpuName: 'NVIDIA GeForce RTX 3080', frameGenerationOptions: options('NVIDIA GeForce RTX 3080'), frameGenerationMode: '4x', hdrMode: 'off', screen: { frameCap: 59, peakNits: null },
+  })
+  expect(rtx30.frameGenerationMode).toBeNull()
+  expect(values(rtx30)).not.toHaveProperty(['FrameGeneration.Mode'])
+  expect(values(rtx30)).toMatchObject({ 'HDR.FfxivHDR': 'false', 'Framerate.FramerateLimit': '59.000000', 'HDR.PeakNits': '1100' })
 })

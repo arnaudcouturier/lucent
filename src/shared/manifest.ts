@@ -49,7 +49,9 @@ export interface ConditionalPath { path: string; when?: 'reshade' }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
 export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
-export type HdrMode = 'off' | 'hdr' | 'scene-hdr'
+/** Also the order of the HDR choices. */
+export const HDR_MODES = ['off', 'hdr', 'scene-hdr'] as const
+export type HdrMode = typeof HDR_MODES[number]
 export interface HdrOption { id: HdrMode; experimental?: boolean; settings: IniSetting[] }
 /** Also the order of the frame-generation choices. */
 export const FRAME_GENERATION_IDS = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'] as const
@@ -325,7 +327,7 @@ function frameGenerationOption(value: unknown): FrameGenerationOption {
 }
 function hdrOption(value: unknown): HdrOption {
   const option = object(value, 'HDR option')
-  if (!['off', 'hdr', 'scene-hdr'].includes(option.id as string)) invalid('Unknown HDR mode.')
+  if (!(HDR_MODES as readonly string[]).includes(option.id as string)) invalid('Unknown HDR mode.')
   if (option.experimental !== undefined && typeof option.experimental !== 'boolean') invalid('HDR option experimental must be a boolean.')
   const settings = array(option.settings, 'HDR settings').map((setting) => iniSetting(object(setting, 'HDR setting')))
   if (!settings.length) invalid('An HDR option needs settings.')
