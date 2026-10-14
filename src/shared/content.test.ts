@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import manifest from '../../manifest.json'
 import { parseManifest, type Manifest } from './manifest'
-import { PROFILE_MANIFEST } from '../platform/contentFixture'
+import { HDR_FRAME_GENERATION_MANIFEST, PROFILE_MANIFEST } from '../platform/contentFixture'
 
 it('retains content versions and validates recipe paths before deployment', () => {
   const version = {
@@ -14,6 +14,20 @@ it('retains content versions and validates recipe paths before deployment', () =
   expect(parseManifest(text)).toMatchObject({ versions: [version] })
   version.tiers.other.recipe[0].to = '../ffxiv_dx11.exe'
   expect(() => parseManifest(JSON.stringify({ ...manifest, schemaVersion: 2, versions: [version] }))).toThrow(/path/i)
+})
+
+it('keeps the HDR gallery manifest valid across the NVIDIA and Radeon fixture tiers', () => {
+  const parsed = parseManifest(JSON.stringify(HDR_FRAME_GENERATION_MANIFEST))
+  const nvidia = parsed.versions[0].tiers['rtx-30-40']
+  const radeon = parsed.versions[0].tiers.radeon
+
+  expect(nvidia.hdrOptions?.map((option) => option.id)).toEqual(['off', 'hdr', 'scene-hdr'])
+  expect(nvidia.performanceProfilesV2).toHaveLength(4)
+  expect(nvidia.frameGenerationOptions?.find((option) => option.id === '2x')?.hdrSettings).toEqual([
+    { file: 'OptiScaler.ini', section: 'FrameGeneration', key: 'Mode', value: 'xeFG2' },
+  ])
+  expect(radeon.ownedConfigs).toContainEqual({ path: 'OptiScaler.ini' })
+  expect(radeon.hdrOptions).toHaveLength(3)
 })
 
 it.each(['../file', '..\\file', '/file', '\\file', 'C:\\file', 'file:stream', 'NUL.ini', 'COM1.dll', 'COM¹.dll', 'LPT².ini', 'folder./file', 'file ', 'folder//file'])('rejects a Windows path escape or alias: %s', (path) => {

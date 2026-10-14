@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createCore, type Activity, type Core } from '../core/core'
 import { crystalState } from '../core/crystal'
 import { createFakePlatform, type Machine } from '../platform/fake'
-import { MACHINES, frameGenerationContentHost, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, frameGenerationContentHost, graphicsCard, hdrContentHost, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
 import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
@@ -79,6 +79,36 @@ const frameGenerationHome = (base: Machine, gpu: string, custom = false) => asyn
 const recommendedProfileHome = (gpu: string) => async () => {
   const core = await scanned(machine(MACHINES.screen144Hdr, frameGenerationContentHost(), graphicsCard(gpu)))()
   await core.continueSetup()
+  return core
+}
+const hdrHome = (base: Machine, gpu: string, vendorId = 0x10de, mode: 'off' | 'custom' | null = null, hdrSupported = true) => async () => {
+  const screen = structuredClone(base)
+  const monitor = screen.monitors?.[0]
+  if (!monitor) throw new Error('Gallery HDR monitor missing')
+  screen.monitors![0] = { ...monitor, hdrSupported, hdrOn: hdrSupported && monitor.hdrOn, peakNits: hdrSupported ? 1000 : null }
+  const m = machine(screen, hdrContentHost(), graphicsCard(gpu, vendorId))
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  if (mode === 'off') await core.selectHdrMode('off')
+  if (mode === 'custom') {
+    const folder = core.getState().gameFolder
+    if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+    const configPath = `${folder.path}\\game\\OptiScaler.ini`
+    const config = await platform.readText(configPath)
+    const updated = config.replace(/Mode=0/i, 'Mode=77')
+    if (updated === config) throw new Error('Gallery HDR setting missing')
+    await platform.writeText(configPath, updated)
+    return reopenGallery(platform)
+  }
+  return core
+}
+const reopenGallery = async (platform: ReturnType<typeof createFakePlatform>) => {
+  const core = createCore(platform)
+  await core.scan()
   return core
 }
 const multipleLaunchers = async () => {
@@ -345,6 +375,12 @@ const STATES: GalleryState[] = [
   { key: 'frame-generation-144-rtx40', label: 'Home · Frame generation · 144 Hz · RTX 40', setup: frameGenerationHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4080') },
   { key: 'frame-generation-240-rtx40', label: 'Home · Frame generation · 240 Hz · RTX 40', setup: frameGenerationHome(MACHINES.screen240Dual, 'NVIDIA GeForce RTX 4090') },
   { key: 'frame-generation-custom', label: 'Home · Frame generation · Custom', setup: frameGenerationHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4080', true) },
+  { key: 'hdr-unsupported', label: 'Home · HDR · unsupported display', setup: hdrHome(MACHINES.screen60Sdr, 'NVIDIA GeForce RTX 3080', 0x10de, null, false) },
+  { key: 'hdr-windows-off', label: 'Home · HDR · Windows HDR off', setup: hdrHome(MACHINES.screen60Sdr, 'NVIDIA GeForce RTX 3080') },
+  { key: 'hdr-on-nvidia', label: 'Home · HDR · RTX 4090 · all profiles and frame-generation modes', setup: hdrHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4090') },
+  { key: 'hdr-off', label: 'Home · HDR · Off', setup: hdrHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4090', 0x10de, 'off') },
+  { key: 'hdr-custom', label: 'Home · HDR · Custom', setup: hdrHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4090', 0x10de, 'custom') },
+  { key: 'hdr-on-radeon', label: 'Home · HDR · Radeon', setup: hdrHome(MACHINES.screen144Hdr, 'AMD Radeon RX 7900 XTX', 0x1002) },
   { key: 'beta-setup', label: 'Scan · first deployment with Beta content', setup: scanned(machine(MACHINES.beta, manifestHost({ ...BETA_MANIFEST, versions: [BETA_CONTENT] }))) },
   { key: 'no-published-tier', label: 'Scan · no content published for this card', setup: scanned(machine(MACHINES.steam, manifestHost({ ...BETA_MANIFEST, versions: [] }))) },
   { key: 'squareenix', label: 'Scan · found through the Square Enix launcher', setup: scanned(MACHINES.squareenix) },

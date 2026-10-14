@@ -1,6 +1,6 @@
 // Tiny, inert content for tests and browser development. Never published or used by the real app.
 import manifest from '../../manifest.json'
-import type { ContentVersion, Manifest, PerformanceProfile, TierRecipe } from '../shared/manifest'
+import type { ContentVersion, HdrOption, Manifest, PerformanceProfile, TierRecipe } from '../shared/manifest'
 
 export const OPTISCALER_HASH = 'f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02'
 export const RESHADE_HASH = '2b2b1cc6036edf59fae14ea7237a88c38ca7f425b0467046493061c18dc3d3ce'
@@ -126,6 +126,41 @@ export const FRAME_GENERATION_MANIFEST: Manifest = {
         ...(id === 'rtx-30-40' ? { frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] } : {}),
       }
       : tier])),
+  })),
+}
+
+const hdrSetting = (section: string, key: string, value: string) => ({ file: 'OptiScaler.ini', section, key, value })
+export const HDR_OPTIONS: HdrOption[] = [
+  { id: 'off', settings: [hdrSetting('HDR', 'FfxivHDR', 'false'), hdrSetting('HDR', 'Mode', '0')] },
+  { id: 'hdr', settings: [hdrSetting('HDR', 'FfxivHDR', 'true'), hdrSetting('HDR', 'Mode', '0')] },
+  { id: 'scene-hdr', experimental: true, settings: [hdrSetting('HDR', 'FfxivHDR', 'true'), hdrSetting('HDR', 'Mode', '1')] },
+]
+const peakNitsSetting = { file: 'OptiScaler.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' as const }
+
+/** Gallery-only HDR choices; these inert values are never published. */
+export const HDR_FRAME_GENERATION_MANIFEST: Manifest = {
+  ...FRAME_GENERATION_MANIFEST,
+  versions: FRAME_GENERATION_MANIFEST.versions.map((content) => ({
+    ...content,
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => {
+      // The sample Radeon/Other recipe has no OptiScaler config, so add the inert fixture config
+      // to let the gallery exercise the cross-vendor HDR controls without shipping it as content.
+      const needsConfig = !tier.ownedConfigs.some((config) => config.path.toLowerCase() === 'optiscaler.ini')
+      const recipe = needsConfig
+        ? [...tier.recipe, { kind: 'copy' as const, file: PROFILE_CONFIG_HASH, to: 'OptiScaler.ini' }]
+        : tier.recipe
+      const ownedConfigs = needsConfig ? [...tier.ownedConfigs, { path: 'OptiScaler.ini' }] : tier.ownedConfigs
+      return [id, {
+        ...tier,
+        recipe,
+        ownedConfigs,
+        hdrOptions: HDR_OPTIONS,
+        screenDerivedSettings: [...(tier.screenDerivedSettings ?? []), peakNitsSetting],
+        frameGenerationOptions: tier.frameGenerationOptions?.map((option) => option.id === '2x'
+          ? { ...option, hdrSettings: [hdrSetting('FrameGeneration', 'Mode', 'xeFG2')] }
+          : option),
+      }]
+    })),
   })),
 }
 
