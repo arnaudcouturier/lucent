@@ -1,5 +1,5 @@
 /* Ember: Lucent's design language, defined once. Every other stylesheet uses these tokens only.
-   Dark only, no OS light/dark switching. Reference: variant D on branch prototype/lucent-look. */
+   Dark only, no OS light/dark switching. Reference: variant D on the lucent-look-prototype tag. */
 :root {
   color-scheme: dark;
 

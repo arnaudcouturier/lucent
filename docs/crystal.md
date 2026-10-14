@@ -1,6 +1,6 @@
 # The crystal (#22)
 
-The Ember rail draws the original clustered spire and two shards orbiting it into a 248×214 canvas. The two precessing gold hoops were removed on 2026-10-13; the shards keep the larger hoop's tilted, precessing orbit. The geometry follows variant D on `prototype/lucent-look`; it has no cup, prongs or zigzag ornament. Illustration materials live beside the renderer, while UI colours remain in the Ember tokens.
+The Ember rail draws the original clustered spire and two shards orbiting it into a 248×214 canvas. The two precessing gold hoops were removed on 2026-10-13; the shards keep the larger hoop's tilted, precessing orbit. The geometry follows variant D on the `lucent-look-prototype` tag; it has no cup, prongs or zigzag ornament. Illustration materials live beside the renderer, while UI colours remain in the Ember tokens.
 
 `crystalState` projects the core's `activity` into the spec's eight states. Disabled wins over every deployment status; otherwise a running repair, update or rollback wins over drift, then an update announcement, then healthy. The current production workflow still reports Scan. Future workflow commands advance `activity`; the dev gallery projects typed activities onto a real Scan core on the fake Platform without adding production fixture setters.
 

@@ -116,7 +116,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 ## Visual direction
 
-Settled by the look prototype on 2026-10-12: variant **D · Ember**, on branch `prototype/lucent-look`. Its README holds the full design language, and the branch stays as the live reference. Ember combines Rail's layout ("more polished and practical, less noisy") with Prism's idea that the crystal's light is the state. It **replaces** the earlier "dark glass, aether-blue accent" direction. The references are Crunchyroll's colours and beautifului.dev's restraint. All art is original.
+Settled by the look prototype on 2026-10-12: variant **D · Ember**, kept as the tag `lucent-look-prototype`. Its README holds the full design language, and the tag stays as the reference. Ember combines Rail's layout ("more polished and practical, less noisy") with Prism's idea that the crystal's light is the state. It **replaces** the earlier "dark glass, aether-blue accent" direction. The references are Crunchyroll's colours and beautifului.dev's restraint. All art is original.
 
 - **Theme**: dark only, with no OS light/dark switching. The window is opaque (no Mica or acrylic). The crystal's glow in the rail is the only painted backdrop.
 - **Colour**:
