@@ -88,6 +88,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 
 - **App updates**: published to GitHub Releases. **Notify only** — nothing downloads until the user clicks Update. Users can skip a version or stay on one.
 - **Content updates**: notify only, pinnable, one-click rollback to either of the last two cached content versions.
+- **Checking** (settled 2026-10-13): Lucent checks on open, after an update, a skip or a channel change, and when the player clicks **Settings → Check now**. No background service. A manual check reports when it can't reach GitHub; the check on open stays quiet.
 - **One channel switch covers both**: Stable or Beta. Beta users get beta app versions *and* beta content versions, so beta content that needs new app features can be tested before that app version ships to stable. **Leaving Beta changes nothing deployed**: the beta content stays, and Lucent then announces only a Stable version newer than the current one (never a downgrade); a running beta app is likewise offered only a newer stable release.
 - **Rollback pins** the version rolled back to and **skips** the version left behind, so Lucent stops announcing it. The next newer version is announced normally. Skipped versions can still be applied manually from the Versions section.
 - Manifest carries `minAppVersion`; content that needs a newer app is only offered after the app is updated.

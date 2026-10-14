@@ -9,7 +9,7 @@ import { assertReviewedTakeovers, backupFolderName, replacedOriginals, changePer
 import { disabledName, fileKey, folderChanges, keptProfile, planDeployment, stepWritePaths, type FolderChanges, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
-import { cleanupOldExe, fetchAppUpdate, performAppUpdate, type AppUpdate } from './appUpdate'
+import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
 export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
@@ -167,6 +167,8 @@ export interface Core {
   setAutoRepair(enabled: boolean): Promise<void>
   /** Switches between Stable and Beta for app and content versions, then announces again. Never touches the game folder, so XIV may be running. */
   setChannel(channel: Channel): Promise<void>
+  /** Settings' Check for updates: reads the manifest and app releases again and announces what's new, reporting a failed check. Never touches the game folder. */
+  checkForUpdates(): Promise<void>
   /** Opens the uninstall window Settings → Apps starts, continuing a confirmed uninstall after admin access. */
   openAppUninstall(): Promise<void>
   /** Optionally uninstalls every deployment, then removes the shortcut, the Settings → Apps entry, the data folder and the exe. */
@@ -608,6 +610,28 @@ export function createCore(platform: Platform): Core {
         await refreshAnnouncement()
         if (state.activity.kind === 'deployment' && state.deployment) set({ activity: { ...state.activity, tierChange: tierChange(state.deployment) } })
       } catch (error) { set({ error: `Could not change the channel. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+    },
+    async checkForUpdates() {
+      const record = state.deployment
+      if (state.busy || !record || state.activity.kind !== 'deployment') return
+      set({ busy: true, error: null, notice: null })
+      try {
+        // Unlike the quiet check on open, a check the player asked for says when it couldn't reach GitHub.
+        const [manifest, releases, settings] = await Promise.all([loadManifest(platform), platform.fetchText(APP_RELEASES_URL), readSettings(platform)])
+        if (manifest.status !== 'ready') throw new Error('message' in manifest ? manifest.message : 'The manifest didn’t load.')
+        const { graphics } = state
+        set({ manifest, graphics: graphics.status === 'found' ? { ...graphics, tier: matchTier(graphics.adapter, manifest.manifest) } : graphics })
+        const appUpdate = announcedAppUpdate(parseAppReleases(releases), { appVersion: APP_VERSION, skipped: settings.skippedApp, channel: state.channel })
+        const update = await announceUpdate(record)
+        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update, tierChange: tierChange(record) }, appUpdate })
+        await refreshVersions()
+        const found = [appUpdate && `Lucent ${appUpdate.version}`, update && `content ${update.version}`].filter((text): text is string => !!text)
+        const available = found.join(' and ')
+        set({ notice: found.length
+          ? `${available[0].toUpperCase()}${available.slice(1)} ${found.length > 1 ? 'are' : 'is'} available. Update from Home.`
+          : `You’re up to date: Lucent ${APP_VERSION}, content ${record.contentVersion}.` })
+      } catch (error) { set({ error: `Couldn’t check for updates. ${message(error)}` }) }
       finally { set({ busy: false }) }
     },
     async reportBug() {

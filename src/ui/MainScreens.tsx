@@ -1,7 +1,7 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, Play, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, Play, RefreshCw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard } from './DeploymentScreens'
@@ -105,7 +105,7 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
 
 function SettingsScreen() {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity } = state
   const [confirming, setConfirming] = useState(false)
   const restored = deployment ? replacedOriginals(deployment).length : 0
   return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
@@ -124,6 +124,10 @@ function SettingsScreen() {
       </fieldset>
     </SettingsGroup>}
     <SettingsGroup title="Updates">
+      {deployment && activity.kind === 'deployment' && <div className="card option-row settings-check">
+        <span><strong>Check for updates</strong><small>Lucent {__APP_VERSION__} · content {deployment.contentVersion}</small></span>
+        <button className="btn" disabled={busy} onClick={() => void core.checkForUpdates()}><RefreshCw size={14} strokeWidth={1.75} />Check now</button>
+      </div>}
       <label className="card option-row settings-switch">
         <span><strong>Beta channel</strong><small>Get beta versions of Lucent and its content first. Leaving Beta changes nothing installed.</small></span>
         <input type="checkbox" role="switch" checked={channel === 'beta'} disabled={busy} onChange={(e) => void core.setChannel(e.target.checked ? 'beta' : 'stable')} />
