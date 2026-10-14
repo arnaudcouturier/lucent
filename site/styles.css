@@ -420,7 +420,7 @@ kbd {
 }
 
 .hero h1 {
-  margin: 24px 0 22px;
+  margin: 0 0 22px;
   font-size: clamp(42px, 4.45vw, 64px);
   line-height: 1;
   letter-spacing: -0.045em;
