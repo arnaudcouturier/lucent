@@ -8,7 +8,7 @@ use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
-use windows::core::{Interface, HSTRING};
+use windows::core::{Interface, HSTRING, PWSTR};
 use windows::Win32::Devices::Display::{
     DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
     DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
@@ -16,7 +16,8 @@ use windows::Win32::Devices::Display::{
     DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
 };
 use windows::Win32::Foundation::{
-    GlobalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE, HWND, LPARAM, RPC_E_CHANGED_MODE,
+    CloseHandle, GlobalFree, LocalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE, HLOCAL, HWND, LPARAM,
+    RPC_E_CHANGED_MODE,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
@@ -30,12 +31,15 @@ use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, DEVMODEW, ENUM_CURRENT_SETTINGS,
     HDC, HMONITOR, MONITORINFOEXW,
 };
+use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+use windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
 };
+use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::Win32::UI::HiDpi::{
     SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -50,7 +54,7 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SW_SHOWNORMAL,
 };
-use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, HKEY_USERS, KEY_READ, KEY_WRITE};
 use winreg::RegKey;
 
 const MONITORINFOF_PRIMARY: u32 = 1;
@@ -238,6 +242,112 @@ pub fn read_registry(hive: &str, key: &str, value: &str) -> Result<String> {
     root.open_subkey_with_flags(key, KEY_READ)
         .and_then(|k| k.get_value::<String, _>(value))
         .map_err(|e| PlatformError::io(e, None))
+}
+
+struct TokenHandle(HANDLE);
+
+impl Drop for TokenHandle {
+    fn drop(&mut self) {
+        let _ = unsafe { CloseHandle(self.0) };
+    }
+}
+
+/// Returns the SID from this process token so an elevated relaunch can still target the player.
+pub fn current_user_sid() -> Result<String> {
+    let mut token = HANDLE::default();
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+        .map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))?;
+    let _token = TokenHandle(token);
+    let mut length = 0;
+    let _ = unsafe { GetTokenInformation(token, TokenUser, None, 0, &mut length) };
+    if length < std::mem::size_of::<TOKEN_USER>() as u32 {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "Windows returned an invalid user token.",
+            None,
+        ));
+    }
+    let mut buffer = vec![0u8; length as usize];
+    unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            Some(buffer.as_mut_ptr().cast()),
+            length,
+            &mut length,
+        )
+    }
+    .map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))?;
+    let user = unsafe { &*(buffer.as_ptr().cast::<TOKEN_USER>()) };
+    let mut sid = PWSTR::null();
+    unsafe { ConvertSidToStringSidW(user.User.Sid, &mut sid) }
+        .map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))?;
+    let result = unsafe { sid.to_string() };
+    let _ = unsafe { LocalFree(Some(HLOCAL(sid.0 as _))) };
+    result.map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))
+}
+
+const USER_GPU_PREFERENCES_KEY: &str = r"Software\Microsoft\DirectX\UserGpuPreferences";
+
+fn user_gpu_preferences_subkey(user_sid: &str) -> Result<String> {
+    let mut parts = user_sid.split('-');
+    let valid = parts.next() == Some("S")
+        && parts.next() == Some("1")
+        && parts
+            .next()
+            .is_some_and(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        && parts.clone().count() >= 1
+        && parts.all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()));
+    if !valid {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "The player account SID is invalid.",
+            None,
+        ));
+    }
+    Ok(format!(r"{user_sid}\{USER_GPU_PREFERENCES_KEY}"))
+}
+
+/// Reads one executable's REG_SZ value from the recorded player's loaded HKU hive.
+pub fn read_user_gpu_preferences(user_sid: &str, executable_path: &str) -> Result<Option<String>> {
+    let subkey = user_gpu_preferences_subkey(user_sid)?;
+    let key = match RegKey::predef(HKEY_USERS).open_subkey_with_flags(&subkey, KEY_READ) {
+        Ok(key) => key,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(PlatformError::io(error, None)),
+    };
+    match key.get_value::<String, _>(executable_path) {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(PlatformError::io(error, None)),
+    }
+}
+
+/// Writes or removes one executable value under the recorded player's SID, never process HKCU.
+pub fn write_user_gpu_preferences(
+    user_sid: &str,
+    executable_path: &str,
+    value: Option<&str>,
+) -> Result<()> {
+    let subkey = user_gpu_preferences_subkey(user_sid)?;
+    if let Some(value) = value {
+        let (key, _) = RegKey::predef(HKEY_USERS)
+            .create_subkey_with_flags(&subkey, KEY_WRITE)
+            .map_err(|error| PlatformError::io(error, None))?;
+        key.set_value(executable_path, &value)
+            .map_err(|error| PlatformError::io(error, None))
+    } else {
+        let key = match RegKey::predef(HKEY_USERS).open_subkey_with_flags(&subkey, KEY_WRITE) {
+            Ok(key) => key,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(PlatformError::io(error, None)),
+        };
+        match key.delete_value(executable_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(PlatformError::io(error, None)),
+        }
+    }
 }
 
 /// Well-known folders, as Windows resolves them for the current user.
@@ -2001,6 +2111,33 @@ mod tests {
         .unwrap();
 
         assert!(name.starts_with("Windows"), "got {name}");
+    }
+
+    #[test]
+    fn resolves_current_user_sid_and_round_trips_only_an_isolated_gpu_preference_value() {
+        let sid = current_user_sid().unwrap();
+        assert!(user_gpu_preferences_subkey(&sid).is_ok(), "SID was {sid}");
+        let executable = format!(r"C:\Lucent-Test-{}\ffxiv_dx11.exe", std::process::id());
+        let before = read_user_gpu_preferences(&sid, &executable).unwrap();
+        let test_value = "GpuPreference=2;AutoHDREnable=2096;";
+        let result = (|| {
+            write_user_gpu_preferences(&sid, &executable, Some(test_value))?;
+            assert_eq!(
+                read_user_gpu_preferences(&sid, &executable)?,
+                Some(test_value.to_owned())
+            );
+            write_user_gpu_preferences(&sid, &executable, None)?;
+            assert_eq!(read_user_gpu_preferences(&sid, &executable)?, None);
+            Ok::<(), PlatformError>(())
+        })();
+        write_user_gpu_preferences(&sid, &executable, before.as_deref()).unwrap();
+        result.unwrap();
+    }
+
+    #[test]
+    fn rejects_a_registry_sid_that_could_escape_the_player_hive() {
+        assert!(user_gpu_preferences_subkey(r"S-1-5-21-1\Software").is_err());
+        assert!(user_gpu_preferences_subkey("S-1-5").is_err());
     }
 
     #[test]

@@ -235,6 +235,14 @@ export function pacedProgress<T extends { phase?: string; progress: number }>(ap
 export function createCore(platform: Platform): Core {
   const nativePlatform = platform
   let playerLocalAppData: string | null = null
+  let playerUserSid: string | null = null
+  let playerUserSidUnavailable = false
+  const readPlayerUserSid = async () => {
+    if (playerUserSid || playerUserSidUnavailable) return playerUserSid
+    try { playerUserSid = await nativePlatform.currentUserSid() }
+    catch { playerUserSidUnavailable = true }
+    return playerUserSid
+  }
   platform = new Proxy(nativePlatform, { get(target, key) {
     if (key === 'envFolder') return (folder: Parameters<Platform['envFolder']>[0]) => folder === 'LocalAppData' && playerLocalAppData
       ? Promise.resolve(playerLocalAppData) : target.envFolder(folder)
@@ -406,6 +414,7 @@ export function createCore(platform: Platform): Core {
   const syncScreenSettings = async (gameFolder: string): Promise<{ record: DeploymentRecord | null; deferred: boolean }> => {
     const screen = await refreshScreen()
     if (!screen) return { record: null, deferred: false }
+    await readPlayerUserSid()
     const record = await readDeployment(platform, gameFolder)
     if (record?.status !== 'complete') return { record: null, deferred: false }
     if (await platform.isGameRunning()) { set({ gameRunning: true }); return { record: null, deferred: true } }
@@ -824,7 +833,8 @@ export function createCore(platform: Platform): Core {
       let resume: GameWriteRequest | null = null
       try {
         const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; resume = context.request }
+        if (context) { playerLocalAppData = context.localAppData; playerUserSid = context.userSid; playerUserSidUnavailable = context.userSid === null; resume = context.request }
+        else { playerUserSid = null; playerUserSidUnavailable = false }
         await openLog(!!context)
         await core.refreshGameRunning()
         if (!await recover()) return
@@ -1247,7 +1257,8 @@ export function createCore(platform: Platform): Core {
       let confirmed = false
       try {
         const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; confirmed = context.request !== null }
+        if (context) { playerLocalAppData = context.localAppData; playerUserSid = context.userSid; playerUserSidUnavailable = context.userSid === null; confirmed = context.request !== null }
+        else { playerUserSid = null; playerUserSidUnavailable = false }
         await openLog(!!context)
         await core.refreshGameRunning()
       } catch (error) { set({ error: message(error) }) }

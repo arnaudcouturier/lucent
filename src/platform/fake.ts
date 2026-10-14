@@ -26,6 +26,8 @@ export interface Machine {
   elevated?: boolean
   elevationCancelled?: boolean
   elevationResumePath?: string | null
+  /** Player SID used by the per-game registry fake; defaults to an isolated synthetic SID. */
+  userSid?: string
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
   windowsVersion?: string
@@ -300,6 +302,22 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const found = registry.get(norm(`${hive}\\${key}`))?.get(value.toLowerCase())
       if (found === undefined) throw new PlatformError('not-found', `No registry value ${hive}\\${key}\\${value}`)
       return found
+    },
+    async currentUserSid() {
+      await gate
+      return machine.userSid ?? 'S-1-5-21-1000-1000-1000-1001'
+    },
+    async readUserGpuPreferences(userSid, executablePath) {
+      await gate
+      return registry.get(norm(`HKU\\${userSid}\\Software\\Microsoft\\DirectX\\UserGpuPreferences`))?.get(executablePath.toLowerCase()) ?? null
+    },
+    async writeUserGpuPreferences(userSid, executablePath, value) {
+      await gate
+      const key = norm(`HKU\\${userSid}\\Software\\Microsoft\\DirectX\\UserGpuPreferences`)
+      let values = registry.get(key)
+      if (!values) { values = new Map(); registry.set(key, values) }
+      if (value === null) values.delete(executablePath.toLowerCase())
+      else values.set(executablePath.toLowerCase(), value)
     },
     async envFolder(folder) {
       await gate

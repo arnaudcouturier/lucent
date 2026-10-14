@@ -36,6 +36,35 @@ const frameGenerationManifest = (frameGenerationOptions: unknown): unknown => {
   }
 }
 
+const hdrOptions = [
+  { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
+  { id: 'hdr', settings: [
+    { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+    { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '0' },
+  ] },
+  { id: 'scene-hdr', experimental: true, settings: [
+    { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
+    { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '1' },
+  ] },
+]
+
+const hdrManifest = (options: unknown): unknown => {
+  const hash = 'a'.repeat(64)
+  const tiers = Object.fromEntries(manifest.tiers.map((tier) => [tier.id, {
+    recipe: [{ kind: 'copy', file: hash, to: 'winmm.dll' }],
+    entryFiles: [{ path: 'winmm.dll' }], ownedConfigs: [{ path: 'OptiScaler.ini' }],
+    shippedPresets: [], generatedFiles: [], overlay: null, hdrOptions: options,
+  }]))
+  return {
+    ...manifest,
+    versions: [{
+      id: '2026.10.13', channel: 'stable', minAppVersion: '0.1.0', changelog: ['HDR modes.'],
+      components: [{ name: 'Test', upstream: 'Test', licence: 'MIT', source: 'https://example.com' }],
+      files: [{ sha256: hash, size: 0, release: 'content-2026.10.13' }], tiers,
+    }],
+  }
+}
+
 describe('The shared manifest schema', () => {
   it('reads the published tier definitions', () => {
     const parsed = parseManifest(JSON.stringify(manifest))
@@ -89,6 +118,21 @@ describe('The shared manifest schema', () => {
     for (const recipe of Object.values(input.versions[0].tiers)) delete recipe.frameGenerationOptions
 
     expect(parseManifest(JSON.stringify(input)).versions[0].tiers['rtx-30-40'].frameGenerationOptions).toBeUndefined()
+  })
+
+  it('reads all three HDR modes and the experimental Scene HDR marker', () => {
+    const parsed = parseManifest(JSON.stringify(hdrManifest(hdrOptions)))
+    expect(parsed.versions[0].tiers['rtx-30-40'].hdrOptions).toEqual(hdrOptions)
+    expect(parseManifest(JSON.stringify(manifest)).versions[0].tiers['rtx-30-40'].hdrOptions).toBeUndefined()
+  })
+
+  it.each([
+    ['missing mode', hdrOptions.slice(0, 2)],
+    ['duplicate mode', [hdrOptions[0], hdrOptions[0], hdrOptions[2]]],
+    ['empty settings', [{ ...hdrOptions[0], settings: [] }, ...hdrOptions.slice(1)]],
+    ['unowned config', [{ ...hdrOptions[0], settings: [{ ...hdrOptions[0].settings[0], file: 'Other.ini' }] }, ...hdrOptions.slice(1)]],
+  ])('rejects HDR options with %s', (_, options) => {
+    expect(() => parseManifest(JSON.stringify(hdrManifest(options)))).toThrow(ManifestError)
   })
 
   it.each([

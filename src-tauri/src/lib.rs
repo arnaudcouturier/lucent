@@ -30,6 +30,28 @@ async fn platform_read_registry(
     platform::read_registry(&hive, &key, &value)
 }
 
+#[tauri::command(rename_all = "camelCase")]
+async fn platform_current_user_sid() -> Result<String, PlatformError> {
+    platform::current_user_sid()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn platform_read_user_gpu_preferences(
+    user_sid: String,
+    executable_path: String,
+) -> Result<Option<String>, PlatformError> {
+    platform::read_user_gpu_preferences(&user_sid, &executable_path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn platform_write_user_gpu_preferences(
+    user_sid: String,
+    executable_path: String,
+    value: Option<String>,
+) -> Result<(), PlatformError> {
+    platform::write_user_gpu_preferences(&user_sid, &executable_path, value.as_deref())
+}
+
 #[tauri::command]
 async fn platform_env_folder(folder: String) -> Result<String, PlatformError> {
     platform::env_folder(&folder)
@@ -354,6 +376,9 @@ pub fn run() {
             platform_read_text_tail,
             platform_stat,
             platform_read_registry,
+            platform_current_user_sid,
+            platform_read_user_gpu_preferences,
+            platform_write_user_gpu_preferences,
             platform_env_folder,
             platform_gpu_adapters,
             platform_monitors,

@@ -49,6 +49,8 @@ export interface ConditionalPath { path: string; when?: 'reshade' }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
 export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
+export type HdrMode = 'off' | 'hdr' | 'scene-hdr'
+export interface HdrOption { id: HdrMode; experimental?: boolean; settings: IniSetting[] }
 /** Also the order of the Home frame-generation choices. */
 export const FRAME_GENERATION_IDS = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'] as const
 export type FrameGenerationId = typeof FRAME_GENERATION_IDS[number]
@@ -111,6 +113,8 @@ export interface TierRecipe {
   frameGenerationOptions?: FrameGenerationOption[]
   /** Settings computed from XIV's current monitor; unknown to Lucent 0.1.x. */
   screenDerivedSettings?: ScreenDerivedSetting[]
+  /** HDR mode choices, absent from older content versions. */
+  hdrOptions?: HdrOption[]
   resetKeys?: IniKey[]
 }
 export interface ContentVersion {
@@ -315,6 +319,15 @@ function frameGenerationOption(value: unknown): FrameGenerationOption {
     ...(option.experimental !== undefined ? { experimental: option.experimental } : {}), settings,
     ...(hdrSettings !== undefined ? { hdrSettings } : {}) }
 }
+function hdrOption(value: unknown): HdrOption {
+  const option = object(value, 'HDR option')
+  if (!['off', 'hdr', 'scene-hdr'].includes(option.id as string)) invalid('Unknown HDR mode.')
+  if (option.experimental !== undefined && typeof option.experimental !== 'boolean') invalid('HDR option experimental must be a boolean.')
+  const settings = array(option.settings, 'HDR settings').map((setting) => iniSetting(object(setting, 'HDR setting')))
+  if (!settings.length) invalid('An HDR option needs settings.')
+  unique(settings.map((setting) => JSON.stringify([pathKey(setting.file), setting.section.toLowerCase(), setting.key.toLowerCase()])), 'HDR option keys')
+  return { id: option.id as HdrMode, ...(option.experimental === undefined ? {} : { experimental: option.experimental }), settings }
+}
 function singleLine(value: unknown, field: string): string {
   if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
   return value as string
@@ -433,6 +446,15 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Screen-derived keys')
       recipes[id].screenDerivedSettings = settings
     }
+    if (r.hdrOptions !== undefined) {
+      const options = array(r.hdrOptions, 'HDR options').map(hdrOption)
+      const modes = options.map((option) => option.id)
+      unique(modes, 'HDR option modes')
+      if (options.length !== 3 || !(['off', 'hdr', 'scene-hdr'] as const).every((mode) => modes.includes(mode))) {
+        invalid('HDR options must include Off, HDR and Scene HDR together.')
+      }
+      recipes[id].hdrOptions = options
+    }
     if (r.resetKeys !== undefined) recipes[id].resetKeys = array(r.resetKeys, 'Reset keys').map(iniKey)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
     const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
@@ -446,6 +468,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       for (const setting of [...option.settings, ...(option.hdrSettings ?? [])]) ownedConfig(setting.file)
     }
     for (const s of (recipes[id].screenDerivedSettings ?? [])) ownedConfig(s.file)
+    for (const s of (recipes[id].hdrOptions ?? []).flatMap((option) => option.settings)) ownedConfig(s.file)
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
     : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))

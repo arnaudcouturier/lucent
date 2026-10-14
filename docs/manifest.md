@@ -121,6 +121,27 @@ The field is optional and is ignored by older app releases. Options are filtered
 the fixed Off, 2x–6x, Dynamic order. The Home description uses the resolved frame cap and refresh rate; multiplier
 modes describe `floor(frameCap / multiplier)` as the render rate.
 
+A tier may also declare optional `hdrOptions`: exactly one option each for `off`, `hdr` and `scene-hdr`. Each option
+has nonempty settings targeting owned configs; those settings are the complete INI values that identify and apply
+the mode. `scene-hdr` may be marked `experimental`. Older content without this field has no HDR selector. Lucent
+matches the current INI values to the declared options, and displays Custom when there is no unique match. Choosing
+an HDR mode writes its settings independently of the performance profile and frame-generation mode. For HDR and
+Scene HDR, Lucent also disables Windows Auto HDR for XIV; Off restores the player's prior Auto HDR preference.
+
+```json
+"hdrOptions": [
+  { "id": "off", "settings": [{ "file": "OptiScaler.ini", "section": "HDR", "key": "FfxivHDR", "value": "false" }] },
+  { "id": "hdr", "settings": [
+    { "file": "OptiScaler.ini", "section": "HDR", "key": "FfxivHDR", "value": "true" },
+    { "file": "OptiScaler.ini", "section": "HDR", "key": "Mode", "value": "0" }
+  ] },
+  { "id": "scene-hdr", "experimental": true, "settings": [
+    { "file": "OptiScaler.ini", "section": "HDR", "key": "FfxivHDR", "value": "true" },
+    { "file": "OptiScaler.ini", "section": "HDR", "key": "Mode", "value": "1" }
+  ] }
+]
+```
+
 The first deployment chooses the newest content on the player's channel for the scanned tier (Stable
 by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in Settings
 is a player setting, stored with the skipped versions.

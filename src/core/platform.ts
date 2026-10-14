@@ -80,6 +80,12 @@ export interface Platform {
   stat(path: string): Promise<FileStat>
   /** Reads a string value. `key` is the full subkey path under the hive. */
   readRegistry(hive: RegistryHive, key: string, value: string): Promise<string>
+  /** SID of the interactive player account, captured before any administrator relaunch. */
+  currentUserSid(): Promise<string>
+  /** Reads a per-game UserGpuPreferences string from that player's loaded user hive. */
+  readUserGpuPreferences(userSid: string, executablePath: string): Promise<string | null>
+  /** Writes or removes only this player's per-game UserGpuPreferences value. */
+  writeUserGpuPreferences(userSid: string, executablePath: string, value: string | null): Promise<void>
   envFolder(folder: EnvFolder): Promise<string>
   /** Asks the player to pick a folder. Resolves to null if they cancel. */
   pickFolder(options: { title: string }): Promise<string | null>

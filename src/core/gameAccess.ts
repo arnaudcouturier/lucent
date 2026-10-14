@@ -62,7 +62,7 @@ export function elevationResumeLocalAppData(path: string): string {
 }
 
 /** The request is consumed before executing it, so failures never retry silently on another launch. */
-export async function takeElevationResume(platform: Platform): Promise<{ localAppData: string; request: GameWriteRequest | null } | null> {
+export async function takeElevationResume(platform: Platform): Promise<{ localAppData: string; userSid: string | null; request: GameWriteRequest | null } | null> {
   const path = await platform.getElevationResumePath()
   if (!path) return null
   // UAC may use another administrator account. The original path carries the player's data context,
@@ -71,11 +71,12 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   if (!await platform.isElevated()) throw new Error('Administrator access was not granted. Try the change again.')
   let text: string
   try { text = await platform.readText(path) }
-  catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') return { localAppData, request: null }; throw error }
+  catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') return { localAppData, userSid: null, request: null }; throw error }
   await platform.removeFile(path)
-  const value = JSON.parse(text) as { schemaVersion?: unknown; request?: GameWriteRequest }
+  const value = JSON.parse(text) as { schemaVersion?: unknown; userSid?: unknown; request?: GameWriteRequest }
   const request = value?.request
-  if (value?.schemaVersion !== 1 || !request || typeof request.gameFolder !== 'string'
+  const hasSid = typeof value?.userSid === 'string' && /^S-1-\d+(?:-\d+)+$/.test(value.userSid)
+  if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || (value.schemaVersion === 2 && !hasSid) || !request || typeof request.gameFolder !== 'string'
     || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'tier', 'profile', 'frame-generation', 'enabled'].includes(request.kind)
     || ((request.kind === 'deploy' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
     || (request.kind === 'tier' && typeof request.tier !== 'string')
@@ -87,7 +88,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
     if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')
     request.reviewedPaths.forEach(assertGamePath)
   }
-  return { localAppData, request }
+  return { localAppData, userSid: hasSid ? value.userSid as string : null, request }
 }
 
 /** UAC only after a denied game-folder probe; a cancelled prompt doesn't count, so the player can retry. */
@@ -99,7 +100,9 @@ export function gameWriteAccess(platform: Platform, observe: (running: boolean) 
     if (await platform.isElevated()) throw new Error('The game folder is still not writable with administrator access. Check its permissions, then try again.')
     if (requested) throw new Error('Administrator access was already requested. Reopen Lucent to try again.')
     const path = joinPath(await resumeDirectory(platform), `resume-${crypto.randomUUID()}.json`)
-    await platform.writeText(path, JSON.stringify({ schemaVersion: 1, request }))
+    const userSid = await platform.currentUserSid()
+    if (!/^S-1-\d+(?:-\d+)+$/.test(userSid)) throw new Error('The player account SID is invalid; Lucent could not prepare an administrator relaunch.')
+    await platform.writeText(path, JSON.stringify({ schemaVersion: 2, userSid, request }))
     requested = true
     try { await platform.requestElevation(path) }
     catch (error) { requested = false; await platform.removeFile(path); throw error }
