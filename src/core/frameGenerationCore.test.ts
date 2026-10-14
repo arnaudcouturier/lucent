@@ -146,6 +146,39 @@ it('shows unmatched config as Custom, preserves it until a mode is selected, the
   expect(reopened.getState().frameGenerationMode).toBeNull()
 })
 
+it('uses the changed same-tier GPU variant for regular content updates and rollbacks', async () => {
+  const { platform, m } = await deployed(144)
+  const original = FRAME_GENERATION_MANIFEST.versions[0]
+  const newer = { ...original, id: '2026.10.20', changelog: ['Inert frame-generation update.'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...FRAME_GENERATION_MANIFEST, versions: [original, newer] })
+  m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
+
+  const update = await reopen(platform)
+  expect(statusCard(update.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
+  expect(update.getState().frameGenerationMode).toBeNull()
+  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Backend\s*=\s*rtx40/)
+  await update.applyVersion(newer.id)
+
+  expect(update.getState().error).toBeNull()
+  expect(update.getState().deployment?.contentVersion).toBe(newer.id)
+  expect(update.getState().deployment?.graphics.name).toBe('NVIDIA GeForce RTX 3080')
+  expect(update.getState().frameGenerationMode).toBe('2x')
+  const config = await platform.readText(`${GAME}\\OptiScaler.ini`)
+  expect(config).toMatch(/Mode\s*=\s*2x/)
+  expect(config).toMatch(/Backend\s*=\s*rtx30/)
+
+  m.gpus = graphicsCard('NVIDIA GeForce RTX 4090').gpus
+  const rollback = await reopen(platform)
+  expect(statusCard(rollback.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
+  await rollback.applyVersion(original.id)
+
+  expect(rollback.getState().error).toBeNull()
+  expect(rollback.getState().deployment?.contentVersion).toBe(original.id)
+  expect(rollback.getState().deployment?.graphics.name).toBe('NVIDIA GeForce RTX 4090')
+  expect(rollback.getState().frameGenerationMode).toBe('2x')
+  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Backend\s*=\s*rtx40/)
+})
+
 it('keeps a supported mode through a content update and clears it when the new tier has no options', async () => {
   const { core, platform, m } = await deployed(144)
   await core.selectFrameGenerationMode('4x')

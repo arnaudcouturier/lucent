@@ -794,7 +794,8 @@ export function createCore(platform: Platform): Core {
       const title = operation === 'gpu-refresh' ? `GPU refresh for ${tier.label}`
         : operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
-      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), graphics, state.screen?.refreshHz ?? 60, state.screen?.height, state.screen?.hdrOn ?? false)
+      const targetGraphics = graphics ?? (state.graphics.status === 'found' && state.graphics.tier?.id === tier.id ? state.graphics.adapter : undefined)
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, state.screen?.refreshHz ?? 60, state.screen?.height, state.screen?.hdrOn ?? false)
       applied = true
       log.write('success', `${title} finished in ${elapsed(since)}`)
       set({ deployment: record, profiles: profilesForRecipe(record.recipe), selectedProfile: record.profile ?? null, recommendedProfile: null, includeReShade: record.includeReShade })
