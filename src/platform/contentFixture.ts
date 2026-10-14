@@ -1,6 +1,6 @@
 // Tiny, inert content for tests and browser development. Never published or used by the real app.
 import manifest from '../../manifest.json'
-import type { ContentVersion, Manifest, TierRecipe } from '../shared/manifest'
+import type { ContentVersion, Manifest, PerformanceProfile, TierRecipe } from '../shared/manifest'
 
 export const OPTISCALER_HASH = 'f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02'
 export const RESHADE_HASH = '2b2b1cc6036edf59fae14ea7237a88c38ca7f425b0467046493061c18dc3d3ce'
@@ -75,13 +75,56 @@ const rtx40FrameGeneration = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'].ma
   settings: [frameGenerationSetting(id), frameGenerationBackend('rtx40')],
 }))
 
+const profileSetting = (key: string, value: string) => ({ file: 'OptiScaler.ini', section: 'DlssNr', key, value })
+const upscalingSetting = (value: { '1080p': string; '1440p': string; '4k+': string }) => ({
+  file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value,
+})
+const FRAME_GENERATION_PROFILES = [
+  {
+    id: 'ultra', label: 'Ultra', description: 'Two Neural Rendering passes with Quality upscaling.',
+    summary: 'Two passes · Quality upscaling', gpuNamePatterns: ['\\bRTX\\s+(4080|4090)\\b'],
+    settings: [profileSetting('Passes', '2'), profileSetting('SpatialCompression', 'false'), profileSetting('ResidualFG', 'false'),
+      upscalingSetting({ '1080p': '2', '1440p': '2', '4k+': '2' })],
+  },
+  {
+    id: 'fidelity', label: 'Fidelity', description: 'One Neural Rendering pass with Quality upscaling.',
+    summary: 'One pass · Quality upscaling',
+    settings: [profileSetting('Passes', '1'), profileSetting('SpatialCompression', 'false'), profileSetting('ResidualFG', 'false'),
+      upscalingSetting({ '1080p': '2', '1440p': '2', '4k+': '2' })],
+  },
+  {
+    id: 'balanced', label: 'Balanced', description: 'Quality upscaling at 1080p; Balanced at 1440p and above.',
+    summary: {
+      '1080p': 'One pass · Quality upscaling',
+      '1440p': 'One pass · Balanced upscaling',
+      '4k+': 'One pass · Balanced upscaling',
+    },
+    settings: [profileSetting('Passes', '1'), profileSetting('SpatialCompression', 'false'), profileSetting('ResidualFG', 'false'),
+      upscalingSetting({ '1080p': '2', '1440p': '1', '4k+': '1' })],
+  },
+  {
+    id: 'performance', label: 'Performance', description: 'Compression and residual frame generation for a higher frame rate.',
+    summary: {
+      '1080p': 'One pass · Balanced upscaling',
+      '1440p': 'One pass · Balanced upscaling',
+      '4k+': 'One pass · Performance upscaling',
+    },
+    settings: [profileSetting('Passes', '1'), profileSetting('SpatialCompression', 'true'), profileSetting('ResidualFG', 'true'),
+      upscalingSetting({ '1080p': '1', '1440p': '1', '4k+': '0' })],
+  },
+] satisfies PerformanceProfile[]
+
 /** Illustrative mode variants for the Home gallery; these inert values are never published. */
 export const FRAME_GENERATION_MANIFEST: Manifest = {
   ...PROFILE_MANIFEST,
   versions: PROFILE_MANIFEST.versions.map((content) => ({
     ...content,
-    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id === 'rtx-30-40'
-      ? { ...tier, frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] }
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id.startsWith('rtx-')
+      ? {
+        ...tier,
+        performanceProfilesV2: FRAME_GENERATION_PROFILES,
+        ...(id === 'rtx-30-40' ? { frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] } : {}),
+      }
       : tier])),
   })),
 }
