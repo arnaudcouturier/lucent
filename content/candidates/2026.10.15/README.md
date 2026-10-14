@@ -46,7 +46,7 @@ The Intel license allows redistribution of the unmodified binary with its notice
 
 ## 4090 QA record
 
-The maintainer manually ran every case from a fresh deployment or **Settings → Reset setup…** with the game closed. A Reset is required when changing the profile, frame-generation mode or HDR mode; do not switch these through Home or by editing the deployment record. The matrix below records that attestation; it is not agent-observed gameplay evidence. Verify the selected values in the generated `OptiScaler.ini`, then launch XIV and confirm Neural Rendering is active.
+The maintainer confirmed on 2026-10-14 that the frame-generation modes, HDR methods and four profiles had already been tested manually and passed. That confirms the content choices; it does not establish manual testing of the newly implemented Reset flow. The checklist below describes verification through a fresh deployment or **Settings → Reset setup…** with the game closed. A Reset is required when changing the profile, frame-generation mode or HDR mode; do not switch these through Home or by editing the deployment record.
 
 - RTX 40 frame generation: **Off**, **2×**, **3×**, **4×**, **5×**, **6×** and **Dynamic**. For each choice, verify the overlay mode and complete ten minutes of play without a crash.
 - HDR: **Off**, **HDR** and **Scene HDR** with Windows HDR on where supported; repeat the frame-generation choices that are offered with each selected HDR mode, verify the screen-derived peak nits, and confirm the Windows HDR activation warning. The selected HDR mode determines the RTX 30 provider even when Windows HDR is currently off.
@@ -55,7 +55,7 @@ The maintainer manually ran every case from a fresh deployment or **Settings →
 - Hotkeys: confirm Delete toggles Neural Rendering, Page Up/Page Down remain XIV zoom, and End toggles frame generation.
 - Re-open Lucent and verify the selected choices persist. Use deployment history to roll back to 2026.10.14 and verify that candidate content is removed and the prior content is restored. Uninstall remains a separate operation that restores the pre-first-deployment baseline.
 
-The maintainer attests that the complete matrix above was run on the RTX 4090 before this candidate handoff and passed. Real Reset manual verification remains user-attested; this repository preparation records the attestation and automated manifest validation, not agent-observed gameplay results.
+Gameplay results for the content choices are maintainer-attested, not agent-observed. Reset, rollback and uninstall behavior are covered by automated tests; manual verification of the new app flow has not been recorded here.
 
 ## Offline and live publication commands
 
