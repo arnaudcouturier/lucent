@@ -110,7 +110,7 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         recipe, entryFiles: tier.entryFiles, ownedConfigs: tier.ownedConfigs, shippedPresets: tier.shippedPresets,
         generatedFiles: tier.generatedFiles, overlay: tier.overlay, performanceProfiles: tier.performanceProfiles,
         performanceProfilesV2: tier.performanceProfilesV2, frameGenerationOptions: tier.frameGenerationOptions,
-        screenDerivedSettings: tier.screenDerivedSettings, hdrOptions: tier.hdrOptions, resetKeys: tier.resetKeys,
+        screenDerivedSettings: tier.screenDerivedSettings, hdrOptions: tier.hdrOptions,
       }
     }
     // Only what a recipe copies is published; a source file no tier deploys is never uploaded.
@@ -128,9 +128,6 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     for (const tier of next.tiers) {
       if (!content.tiers[tier.id]) continue
       const recipe = next.versions.at(-1)!.tiers[tier.id]
-      for (const key of recipe.resetKeys ?? []) {
-        if (!recipe.ownedConfigs.some((p) => fileKey(p.path) === fileKey(key.file))) throw new Error(`Reset key must target an owned config: ${key.file}`)
-      }
       for (const includeReShade of tier.requiresReShade ? [true] : [true, false]) {
         const plan = planDeployment(content, tier, includeReShade, { files: [], ownedFiles: [], cachedFiles: [] })
         const deployed = new Map<string, { hash: string; component: Component; settings: IniSetting[] }>()

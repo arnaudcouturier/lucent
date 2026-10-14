@@ -1,53 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { HdrOption } from '../shared/manifest'
-import { disableAutoHdr, latestAutoHdrDisableIndex, matchHdrMode, restoreAutoHdr } from './hdr'
-
-const options: HdrOption[] = [
-  { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
-  { id: 'hdr', settings: [
-    { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
-    { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '0' },
-  ] },
-  { id: 'scene-hdr', experimental: true, settings: [
-    { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
-    { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '1' },
-  ] },
-]
-
-describe('HDR mode matching', () => {
-  it.each([
-    ['Off', '[HDR]\nFfxivHDR = false\nMode = 1', 'off'],
-    ['HDR', '[HDR]\nFfxivHDR = true\nMode = 0', 'hdr'],
-    ['Scene HDR', '[HDR]\nFfxivHDR = true\nMode = 1', 'scene-hdr'],
-    ['a custom combination', '[HDR]\nFfxivHDR = true\nMode = 2', null],
-    ['a missing key', '[HDR]\nFfxivHDR = true', null],
-  ] as const)('reads %s from the on-disk keys', (_, text, expected) => {
-    expect(matchHdrMode(options, text)).toBe(expected)
-  })
-})
-
-describe('HDR mode matching', () => {
-  it('matches declared HDR keys across more than one owned config', () => {
-    const multiFileOptions: HdrOption[] = [
-      { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'false' }] },
-      { id: 'hdr', settings: [
-        { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
-        { file: 'Renderer.ini', section: 'HDR', key: 'Mode', value: '0' },
-      ] },
-      { id: 'scene-hdr', settings: [
-        { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
-        { file: 'Renderer.ini', section: 'HDR', key: 'Mode', value: '1' },
-      ] },
-    ]
-    const values = new Map([
-      ['optiscaler.ini|hdr|ffxivhdr', 'true'],
-      ['renderer.ini|hdr|mode', '1'],
-    ])
-    expect(matchHdrMode(multiFileOptions, (file, section, key) => values.get(`${file.toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`))).toBe('scene-hdr')
-    values.set('renderer.ini|hdr|mode', '2')
-    expect(matchHdrMode(multiFileOptions, (file, section, key) => values.get(`${file.toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`))).toBeNull()
-  })
-})
+import { disableAutoHdr, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
 
 describe('Auto HDR entry ownership', () => {
   it('adds only the disabled AutoHDR token and preserves existing token spelling, order and terminator', () => {

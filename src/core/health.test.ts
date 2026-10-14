@@ -92,7 +92,7 @@ it('leaves the game folder as it was when Repair can’t download, and keeps sho
   expect(await snapshot(platform)).toEqual(before)
 })
 
-it('restores an unreadable owned config to Lucent’s last-written copy', async () => {
+it('writes a config that can’t be read as text again from the baseline', async () => {
   const platform = await deployed()
   const written = await platform.readText(`${GAME}\\OptiScaler.ini`)
   await platform.writeText(`${GAME}\\OptiScaler.ini`, '\0\0\0')

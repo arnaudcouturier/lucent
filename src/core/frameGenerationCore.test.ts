@@ -7,15 +7,25 @@ import { MANIFEST_URL } from './manifest'
 import { statusCard } from './statusCard'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 import { dataPaths, readDeployment } from './deployment'
-import type { FrameGenerationId } from '../shared/manifest'
+import type { ConfigUpdateRule, FrameGenerationId, Manifest } from '../shared/manifest'
 
 const ROOT = 'D:\\SteamLibrary\\steamapps\\common\\FINAL FANTASY XIV Online'
 const GAME = `${ROOT}\\game`
 
-async function deployed(refresh: 60 | 144, gpu: 'rtx30' | 'rtx40' = 'rtx40') {
+/** The frame generation content with the given update rule on OptiScaler.ini, in every version it publishes. */
+function manifestWith(rule: ConfigUpdateRule | undefined, extraVersions: Manifest['versions'] = []): Manifest {
+  const manifest = structuredClone(FRAME_GENERATION_MANIFEST)
+  manifest.versions = [...manifest.versions, ...extraVersions]
+  if (rule) for (const version of manifest.versions) version.tiers['rtx-30-40'].ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = rule
+  return manifest
+}
+
+async function deployed(refresh: 60 | 144, gpu: 'rtx30' | 'rtx40' = 'rtx40', rule?: ConfigUpdateRule) {
   const screen = refresh === 60 ? MACHINES.screen60Sdr : MACHINES.screen144Hdr
   const gpuName = gpu === 'rtx30' ? 'NVIDIA GeForce RTX 3080' : 'NVIDIA GeForce RTX 4090'
-  const m = machine(screen, frameGenerationContentHost(), graphicsCard(gpuName))
+  const host = frameGenerationContentHost()
+  host.remoteText![MANIFEST_URL] = JSON.stringify(manifestWith(rule))
+  const m = machine(screen, host, graphicsCard(gpuName))
   const platform = createFakePlatform(m)
   const core = createCore(platform)
   await core.scan()
@@ -32,13 +42,11 @@ async function reopen(platform: FakePlatform) {
   return core
 }
 
-/** A deployment made with another mode, as an earlier build's Home control left it: the config and Lucent's last-written copy both hold it. */
+/** A deployment whose player picked another mode: the config and the stored first-install choice both hold it. */
 async function deployedWith(platform: FakePlatform, mode: string) {
   const configPath = `${GAME}\\OptiScaler.ini`
-  const withMode = (text: string) => text.replace(/Mode\s*=\s*2x/i, `Mode=${mode}`)
-  await platform.writeText(configPath, withMode(await platform.readText(configPath)))
+  await platform.writeText(configPath, (await platform.readText(configPath)).replace(/Mode\s*=\s*2x/i, `Mode=${mode}`))
   const record = (await readDeployment(platform, ROOT))!
-  record.ownedConfigs['OptiScaler.ini'] = withMode(record.ownedConfigs['OptiScaler.ini'])
   record.frameGenerationMode = mode as FrameGenerationId
   await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
 }
@@ -55,22 +63,7 @@ it('defaults to 2x at 120 Hz or above and offers only the matching RTX 40 modes'
   expect(frameGenerationOptionsForGpu(core.getState().deployment?.recipe.frameGenerationOptions ?? [], 'NVIDIA GeForce RTX 4090').map(({ id }) => id)).toEqual(['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'])
 })
 
-it('keeps a supported mode when refreshing between GPUs in the same tier', async () => {
-  const { platform, m } = await deployed(144)
-  await deployedWith(platform, '4x')
-  m.gpus = graphicsCard('NVIDIA GeForce RTX 4080').gpus
-
-  const changedGpu = await reopen(platform)
-  expect(statusCard(changedGpu.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
-  await changedGpu.switchTier()
-
-  expect(changedGpu.getState().error).toBeNull()
-  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 4080' } })
-  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Mode\s*=\s*4x/)
-  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Backend\s*=\s*rtx40/)
-})
-
-it('refreshes a same-tier GPU deliberately, selecting its modes and falling back only when applied', async () => {
+it('leaves a kept config and the stored mode alone through a same-tier GPU refresh', async () => {
   const { platform, m } = await deployed(144)
   await deployedWith(platform, '4x')
   const configPath = `${GAME}\\OptiScaler.ini`
@@ -79,16 +72,36 @@ it('refreshes a same-tier GPU deliberately, selecting its modes and falling back
 
   const changedGpu = await reopen(platform)
   expect(statusCard(changedGpu.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
-  expect(await platform.readText(configPath)).toBe(before)
-
   await changedGpu.switchTier()
   expect(changedGpu.getState().error).toBeNull()
-  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '2x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
+  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
+  expect(await platform.readText(configPath)).toBe(before)
+})
+
+it('writes the stored mode, or the new card’s default, when the replace rule rewrites the config for a same-tier GPU', async () => {
+  const { platform, m } = await deployed(144, 'rtx40', 'replace')
+  await deployedWith(platform, '4x')
+  const configPath = `${GAME}\\OptiScaler.ini`
+
+  m.gpus = graphicsCard('NVIDIA GeForce RTX 4080').gpus
+  const supported = await reopen(platform)
+  await supported.switchTier()
+  expect(supported.getState().error).toBeNull()
+  expect(supported.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 4080' } })
+  expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*4x/)
+  expect(await platform.readText(configPath)).toMatch(/Backend\s*=\s*rtx40/)
+
+  m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
+  const changedGpu = await reopen(platform)
+  await changedGpu.switchTier()
+  expect(changedGpu.getState().error).toBeNull()
+  // 4x isn't offered on this card: the baseline gets its default, and the stored choice stays for Reset to offer.
+  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
   expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*2x/)
   expect(await platform.readText(configPath)).toMatch(/Backend\s*=\s*rtx30/)
 })
 
-it('preserves custom frame-generation values through a same-tier GPU refresh', async () => {
+it('leaves values the player set by hand through a same-tier GPU refresh', async () => {
   const { platform, m } = await deployed(144)
   const configPath = `${GAME}\\OptiScaler.ini`
   const custom = (await platform.readText(configPath)).replace(/Mode\s*=\s*2x/i, 'Mode=third-party')
@@ -96,12 +109,9 @@ it('preserves custom frame-generation values through a same-tier GPU refresh', a
   m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
 
   const changedGpu = await reopen(platform)
-  expect(statusCard(changedGpu.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
-  expect(await platform.readText(configPath)).toBe(custom)
-
   await changedGpu.switchTier()
   expect(changedGpu.getState().error).toBeNull()
-  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: null, graphics: { name: 'NVIDIA GeForce RTX 3080' } })
+  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '2x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
   expect(await platform.readText(configPath)).toBe(custom)
 })
 
@@ -119,11 +129,11 @@ it('leaves the mode in the config alone through Repair', async () => {
   expect(statusCard(reopened.getState())).toEqual({ kind: 'healthy' })
 })
 
-it('uses the changed same-tier GPU variant for regular content updates and rollbacks', async () => {
-  const { platform, m } = await deployed(144)
+it('uses the changed same-tier GPU variant for regular content updates and rollbacks under the replace rule', async () => {
+  const { platform, m } = await deployed(144, 'rtx40', 'replace')
   const original = FRAME_GENERATION_MANIFEST.versions[0]
-  const newer = { ...original, id: '2026.10.20', changelog: ['Inert frame-generation update.'] }
-  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...FRAME_GENERATION_MANIFEST, versions: [original, newer] })
+  const newer = { ...structuredClone(original), id: '2026.10.20', changelog: ['Inert frame-generation update.'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify(manifestWith('replace', [newer]))
   m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
 
   const update = await reopen(platform)
@@ -147,12 +157,12 @@ it('uses the changed same-tier GPU variant for regular content updates and rollb
   expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Backend\s*=\s*rtx40/)
 })
 
-it('keeps a supported mode through a content update and clears it when the new tier has no options', async () => {
-  const { platform, m } = await deployed(144)
+it('keeps the stored mode through a content update and takes the new tier’s choices on a tier switch', async () => {
+  const { platform, m } = await deployed(144, 'rtx40', 'replace')
   await deployedWith(platform, '4x')
   const original = FRAME_GENERATION_MANIFEST.versions[0]
-  const newer = { ...original, id: '2026.10.20', changelog: ['Inert frame-generation update.'] }
-  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...FRAME_GENERATION_MANIFEST, versions: [original, newer] })
+  const newer = { ...structuredClone(original), id: '2026.10.20', changelog: ['Inert frame-generation update.'] }
+  m.remoteText![MANIFEST_URL] = JSON.stringify(manifestWith('replace', [newer]))
   const update = await reopen(platform)
   expect(statusCard(update.getState())).toMatchObject({ kind: 'update' })
   await update.update()

@@ -48,7 +48,7 @@ it('previews hash-named uploads and the shared manifest without GitHub or local 
   expect(result.uploads.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true)
   expect(parseManifest(result.manifestText).versions[0]).toMatchObject({
     id: '2026.10.12', channel: 'stable', changelog: ['Tested fixture content.'],
-    tiers: { other: { resetKeys: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'PresetPath' }] } },
+    tiers: { other: { ownedConfigs: [{ path: 'ReShade.ini', update: 'addMissingKeys' }] } },
   })
   for (const file of parseManifest(result.manifestText).versions[0].files) {
     expect((await readFile(resolve(localFiles, file.sha256))).length).toBe(file.size)
@@ -325,7 +325,6 @@ it('checks shader collisions introduced by recipe destinations', async () => {
     ]
     input.tiers.other.ownedConfigs = []
     input.tiers.other.shippedPresets = []
-    input.tiers.other.resetKeys = []
   })
   await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/shader.*collision/i)
 })
@@ -342,7 +341,7 @@ it('validates presets against the final recipe rather than unused source shaders
   await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/missing shader: Example\.fx/i)
 })
 
-it('preserves all performance profiles and reset keys in the shared manifest', async () => {
+it('preserves all performance profiles in the shared manifest', async () => {
   const manifestPath = await manifestFile()
   const input = await inputFile(manifestPath, (input) => {
     input.tiers.other.performanceProfiles = ['fidelity', 'balanced', 'performance'].map((id) => ({
@@ -356,7 +355,6 @@ it('preserves all performance profiles and reset keys in the shared manifest', a
       { id: 'fidelity', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'Example', value: '1' }] },
       { id: 'balanced' }, { id: 'performance' },
     ],
-    resetKeys: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'PresetPath' }],
   })
 })
 
@@ -387,7 +385,6 @@ it('requires GPL provenance when a recipe renames a file to an OptiScaler entry 
     input.tiers.other.entryFiles = [{ path: 'winmm.dll' }]
     input.tiers.other.ownedConfigs = []
     input.tiers.other.shippedPresets = []
-    input.tiers.other.resetKeys = []
   })
   await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/OptiScaler.*GPL source tag/i)
 })
@@ -431,7 +428,7 @@ it('keeps the selected source component when identical file bytes are shared acr
     other.sources[0].component = 'OptiScaler'
     other.recipe = [{ kind: 'copy', file: 'dxgi.dll', to: 'staging.dll' }, { kind: 'rename', from: 'staging.dll', to: 'winmm.dll' }]
     other.entryFiles = [{ path: 'winmm.dll' }]
-    other.ownedConfigs = []; other.shippedPresets = []; other.resetKeys = []
+    other.ownedConfigs = []; other.shippedPresets = []
     input.tiers.radeon = { ...structuredClone(other), sources: [{ folder: resolve('scripts/fixtures/publish/valid/files'), component: 'ReShade fixture' }], recipe: [{ kind: 'copy', file: 'dxgi.dll', to: 'dxgi.dll' }], entryFiles: [{ path: 'dxgi.dll' }] }
   })
   // Both tiers copy the same dxgi.dll; source files no recipe copies are never uploaded.

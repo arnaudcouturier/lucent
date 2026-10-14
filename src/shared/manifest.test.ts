@@ -19,6 +19,22 @@ const screenDerivedManifest = (screenDerivedSettings: unknown): unknown => {
   }
 }
 
+const configRuleManifest = (ownedConfigs: unknown): unknown => {
+  const hash = 'a'.repeat(64)
+  const tiers = Object.fromEntries(manifest.tiers.map((tier) => [tier.id, {
+    recipe: [{ kind: 'copy', file: hash, to: 'winmm.dll' }],
+    entryFiles: [{ path: 'winmm.dll' }], ownedConfigs, shippedPresets: [], generatedFiles: [], overlay: null,
+  }]))
+  return {
+    ...manifest,
+    versions: [{
+      id: '2026.10.13', channel: 'stable', minAppVersion: '0.1.0', changelog: ['Config update rules.'],
+      components: [{ name: 'Test', upstream: 'Test', licence: 'MIT', source: 'https://example.com' }],
+      files: [{ sha256: hash, size: 0, release: 'content-2026.10.13' }], tiers,
+    }],
+  }
+}
+
 const frameGenerationManifest = (frameGenerationOptions: unknown): unknown => {
   const hash = 'a'.repeat(64)
   const tiers = Object.fromEntries(manifest.tiers.map((tier) => [tier.id, {
@@ -66,6 +82,19 @@ const hdrManifest = (options: unknown): unknown => {
 }
 
 describe('The shared manifest schema', () => {
+  it('reads each config file’s update rule, and leaves it absent when the content gives none', () => {
+    const parsed = parseManifest(JSON.stringify(configRuleManifest([
+      { path: 'OptiScaler.ini', update: 'addMissingKeys' }, { path: 'ReShade.ini', update: 'replace', when: 'reshade' }, { path: 'Other.ini' }, { path: 'Kept.ini', update: 'keep' },
+    ])))
+    expect(parsed.versions[0].tiers.other.ownedConfigs).toEqual([
+      { path: 'OptiScaler.ini', update: 'addMissingKeys' }, { path: 'ReShade.ini', update: 'replace', when: 'reshade' }, { path: 'Other.ini' }, { path: 'Kept.ini', update: 'keep' },
+    ])
+  })
+
+  it('rejects an unknown config update rule', () => {
+    expect(() => parseManifest(JSON.stringify(configRuleManifest([{ path: 'OptiScaler.ini', update: 'merge' }])))).toThrow(ManifestError)
+  })
+
   it('reads the published tier definitions', () => {
     const parsed = parseManifest(JSON.stringify(manifest))
 

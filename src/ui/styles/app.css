@@ -764,7 +764,6 @@ html.is-browser .uninstall-window {
 .hotkey { padding: var(--space-2) 0; }
 .hotkey-action { display: grid; gap: 1px; color: var(--ink); }
 .hotkey-action small { color: var(--ink-3); font-size: var(--text-label); }
-.hotkey-action .key-changed { color: var(--caution-ink); }
 .key-unset { color: var(--ink-3); font-size: var(--text-label); }
 
 /* ---------- Main screen: the rail navigates between sections ---------- */

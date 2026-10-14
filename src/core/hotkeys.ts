@@ -1,9 +1,8 @@
-// The keys the deployed tools answer to in game, read from their config files. A key a config leaves out (or sets
-// to `auto`) is the tool's own default. Read from the game folder, the list shows a key the player changed in game;
-// read from the configs Lucent wrote, it is what Lucent shipped.
+// The keys the deployed tools answer to in game, read from their config files in the game folder. A key a config
+// leaves out (or sets to `auto`) is the tool's own default. The configs are the player's, so the list shows a key they
+// changed in game.
 import { readIni } from './ini'
 import type { DeploymentRecord } from './deployment'
-import { fileKey } from './planner'
 
 export type KeyTool = 'OptiScaler' | 'ReShade'
 
@@ -14,8 +13,6 @@ export interface KeyBinding {
   hint?: string
   /** The keys pressed together, modifiers first, such as ['Shift', 'F2']; null when the action is unbound. */
   keys: string[] | null
-  /** What Lucent wrote for this action, present only when the file now says something else. */
-  shipped?: string[] | null
   /** Taught on the Done screen. */
   essential: boolean
 }
@@ -125,47 +122,24 @@ function readBindings(configs: KeyConfigs, overlay: Overlay, names: Readonly<Rec
     }))
 }
 
-/** The configs Lucent last wrote for this deployment, as `KeyConfigs`. */
-function shippedConfigs(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>): KeyConfigs {
-  const text = (name: string) => Object.entries(record.ownedConfigs).find(([path]) => fileKey(path) === fileKey(name))?.[1] ?? ''
-  return { optiScaler: record.recipe.overlay ? text('OptiScaler.ini') : null, reShade: record.includeReShade ? text('ReShade.ini') : null }
+type KeyRecord = Pick<DeploymentRecord, 'recipe' | 'includeReShade'>
+
+/** The configs of the tools this deployment has; a file that can't be read leaves its tool on the defaults. */
+function deployedConfigs(record: KeyRecord, onDisk: KeyConfigs): KeyConfigs {
+  return { optiScaler: record.recipe.overlay ? onDisk.optiScaler ?? '' : null, reShade: record.includeReShade ? onDisk.reShade ?? '' : null }
 }
 
-/** The keys a fresh deployment teaches on the Done screen: what Lucent shipped, bound and essential. */
-export function deploymentHotkeys(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>, names: Readonly<Record<number, string>> = {}): KeyBinding[] {
-  return readBindings(shippedConfigs(record), record.recipe.overlay, names).filter((b) => b.essential && b.keys)
+/** The keys a fresh deployment teaches on the Done screen: bound and essential, as the configs it just wrote say. */
+export function deploymentHotkeys(record: KeyRecord, onDisk: KeyConfigs, names: Readonly<Record<number, string>> = {}): KeyBinding[] {
+  return readBindings(deployedConfigs(record, onDisk), record.recipe.overlay, names).filter((b) => b.essential && b.keys)
 }
 
-function keyCodes(configs: KeyConfigs, overlay: Overlay): number[] {
-  return [...new Set(bindingCodes(configs, overlay).flatMap(({ virtualKeys }) => virtualKeys ?? []))]
+/** Every key as the game folder's configs say now (a missing file means the tool's defaults). */
+export function liveKeyBindings(record: KeyRecord, onDisk: KeyConfigs, names: Readonly<Record<number, string>> = {}): KeyBinding[] {
+  return readBindings(deployedConfigs(record, onDisk), record.recipe.overlay, names)
 }
 
-/** The virtual keys whose names are needed to show a fresh deployment's bindings. */
-export function deploymentKeyCodes(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>): number[] {
-  return keyCodes(shippedConfigs(record), record.recipe.overlay)
-}
-
-function liveConfigs(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>, onDisk: KeyConfigs): KeyConfigs {
-  const shipped = shippedConfigs(record)
-  return { optiScaler: shipped.optiScaler === null ? null : onDisk.optiScaler ?? '', reShade: shipped.reShade === null ? null : onDisk.reShade ?? '' }
-}
-
-/**
- * Every key as the game folder's configs say now (a missing file means the tool's defaults), each marked with
- * what Lucent shipped when the player has changed it since.
- */
-export function liveKeyBindings(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>, onDisk: KeyConfigs, names: Readonly<Record<number, string>> = {}): KeyBinding[] {
-  const shipped = shippedConfigs(record)
-  const configs = liveConfigs(record, onDisk)
-  const original = readBindings(shipped, record.recipe.overlay, names)
-  return readBindings(configs, record.recipe.overlay, names).map((binding) => {
-    const before = original.find((b) => b.tool === binding.tool && b.action === binding.action)
-    const same = (before?.keys ?? null)?.join('+') === (binding.keys ?? null)?.join('+')
-    return same ? binding : { ...binding, shipped: before?.keys ?? null }
-  })
-}
-
-/** The virtual keys whose names are needed for the current Keys screen. */
-export function liveKeyCodes(record: Pick<DeploymentRecord, 'recipe' | 'ownedConfigs' | 'includeReShade'>, onDisk: KeyConfigs): number[] {
-  return [...new Set([...keyCodes(shippedConfigs(record), record.recipe.overlay), ...keyCodes(liveConfigs(record, onDisk), record.recipe.overlay)])]
+/** The virtual keys whose names are needed to show these configs' bindings. */
+export function liveKeyCodes(record: KeyRecord, onDisk: KeyConfigs): number[] {
+  return [...new Set(bindingCodes(deployedConfigs(record, onDisk), record.recipe.overlay).flatMap(({ virtualKeys }) => virtualKeys ?? []))]
 }

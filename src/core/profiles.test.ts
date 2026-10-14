@@ -57,7 +57,7 @@ function screenProfileMachine(height: number) {
   })
 }
 
-it('offers profiles between Scan and Review and deploys the selected values with a last-written copy', async () => {
+it('offers profiles between Scan and Review and deploys the selected values', async () => {
   const platform = createFakePlatform(profileMachine())
   const core = createCore(platform)
   await core.scan()
@@ -71,7 +71,6 @@ it('offers profiles between Scan and Review and deploys the selected values with
   expect(core.getState().deployment).toMatchObject({ profile: 'performance', includeReShade: false })
   const text = await platform.readText(`${ROOT}\\game\\OptiScaler.ini`)
   expect(text).toBe('; OptiScaler\r\n[DlssNr]\r\n; Neural Rendering passes\r\nPasses = 1\r\nSpatialCompression = true\r\nResidualFG = true\r\n\r\n[Logging]\r\nLogToFile = false\r\n')
-  expect(core.getState().deployment?.ownedConfigs['OptiScaler.ini']).toBe(text)
   core.finish()
   const reopened = createCore(platform)
   await reopened.scan()
@@ -95,7 +94,7 @@ it('uses Windows path matching for profile configs and omits settings for exclud
   core.finish()
   expect(core.getState().error).toBeNull()
   expect(core.getState().deployment?.profile).toBe('balanced')
-  expect(core.getState().deployment?.ownedConfigs['OptiScaler.ini']).toContain('Passes = 1\r\n')
+  expect(await platform.readText(`${ROOT}\\game\\OptiScaler.ini`)).toContain('Passes = 1\r\n')
   expect(await platform.listFiles(`${ROOT}\\game`)).not.toContain('reshade.ini')
 })
 

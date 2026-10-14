@@ -4,7 +4,6 @@ import {
   defaultFrameGenerationMode,
   frameGenerationDescription,
   frameGenerationOptionsForGpu,
-  matchFrameGenerationMode,
   frameGenerationSettingKeys,
 } from './frameGeneration'
 
@@ -35,33 +34,13 @@ describe('frame generation choices', () => {
     expect(defaultFrameGenerationMode(offered.filter((option) => option.id !== 'off'), 60)).toBe('2x')
   })
 
-  it('selects the unique option whose full settings match disk and leaves unmatched or ambiguous values Custom', () => {
-    const offered = frameGenerationOptionsForGpu(options, 'NVIDIA GeForce RTX 4090')
-    expect(matchFrameGenerationMode(offered, [
-      { file: 'OptiScaler.ini', section: 'framegen', key: 'InterpolationCount', value: '1' },
-      { file: 'optiscaler.ini', section: 'FRAMEGEN', key: 'adamfgunlock', value: 'TRUE' },
-    ])).toBe('2x')
-    expect(matchFrameGenerationMode(offered, [
-      { file: 'OptiScaler.ini', section: 'FrameGen', key: 'InterpolationCount', value: '2' },
-      { file: 'OptiScaler.ini', section: 'FrameGen', key: 'Enabled', value: 'false' },
-    ])).toBeNull()
-    expect(matchFrameGenerationMode([
-      { id: '2x', settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Enabled', value: 'true' }] },
-      { id: '3x', settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Enabled', value: 'true' }] },
-    ], [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Enabled', value: 'true' }])).toBeNull()
-  })
-
-  it('recognizes either declared HDR variant after the display HDR state changes', () => {
+  it('lists the keys every offered variant owns, including the HDR overrides', () => {
     const hdrOption: FrameGenerationOption = {
       id: '2x', settings: [
         { file: 'OptiScaler.ini', section: 'FrameGen', key: 'Mode', value: '2x' },
         { file: 'OptiScaler.ini', section: 'FrameGen', key: 'HdrBoost', value: '0' },
       ], hdrSettings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'HdrBoost', value: '1' }],
     }
-    expect(matchFrameGenerationMode([hdrOption], [
-      { file: 'OptiScaler.ini', section: 'FrameGen', key: 'Mode', value: '2x' },
-      { file: 'OptiScaler.ini', section: 'FrameGen', key: 'HdrBoost', value: '1' },
-    ])).toBe('2x')
     expect(frameGenerationSettingKeys([hdrOption])).toEqual(new Set([
       'optiscaler.ini|framegen|mode', 'optiscaler.ini|framegen|hdrboost',
     ]))

@@ -9,12 +9,11 @@
     "other": {
       "sources": [{ "folder": "files", "component": "ReShade fixture" }],
       "entryFiles": [{ "path": "dxgi.dll" }],
-      "ownedConfigs": [{ "path": "ReShade.ini" }],
+      "ownedConfigs": [{ "path": "ReShade.ini", "update": "addMissingKeys" }],
       "shippedPresets": [{ "path": "reshade-presets/Example.ini" }],
       "generatedFiles": [{ "path": "ReShade.log" }],
       "overlay": null,
-      "performanceProfiles": [],
-      "resetKeys": [{ "file": "ReShade.ini", "section": "GENERAL", "key": "PresetPath" }]
+      "performanceProfiles": []
     }
   }
 }

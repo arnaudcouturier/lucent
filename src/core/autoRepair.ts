@@ -2,7 +2,7 @@
 // The check runs when the game launches; the repair runs once it closes and its files are no longer locked.
 import type { HeadlessMode, Platform } from './platform'
 import { checkHealth } from './health'
-import { failureReason, readDeployment, repairDeployment } from './deployment'
+import { failureReason, migrateDeployment, readDeployment, repairDeployment } from './deployment'
 import { checkPickedFolder } from './gameFolder'
 import { loadManifest } from './manifest'
 import { joinPath } from './paths'
@@ -11,6 +11,7 @@ import { xivLauncherGamePath } from './xivLauncher'
 import { withOperationLock } from './operation'
 import { fileCount } from './format'
 import { openActivityLog, type LogLevel } from './log'
+import { readResolvedScreen } from './screen'
 
 export type HeadlessOutcome =
   | { kind: 'no-deployment' | 'healthy' | 'repaired' }
@@ -62,8 +63,16 @@ function notificationFor(mode: HeadlessMode, outcome: HeadlessOutcome): { title:
 async function launchedDeployment(platform: Platform) {
   const path = await xivLauncherGamePath(platform)
   const folder = path ? await checkPickedFolder(platform, path) : null
-  const record = folder ? await readDeployment(platform, folder.path) : null
+  let record = folder ? await readDeployment(platform, folder.path) : null
   if (record?.status === 'applying') throw new Error('An earlier change didn’t finish.')
+  // A 0.1.1 record drops the config text it kept, once; the files stay as they are.
+  const migrated = folder && record?.status === 'complete' ? await migrateDeployment(platform, folder.path) : null
+  if (migrated) {
+    record = migrated
+    const log = openActivityLog(platform)
+    log.write('info', 'Migrated the deployment record: Lucent no longer tracks the config files, which stay as they are.')
+    await log.flushed()
+  }
   return folder && record?.status === 'complete' ? { folder, record } : null
 }
 
@@ -87,7 +96,9 @@ async function repair(platform: Platform): Promise<HeadlessOutcome> {
   }
   const manifest = await loadManifest(platform)
   const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
-  const repaired = await repairDeployment(platform, folder.path, drift.files, content, manifest.status === 'ready' ? manifest.source : null, () => {})
+  // A missing config is written with the frame cap of XIV's screen as it is now; a screen that can't be read leaves the content's values.
+  const screen = await readResolvedScreen(platform).catch(() => null)
+  const repaired = await repairDeployment(platform, folder.path, drift.files, content, manifest.status === 'ready' ? manifest.source : null, () => {}, screen)
   // The full check after the repair also saves the patched game version as healthy.
   const remaining = await checkHealth(platform, repaired, folder.version, true)
   return remaining ? { kind: 'failed', reason: 'Some files still differ after the repair.' } : { kind: 'repaired' }

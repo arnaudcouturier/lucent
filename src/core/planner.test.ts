@@ -43,13 +43,6 @@ it('writes the screen-derived settings last, from the screen it is given, and on
     .toEqual([{ kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1100' }])
   expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], false, scan, null, true, { screen }))).toEqual([])
   expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan))).toEqual([])
-
-  // An update carries the value Lucent wrote for a key, and computes only the keys it has no value for.
-  const kept = [{ file: 'reshade.ini', section: 'framerate', key: 'limit', value: '120.000000' }]
-  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan, null, true, { screen, screenSettingsKept: kept }))).toEqual([
-    { kind: 'ini_set', file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: '120.000000' },
-    { kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1000' },
-  ])
 })
 
 it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profile settings', () => {
@@ -101,7 +94,7 @@ it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profi
 
   const disabledPlan = planDeployment(content, TEST_MANIFEST.tiers[1], true,
     { files: [], ownedFiles: [], cachedFiles: [] }, 'fidelity', false,
-    { hdrOn: true, hdrMode: 'hdr', hdrActive: true, frameGenerationOptions, frameGenerationMode: '2x' })
+    { hdrOn: true, hdrMode: 'hdr', frameGenerationOptions, frameGenerationMode: '2x' })
   const disabledIni = disabledPlan.steps.filter((step) => step.kind === 'ini_set')
   const disabledValue = (section: string, key: string) => disabledIni.find((step) => step.kind === 'ini_set'
     && step.section === section && step.key === key)?.value
@@ -110,23 +103,8 @@ it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profi
   expect(disabledValue('XeFG', 'UnlockMFG')).toBe('true')
   expect(disabledValue('XeFG', 'MaxInterpolatedFrames')).toBe('3')
   expect(disabledValue('XeFG', 'DynamicMFG')).toBe('true')
-
-  const customPlan = planDeployment(content, TEST_MANIFEST.tiers[1], true,
-    { files: [], ownedFiles: [], cachedFiles: [] }, 'fidelity', true,
-    { hdrOn: true, hdrMode: null, hdrActive: true, hdrSettingsOverride: [
-      { file: 'OptiScaler.ini', section: 'HDR', key: 'FfxivHDR', value: 'true' },
-      { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '77' },
-    ], frameGenerationOptions, frameGenerationMode: '2x' })
-  const customIni = customPlan.steps.filter((step) => step.kind === 'ini_set')
-  const customValue = (section: string, key: string) => customIni.find((step) => step.kind === 'ini_set'
-    && step.section === section && step.key === key)?.value
-  expect(customValue('HDR', 'FfxivHDR')).toBe('true')
-  expect(customValue('HDR', 'Mode')).toBe('77')
-  expect(customValue('XeFG', 'UnlockMFG')).toBe('false')
-  expect(customValue('XeFG', 'MaxInterpolatedFrames')).toBe('1')
-  expect(customValue('XeFG', 'DynamicMFG')).toBe('false')
-
 })
+
 it('counts originals once across rename, overwrite and delete, while protecting unowned files', () => {
   const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
     ...TEST_CONTENT.tiers['rtx-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [

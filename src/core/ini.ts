@@ -1,12 +1,6 @@
 interface Line { text: string; ending: string }
 const normalizedName = (value: string) => value.trim().toLowerCase()
 
-/** INI overlays can serialize booleans, numbers and case differently without changing their meaning. */
-export function sameIniValue(left: string, right: string): boolean {
-  return left.toLowerCase() === right.toLowerCase()
-    || (left !== '' && right.trim() !== '' && Number(left) === Number(right))
-}
-
 /** Neither ReShade nor OptiScaler (SimpleIni) has inline comments: everything after `=` is the value. */
 function parseSetting(text: string) {
   const match = /^(\s*([^;#=\s][^=]*?)\s*=\s*)(.*?)(\s*)$/.exec(text)
@@ -93,33 +87,16 @@ export function readIni(text: string) {
 }
 
 /**
- * Three-way merge of an owned config, key by key. The base is Lucent's last-written copy, the
- * second side is what's on disk, and the third is what the new version ships. The result follows
- * the new version's layout and comments: keys it dropped are removed, and a key the player added
- * that Lucent never shipped is kept. A reset key always takes the new version's value.
+ * The config update rule `addMissingKeys`: every key of the baseline that the disk text lacks is written with the
+ * baseline's value, and every other key, the layout and the comments stay as the disk has them.
  */
-export function mergeIni(baseText: string, diskText: string, incomingText: string, resetKeys: readonly { section: string; key: string }[] = []): string {
-  const base = readIni(baseText)
+export function addMissingKeys(diskText: string, baselineText: string): { text: string; added: string[] } {
   const disk = readIni(diskText)
-  const incoming = readIni(incomingText)
-  const merged = readIni(incomingText)
-  const reset = new Set(resetKeys.map((k) => keyId(k.section, k.key)))
-  for (const { section, key } of incoming.entries()) {
-    if (reset.has(keyId(section, key))) continue
-    const baseValue = base.get(section, key)
-    const diskValue = disk.get(section, key)
-    const incomingValue = incoming.get(section, key)!
-    if (baseValue === undefined) continue
-    if (diskValue === undefined) {
-      // The player deleted the key: it stays deleted unless Lucent changed it.
-      if (incomingValue === baseValue) merged.remove(section, key)
-      continue
-    }
-    if (diskValue !== baseValue && incomingValue === baseValue) merged.set(section, key, diskValue)
+  const added: string[] = []
+  for (const { section, key, value } of readIni(baselineText).entries()) {
+    if (disk.get(section, key) !== undefined) continue
+    disk.set(section, key, value)
+    added.push(`${section}/${key}`)
   }
-  for (const { section, key, value } of disk.entries()) {
-    if (reset.has(keyId(section, key))) continue
-    if (base.get(section, key) === undefined && incoming.get(section, key) === undefined) merged.set(section, key, value)
-  }
-  return merged.toString()
+  return { text: added.length ? disk.toString() : diskText, added }
 }

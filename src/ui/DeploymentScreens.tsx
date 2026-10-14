@@ -112,15 +112,14 @@ export function GuideLink({ children }: { children: ReactNode }) {
   </span></p>
 }
 
-/** Keys grouped by tool: keycaps (or "Not set"), the action, and what Lucent set when the player changed it since. */
+/** Keys grouped by tool: keycaps (or "Not set") and the action. */
 export function KeyBindingList({ bindings }: { bindings: KeyBinding[] }) {
   const groups = (['OptiScaler', 'ReShade'] as const).map((tool) => ({ tool, rows: bindings.filter((b) => b.tool === tool) })).filter((g) => g.rows.length)
   return <div className="card hotkeys">{groups.map(({ tool, rows }) => <section key={tool} aria-label={`${tool} keys`}>
     <h2>{tool}</h2>
     {rows.map((b) => <div className="hotkey" key={b.action}>
       {b.keys ? <Keys keys={b.keys} /> : <span className="key-unset">Not set</span>}
-      <span className="hotkey-action">{b.action}{b.hint && <small>{b.hint}</small>}
-        {b.shipped !== undefined && <small className="key-changed">Changed in game · Lucent set {b.shipped ? b.shipped.join(' + ') : 'none'}</small>}</span>
+      <span className="hotkey-action">{b.action}{b.hint && <small>{b.hint}</small>}</span>
     </div>)}
   </section>)}</div>
 }

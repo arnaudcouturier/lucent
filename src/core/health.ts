@@ -3,6 +3,7 @@ import type { FileStat, Platform } from './platform'
 import { dataPaths, maybeStat, type DeploymentRecord } from './deployment'
 import { fileKey } from './planner'
 import { joinPath } from './paths'
+import { readableText } from './configs'
 
 export interface Drift {
   /** Game-folder paths, relative to `game\`, that are missing or no longer what Lucent deployed. */
@@ -12,7 +13,7 @@ export interface Drift {
 }
 
 /**
- * User changes are never drift: an owned config only has to be present and parseable, and a shipped preset only present.
+ * The player's changes are never drift: a config file only has to be present and readable, and a shipped preset only present.
  * Every other file must keep its hash. A matching size and modified time stand in for the hash, unless `full` is set
  * or the game version changed since the last healthy check. A healthy check saves the game version and refreshed stamps.
  */
@@ -20,7 +21,7 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
   const patched = record.gameVersion !== gameVersion
   full ||= patched
   const root = joinPath(record.gameFolder, 'game')
-  const configs = new Set(Object.keys(record.ownedConfigs).map(fileKey))
+  const configs = new Set(record.recipe.ownedConfigs.map((c) => fileKey(c.path)))
   const presets = new Set(record.recipe.shippedPresets.map((p) => fileKey(p.path)))
   const files: string[] = []
   let restamped = false
@@ -33,7 +34,7 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
     if (path === null || stat?.kind !== 'file') { files.push(relative); continue }
     if (presets.has(fileKey(relative))) continue
     if (configs.has(fileKey(relative))) {
-      if (!await parseable(platform, path)) files.push(relative)
+      if (await readableText(platform, path) === null) files.push(relative)
       continue
     }
     if (!full && stat.size === expected.size && stat.modifiedMs === expected.modifiedMs) continue
@@ -84,9 +85,4 @@ async function locate(platform: Platform, root: string, relatives: string[]): Pr
     }
     return located
   }
-}
-
-/** The ini module accepts any text, so a config is unparseable only when it can't be read as text. */
-async function parseable(platform: Platform, path: string): Promise<boolean> {
-  try { return !(await platform.readText(path)).includes('\0') } catch { return false }
 }

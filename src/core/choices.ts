@@ -1,7 +1,8 @@
 // What the first-install choices offer and default to. Pure: the core supplies the card and XIV's screen.
 import type { FrameGenerationId, FrameGenerationOption, HdrMode, HdrOption, TierRecipe } from '../shared/manifest'
 import { defaultFrameGenerationMode, frameGenerationOptionsForGpu } from './frameGeneration'
-import { resolvedPeakNits } from './screen'
+import type { PlanSelection } from './planner'
+import { resolvedPeakNits, type ResolvedScreen } from './screen'
 
 export interface ChoiceOptions {
   /** Filtered to the card, in the fixed Off, 2×–6×, Dynamic order. */
@@ -28,6 +29,26 @@ export function hdrChoice(recipe: TierRecipe, offered: HdrOption[], current: Hdr
   if (!offered.length) return recipe.hdrOptions.some((option) => option.id === 'off') ? 'off' : null
   if (current && offered.some((option) => option.id === current)) return current
   return offered.find((option) => option.id === 'hdr')?.id ?? offered[0].id
+}
+
+/** The HDR mode a baseline is written with once the choice is made: the stored one where the content offers it, otherwise Off. */
+export function storedHdrChoice(recipe: TierRecipe, stored: HdrMode | null): HdrMode | null {
+  if (!recipe.hdrOptions?.length) return null
+  if (stored && recipe.hdrOptions.some((option) => option.id === stored)) return stored
+  return recipe.hdrOptions.some((option) => option.id === 'off') ? 'off' : null
+}
+
+/**
+ * What a baseline is written from when the first-install choices were made earlier (an update's replace rule, Repair of a
+ * missing config): the stored frame generation and HDR modes where the content still offers them, and XIV's screen as it is now.
+ */
+export function storedSelection(stored: { frameGenerationMode?: FrameGenerationId | null; hdrMode?: HdrMode | null }, recipe: TierRecipe, gpuName: string, screen: ResolvedScreen | null): PlanSelection {
+  const frameGenerationOptions = frameGenerationOptionsForGpu(recipe.frameGenerationOptions ?? [], gpuName)
+  return {
+    gpuName, outputHeight: screen?.height, frameGenerationOptions,
+    frameGenerationMode: frameGenerationChoice(frameGenerationOptions, stored.frameGenerationMode ?? null, screen?.refreshHz ?? 60),
+    hdrMode: storedHdrChoice(recipe, stored.hdrMode ?? null), hdrOn: screen?.hdrOn ?? false, screen,
+  }
 }
 
 export interface HdrFacts {

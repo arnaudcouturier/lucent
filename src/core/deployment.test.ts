@@ -26,7 +26,9 @@ it('deploys a vanilla folder, reports the plan numbers and stores a complete rec
   expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('OptiScaler')
   expect(await platform.readText(`${ROOT}\\game\\ReShade64.dll`)).toBe('ReShade')
   expect(await platform.readText(`${ROOT}\\game\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=\n')
-  expect(core.getState().deployment).toMatchObject({ status: 'complete', tier: 'rtx-30-40', contentVersion: '2026.10.12', includeReShade: true, ownedConfigs: { 'ReShade.ini': '[GENERAL]\nPresetPath=\n' } })
+  expect(core.getState().deployment).toMatchObject({ status: 'complete', tier: 'rtx-30-40', contentVersion: '2026.10.12', includeReShade: true })
+  // Config files belong to the player: the record keeps no copy of what Lucent wrote.
+  expect(core.getState().deployment).not.toHaveProperty('ownedConfigs')
   const reopened = createCore(platform)
   await reopened.scan()
   expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
@@ -215,7 +217,7 @@ it.each([
   expect(core.getState().activity).toMatchObject({ kind: 'deployment', drift: null })
 })
 
-it('reads the in-game keys from the game folder, so a key changed in game shows with what Lucent set', async () => {
+it('reads the in-game keys from the game folder, so a key changed in game shows', async () => {
   const platform = createFakePlatform(deploymentMachine())
   const core = createCore(platform)
   await core.scan()
@@ -225,10 +227,9 @@ it('reads the in-game keys from the game folder, so a key changed in game shows 
   await core.refreshKeybinds()
   const menu = () => core.getState().keybinds?.find((b) => b.tool === 'ReShade' && b.action === 'Menu')
   expect(menu()).toMatchObject({ keys: ['Home'] })
-  expect(menu()?.shipped).toBeUndefined()
   await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[GENERAL]\nPresetPath=\n[INPUT]\nKeyOverlay=113,0,1,0\n')
   await core.refreshKeybinds()
-  expect(menu()).toMatchObject({ keys: ['Shift', 'F2'], shipped: ['Home'] })
+  expect(menu()).toMatchObject({ keys: ['Shift', 'F2'] })
 })
 
 it('uses the platform keyboard names on both the Done and Keys screens', async () => {
@@ -252,7 +253,7 @@ it('uses the platform keyboard names on both the Done and Keys screens', async (
 
   await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[GENERAL]\nPresetPath=\n[INPUT]\nKeyOverlay=113,0,1,0\n')
   await core.refreshKeybinds()
-  expect(core.getState().keybinds?.find((binding) => binding.tool === 'ReShade' && binding.action === 'Menu')).toMatchObject({ keys: ['Maj', 'F2'], shipped: ['Accueil'] })
+  expect(core.getState().keybinds?.find((binding) => binding.tool === 'ReShade' && binding.action === 'Menu')).toMatchObject({ keys: ['Maj', 'F2'] })
 })
 
 it('refuses to touch the game folder while XIV runs', async () => {

@@ -1,5 +1,4 @@
 import { FRAME_GENERATION_IDS, type FrameGenerationId, type FrameGenerationOption, type IniSetting } from '../shared/manifest'
-import { sameIniValue } from './ini'
 
 const settingId = ({ file, section, key }: Pick<IniSetting, 'file' | 'section' | 'key'>) =>
   `${file.replace(/\\/g, '/').toLowerCase()}\0${section.toLowerCase()}\0${key.toLowerCase()}`
@@ -36,21 +35,6 @@ export function effectiveFrameGenerationSettings(option: FrameGenerationOption, 
   for (const setting of option.settings) values.set(settingId(setting), setting)
   if (hdrOn) for (const setting of option.hdrSettings ?? []) values.set(settingId(setting), setting)
   return [...values.values()]
-}
-
-/** Finds a single mode whose declared values match the current configs. Unknown and ambiguous combinations are Custom. */
-export function matchFrameGenerationMode(
-  options: FrameGenerationOption[], diskSettings: IniSetting[],
-): FrameGenerationId | null {
-  const disk = new Map(diskSettings.map((setting) => [settingId(setting), setting.value]))
-  // Windows HDR may have changed since the last sync. Treat either declared variant as the same
-  // frame-generation mode so screen sync can rewrite its settings for the current HDR state.
-  const matches = new Set(options.filter((option) => [option.settings, effectiveFrameGenerationSettings(option, true)].some((variant) =>
-    variant.every((setting) => {
-    const current = disk.get(settingId(setting))
-    return current !== undefined && sameIniValue(current, setting.value)
-    }))).map((option) => option.id))
-  return matches.size === 1 ? [...matches][0] : null
 }
 
 /** The one-line explanation of the cap, multiplier or Dynamic mode. */

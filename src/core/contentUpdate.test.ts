@@ -81,7 +81,7 @@ it('announces a version newer than the skipped one', async () => {
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'update', version: '2026.12.01', changelog: ['A later fix.'], downloadSize: 12 })
 })
 
-it('keeps the selected ReShade preset and keybinds through an update, backing up the pre-update file first', async () => {
+it('keeps the selected ReShade preset and keybinds through an update: configs are the player’s unless the content says otherwise', async () => {
   const { platform, m } = await deployed()
   const edited = '[GENERAL]\nPresetPath=reshade-presets/Example.ini\n[INPUT]\nKeyOverlay=36,0,0,0\nKeyScreenshot=44,0,0,0\n'
   await platform.writeText(`${GAME}\\ReShade.ini`, edited)
@@ -89,25 +89,8 @@ it('keeps the selected ReShade preset and keybinds through an update, backing up
   const core = await reopen(platform)
   await core.update()
   expect(core.getState().error).toBeNull()
-  const merged = await platform.readText(`${GAME}\\ReShade.ini`)
-  expect(merged).toContain('PresetPath=reshade-presets/Example.ini')
-  expect(merged).toContain('KeyOverlay=36,0,0,0')
-  expect(merged).toContain('KeyScreenshot=44,0,0,0')
-  expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${await sha256(edited)}`)).toBe(edited)
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(edited)
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
-})
-
-it('backs up the pre-update config first, then merges it with the new version’s', async () => {
-  const { platform, m } = await deployed()
-  const edited = '[GENERAL]\nPresetPath=reshade-presets/Example.ini\n'
-  await platform.writeText(`${GAME}\\ReShade.ini`, edited)
-  publishNext(m)
-  const core = await reopen(platform)
-  await core.update()
-  expect(core.getState().error).toBeNull()
-  // The new version did not change PresetPath, so the player's selection survives (see #14).
-  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=reshade-presets/Example.ini\n')
-  expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${await sha256(edited)}`)).toBe(edited)
 })
 
 it('leaves the game folder and the deployment as they were when the update fails partway', async () => {
@@ -142,11 +125,6 @@ it('refuses to update while the game runs', async () => {
   expect(core.getState().error).toMatch(/Close XIV/)
   expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
 })
-
-async function sha256(text: string) {
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 async function snapshot(platform: FakePlatform) {
   const files = await platform.listFiles(GAME)

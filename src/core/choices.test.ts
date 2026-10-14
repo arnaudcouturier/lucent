@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { choiceOptions, frameGenerationChoice, hdrChoice, hdrDescription } from './choices'
+import { choiceOptions, frameGenerationChoice, hdrChoice, hdrDescription, storedHdrChoice, storedSelection } from './choices'
 import { HDR_FRAME_GENERATION_MANIFEST } from '../platform/contentFixture'
 
 const recipe = HDR_FRAME_GENERATION_MANIFEST.versions[0].tiers['rtx-30-40']
@@ -64,5 +64,22 @@ describe('hdrDescription', () => {
   })
   it('has nothing to add for Off', () => {
     expect(hdrDescription('off', facts)).toEqual(['XIV stays SDR.'])
+  })
+})
+
+describe('stored first-install choices', () => {
+  it('keeps the stored HDR mode where the content offers it, and writes Off otherwise', () => {
+    expect(storedHdrChoice(recipe, 'scene-hdr')).toBe('scene-hdr')
+    expect(storedHdrChoice(recipe, null)).toBe('off')
+    expect(storedHdrChoice({ ...recipe, hdrOptions: undefined }, 'hdr')).toBeNull()
+  })
+
+  it('plans from the stored frame generation and HDR modes, with the screen as it is now', () => {
+    const screen = { deviceName: 'DISPLAY1', refreshHz: 240, width: 3840, height: 2160, hdrSupported: true, hdrOn: true, peakNits: 1000, frameCap: 224 }
+    expect(storedSelection({ frameGenerationMode: '4x', hdrMode: 'hdr' }, recipe, 'NVIDIA GeForce RTX 4090', screen))
+      .toMatchObject({ frameGenerationMode: '4x', hdrMode: 'hdr', hdrOn: true, outputHeight: 2160, screen })
+    // A card that no longer offers the stored multiplier gets the default for its refresh rate.
+    expect(storedSelection({ frameGenerationMode: '4x', hdrMode: null }, recipe, 'NVIDIA GeForce RTX 3080', screen))
+      .toMatchObject({ frameGenerationMode: '2x', hdrMode: 'off' })
   })
 })

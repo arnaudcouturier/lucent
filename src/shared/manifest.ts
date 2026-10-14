@@ -46,6 +46,10 @@ export interface ExistingSetupSignature {
 export interface ContentFile { sha256: string; size: number; release: string }
 export interface Component { name: string; upstream: string; licence: string; source: string }
 export interface ConditionalPath { path: string; when?: 'reshade' }
+/** What an update does to a config file the player already has. Absent means `keep`. */
+export const CONFIG_UPDATE_RULES = ['keep', 'addMissingKeys', 'replace'] as const
+export type ConfigUpdateRule = typeof CONFIG_UPDATE_RULES[number]
+export interface ConfigPath extends ConditionalPath { update?: ConfigUpdateRule }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
 export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
@@ -103,7 +107,8 @@ export type Step = (
 export interface TierRecipe {
   recipe: Step[]
   entryFiles: ConditionalPath[]
-  ownedConfigs: ConditionalPath[]
+  /** The config files, each with the rule an update applies to it; older apps ignore `update`. */
+  ownedConfigs: ConfigPath[]
   shippedPresets: ConditionalPath[]
   generatedFiles: ConditionalPath[]
   overlay: 'neural-rendering' | 'upscaling' | null
@@ -117,7 +122,6 @@ export interface TierRecipe {
   screenDerivedSettings?: ScreenDerivedSetting[]
   /** HDR mode choices, absent from older content versions. */
   hdrOptions?: HdrOption[]
-  resetKeys?: IniKey[]
 }
 export interface ContentVersion {
   id: string
@@ -279,6 +283,15 @@ function hash(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) invalid('Files need a lowercase SHA-256.')
   return value
 }
+function configPaths(value: unknown): ConfigPath[] {
+  const rules = array(value, 'Owned configs').map((v) => object(v, 'Owned configs').update)
+  return paths(value, 'Owned configs').map((p, i) => {
+    const rule = rules[i]
+    if (rule === undefined) return p
+    if (!CONFIG_UPDATE_RULES.includes(rule as ConfigUpdateRule)) invalid(`Unknown config update rule: ${p.path}`)
+    return { ...p, update: rule as ConfigUpdateRule }
+  })
+}
 function iniKey(value: unknown): IniKey {
   const k = object(value, 'INI key')
   if (typeof k.section !== 'string' || /[\r\n\0\[\]]/.test(k.section) || k.section !== k.section.trim()) invalid('Invalid INI section.')
@@ -427,7 +440,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     })
     if (!recipe.length) invalid('A tier recipe must contain steps.')
     if (r.overlay !== null && r.overlay !== 'neural-rendering' && r.overlay !== 'upscaling') invalid('Unknown overlay hint.')
-    recipes[id] = { recipe, entryFiles: paths(r.entryFiles, 'Entry files'), ownedConfigs: paths(r.ownedConfigs, 'Owned configs'), shippedPresets: paths(r.shippedPresets, 'Shipped presets'), generatedFiles: paths(r.generatedFiles, 'Generated files'), overlay: r.overlay }
+    recipes[id] = { recipe, entryFiles: paths(r.entryFiles, 'Entry files'), ownedConfigs: configPaths(r.ownedConfigs), shippedPresets: paths(r.shippedPresets, 'Shipped presets'), generatedFiles: paths(r.generatedFiles, 'Generated files'), overlay: r.overlay }
     if (r.performanceProfiles !== undefined) {
       const profiles = array(r.performanceProfiles, 'Performance profiles').map(profile)
       unique(profiles.map((p) => p.id), 'Performance profile ids')
@@ -461,7 +474,6 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       }
       recipes[id].hdrOptions = options
     }
-    if (r.resetKeys !== undefined) recipes[id].resetKeys = array(r.resetKeys, 'Reset keys').map(iniKey)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
     const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
     for (const s of recipe) {

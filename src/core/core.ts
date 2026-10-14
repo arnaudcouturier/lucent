@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -20,13 +20,14 @@ import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
 import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
-import { deploymentHotkeys, deploymentKeyCodes, liveKeyBindings, liveKeyCodes, type KeyBinding } from './hotkeys'
+import { deploymentHotkeys, liveKeyBindings, liveKeyCodes, type KeyBinding } from './hotkeys'
+import { configUpdateNotes } from './configs'
 import { chosenLauncher, LAUNCH_LABELS, launchOptions, STEAM_GAME_ID, type LaunchKind, type LaunchOption } from './launch'
 import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount } from './format'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
-import { choiceOptions, frameGenerationChoice, hdrChoice } from './choices'
+import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
@@ -179,7 +180,7 @@ export interface Core {
   launchGame(): Promise<void>
   /** Remembers how Launch starts XIV. */
   setLauncher(kind: LaunchKind): Promise<void>
-  /** Plans the deployment again for the graphics card's new tier, keeping the profile it still has, Disabled and user changes. */
+  /** Plans the deployment again for the graphics card's new tier, keeping the stored choices, Disabled and the config files as their update rules say. */
   switchTier(): Promise<void>
   /** Moves the deployment to the announced content version, then checks its health again. */
   update(): Promise<void>
@@ -300,10 +301,10 @@ export function createCore(platform: Platform): Core {
    */
   const planSelection = (content: ContentVersion, tier: Tier, deployed?: DeploymentRecord): PlanSelection => {
     const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : state.deployment?.graphics.name ?? ''
+    if (deployed) return storedSelection(deployed, content.tiers[tier.id], gpuName, state.screen)
     const frameGenerationOptions = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], gpuName)
-    return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions,
-      frameGenerationMode: deployed ? deployed.frameGenerationMode ?? null : state.frameGenerationMode,
-      ...(deployed ? {} : { hdrMode: state.hdrMode }), hdrOn: state.screen?.hdrOn ?? false, screen: state.screen }
+    return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions, frameGenerationMode: state.frameGenerationMode,
+      hdrMode: state.hdrMode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen }
   }
   const elapsed = (since: number) => `${Math.max(1, Math.round((performance.now() - since) / 1000))} s`
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
@@ -414,6 +415,12 @@ export function createCore(platform: Platform): Core {
       if (!await prepareWrite({ kind: 'recover', gameFolder: record.gameFolder })) return
       await undoDeployment(platform, record); record = null
     }
+    // A 0.1.1 record keeps the config text Lucent last wrote; that goes, once, and the files on disk stay as they are.
+    const migrated = await migrateDeployment(platform, folder.path)
+    if (migrated) {
+      record = migrated
+      log.write('info', `Migrated the deployment record: Lucent no longer tracks the config files, which stay as they are. Stored choices for Reset: ${migrated.profile ? `${profilesForRecipe(migrated.recipe).find((p) => p.id === migrated.profile)?.label ?? migrated.profile} profile, ` : ''}frame generation ${migrated.frameGenerationMode ?? 'not offered'}, HDR ${migrated.hdrMode ?? 'not offered'}`)
+    }
     const files = record?.status === 'complete' ? [] : await platform.listFiles(joinPath(folder.path, 'game'))
     scanned = record?.status === 'complete' ? null : { gameFolder: folder.path, files }
     set({ existingSetups: detectExistingSetups(signatures(), files) })
@@ -495,7 +502,7 @@ export function createCore(platform: Platform): Core {
     const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, state.graphics.status === 'found' ? state.graphics.adapter.name : '')
     const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled,
       { ...planSelection(content, tier, record), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
-    return { version: content.id, changelog: content.changelog, downloadSize: plan.downloadSize }
+    return { version: content.id, changelog: [...content.changelog, ...configUpdateNotes(plan.recipe.ownedConfigs, Object.keys(record.files))], downloadSize: plan.downloadSize }
   }
   /** The health check right after a deployment, shown once the player leaves Done. */
   let deployedDrift: Drift | null = null
@@ -507,15 +514,19 @@ export function createCore(platform: Platform): Core {
     if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, drift } })
     return drift
   }
-  /** The keys as OptiScaler.ini and ReShade.ini say now; a file that can't be read leaves that tool on its defaults. */
-  const refreshKeybinds = async () => {
-    const record = state.deployment
-    if (record?.status !== 'complete' || state.gameFolder.status !== 'found') { if (state.keybinds) set({ keybinds: null }); return }
+  /** OptiScaler.ini and ReShade.ini as they are now; a file that can't be read leaves that tool on its defaults. */
+  const readKeyConfigs = async (record: DeploymentRecord) => {
     const root = joinPath(record.gameFolder, 'game')
     const read = async (name: string) => {
       try { return await platform.readText(await platform.resolveGamePath(root, name)) } catch { return null }
     }
-    const onDisk = { optiScaler: await read('OptiScaler.ini'), reShade: await read('ReShade.ini') }
+    return { optiScaler: await read('OptiScaler.ini'), reShade: await read('ReShade.ini') }
+  }
+  /** The keys as the configs say now. */
+  const refreshKeybinds = async () => {
+    const record = state.deployment
+    if (record?.status !== 'complete' || state.gameFolder.status !== 'found') { if (state.keybinds) set({ keybinds: null }); return }
+    const onDisk = await readKeyConfigs(record)
     let names: Record<number, string> = {}
     try { names = await platform.getKeyNames(liveKeyCodes(record, onDisk)) } catch { /* The US labels remain available if Windows lookup fails. */ }
     const keybinds = liveKeyBindings(record, onDisk, names)
@@ -660,7 +671,7 @@ export function createCore(platform: Platform): Core {
         : operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
       const targetGraphics = graphics ?? (state.graphics.status === 'found' && state.graphics.tier?.id === tier.id ? state.graphics.adapter : undefined)
-      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, await refreshScreen())
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, await refreshScreen(), (line) => log.write('info', `Config ${line}`))
       applied = true
       log.write('success', `${title} finished in ${elapsed(since)}`)
       set({ deployment: record, ...recordedChoices(record) })
@@ -916,7 +927,7 @@ export function createCore(platform: Platform): Core {
           log.write('info', `Repair: ${fileCount(drift.files.length)}`)
           const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
           record = await repairDeployment(platform, record.gameFolder, drift.files, content, manifest.status === 'ready' ? manifest.source : null,
-            loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))))
+            loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), await refreshScreen())
           set({ deployment: record })
           log.write('success', 'Repair finished')
         }
@@ -1060,8 +1071,9 @@ export function createCore(platform: Platform): Core {
         log.write('success', `Install finished in ${elapsed(since)}`)
         if (record.journal.some((entry) => entry.registry)) log.write('info', 'Turned Windows Auto HDR off for XIV')
         let names: Record<number, string> = {}
-        try { names = await platform.getKeyNames(deploymentKeyCodes(record)) } catch { /* The US labels remain available if Windows lookup fails. */ }
-        const hotkeys = deploymentHotkeys(record, names)
+        const keyConfigs = await readKeyConfigs(record)
+        try { names = await platform.getKeyNames(liveKeyCodes(record, keyConfigs)) } catch { /* The US labels remain available if Windows lookup fails. */ }
+        const hotkeys = deploymentHotkeys(record, keyConfigs, names)
         deployedDrift = await checkHealth(platform, record, state.gameFolder.version)
         noteHealth(record, deployedDrift)
         set({ deployment: record, activity: { kind: 'done' }, hotkeys })

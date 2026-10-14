@@ -81,14 +81,13 @@ function trackWrites(platform: FakePlatform, path: string) {
 }
 
 describe('screen-derived settings', () => {
-  it('writes the frame cap with the baseline and keeps it in Lucent’s last-written config', async () => {
+  it('writes the frame cap with the baseline', async () => {
     const { platform, core } = await deploy()
     expect(core.getState().screen).toMatchObject({ refreshHz: 240, frameCap: 224, width: 3840, height: 2160, hdrSupported: true, hdrOn: false })
     const config = await platform.readText(CONFIG)
     expect(config).toContain('FramerateLimit=224.000000')
     expect(config).toContain('FramerateTargetDMFG=224.000000')
     expect(config).toContain('DynamicTargetFPS=224.000000')
-    expect((await readDeployment(platform, ROOT))?.ownedConfigs['OptiScaler.ini']).toContain('FramerateLimit=224.000000')
   })
 
   it('takes the cap from the screen as it is when the deployment is written', async () => {
@@ -220,13 +219,20 @@ describe('screen-derived settings', () => {
       expect(config).toContain('DynamicTargetFPS=224.000000')
     })
 
-    it('computes a cap the update adds from the screen it runs on', async () => {
-      const { m, platform, core } = await deploy()
+    /** The next version with the given rule on OptiScaler.ini and, for the first cap, a cap the version adds. */
+    function publishCapUpdate(m: Awaited<ReturnType<typeof deploy>>['m'], rule: 'addMissingKeys' | 'replace') {
       const manifest = JSON.parse(m.remoteText![MANIFEST_URL]) as typeof PROFILE_MANIFEST
       const added = { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimitBackup', value: 'frameCap' as const }
       manifest.versions.push({ ...structuredClone(manifest.versions[0]), id: '2026.11.02', changelog: ['A new cap.'] })
-      manifest.versions[1].tiers['rtx-30-40'].screenDerivedSettings = [...FRAME_CAPS, added]
+      const recipe = manifest.versions[1].tiers['rtx-30-40']
+      recipe.screenDerivedSettings = [...FRAME_CAPS, added]
+      recipe.ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = rule
       m.remoteText![MANIFEST_URL] = JSON.stringify(manifest)
+    }
+
+    it('adding missing keys computes the cap the update adds from the screen it runs on, and leaves the caps on disk', async () => {
+      const { m, platform, core } = await deploy()
+      publishCapUpdate(m, 'addMissingKeys')
       await setRefresh(platform, 240, 144)
       await core.checkForUpdates()
       await core.update()
@@ -234,6 +240,20 @@ describe('screen-derived settings', () => {
       const config = await platform.readText(CONFIG)
       expect(config).toContain('FramerateLimitBackup=138.000000')
       expect(config).toContain('FramerateLimit=224.000000')
+    })
+
+    it('replacing writes the caps from the screen it runs on', async () => {
+      const { m, platform, core } = await deploy()
+      publishCapUpdate(m, 'replace')
+      await platform.writeText(CONFIG, (await platform.readText(CONFIG)).replace('FramerateLimit=224.000000', 'FramerateLimit=88.000000'))
+      await setRefresh(platform, 240, 144)
+      await core.checkForUpdates()
+      await core.update()
+      expect(core.getState().error).toBeNull()
+      const config = await platform.readText(CONFIG)
+      expect(config).toContain('FramerateLimit=138.000000')
+      expect(config).toContain('FramerateLimitBackup=138.000000')
+      expect(config).toContain('DynamicTargetFPS=138.000000')
     })
 
     it('keeps a cap the player tuned when the screen has not changed', async () => {

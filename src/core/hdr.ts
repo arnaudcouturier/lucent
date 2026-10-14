@@ -1,24 +1,3 @@
-import type { HdrMode, HdrOption } from '../shared/manifest'
-import { readIni, sameIniValue } from './ini'
-
-/** On-disk keys win. Multiple matches are ambiguous and therefore Custom. */
-export type HdrValueReader = (file: string, section: string, key: string) => string | undefined
-
-export function matchHdrMode(options: HdrOption[] | undefined, diskText: string): HdrMode | null
-export function matchHdrMode(options: HdrOption[] | undefined, readValue: HdrValueReader): HdrMode | null
-export function matchHdrMode(options: HdrOption[] | undefined, diskTextOrReader: string | HdrValueReader): HdrMode | null {
-  if (!options?.length) return null
-  const ini = typeof diskTextOrReader === 'string' ? readIni(diskTextOrReader) : null
-  const readValue = typeof diskTextOrReader === 'string'
-    ? (_file: string, section: string, key: string) => ini!.get(section, key)
-    : diskTextOrReader
-  const matches = options.filter((option) => option.settings.every((setting) => {
-    const value = readValue(setting.file, setting.section, setting.key)
-    return value !== undefined && sameIniValue(value, setting.value)
-  }))
-  return matches.length === 1 ? matches[0].id : null
-}
-
 const AUTO_HDR_KEY = 'AutoHDREnable'
 const DISABLED_AUTO_HDR = '2096'
 const tokenPattern = /^(\s*AutoHDREnable\s*=\s*)(.*?)(\s*)$/i

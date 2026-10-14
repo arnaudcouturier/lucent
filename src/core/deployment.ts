@@ -1,17 +1,19 @@
-import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type IniSetting, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
-import { mergeIni, readIni } from './ini'
+import { addMissingKeys, readIni } from './ini'
+import { configBaselineAssets, configBaselines, readableText, updateRule } from './configs'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
-import { defaultFrameGenerationMode, frameGenerationOptionsForGpu, matchFrameGenerationMode } from './frameGeneration'
+import { frameGenerationOptionsForGpu } from './frameGeneration'
+import { storedSelection } from './choices'
 import { selectProfileForUpdate } from './profileValues'
-import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, matchHdrMode, restoreAutoHdr } from './hdr'
+import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -39,7 +41,7 @@ export interface DeploymentRecord {
   enabled: boolean
   profile?: ProfileId | null
   frameGenerationMode?: FrameGenerationId | null
-  /** The first-install HDR choice, kept so Reset can offer it again. Absent from 0.1.1 deployments. */
+  /** The first-install HDR choice, kept so Reset can offer it again. Absent from 0.1.1 deployments until `migrateDeployment` infers it. */
   hdrMode?: HdrMode | null
   /** An interrupted change to a complete deployment (a profile change or a repair) undoes only the journal entries from this index onward. */
   changeStart?: number
@@ -55,7 +57,6 @@ export interface DeploymentRecord {
   generatedFiles?: string[]
   /** Preallocated undo checkpoints: one byte per step, then one once the whole deployment is undone. */
   undoCheckpoints?: { id: string; size: number }
-  ownedConfigs: Record<string, string>
   files: Record<string, FileStamp>
   /** The game version at the last healthy check; a different one means a patch, so the next check hashes every file. */
   gameVersion?: string | null
@@ -181,7 +182,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   // A damaged record must never authorize writes outside this folder or arbitrary backup paths.
   if (!value || value.schemaVersion !== 1 || !['applying', 'complete', 'rolled-back'].includes(value.status)
     || typeof value.gameFolder !== 'string' || fileKey(normalizePath(value.gameFolder)) !== fileKey(normalizePath(gameFolder))
-    || !Array.isArray(value.journal) || !value.files || !value.ownedConfigs || !value.recipe) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
+    || !Array.isArray(value.journal) || !value.files || !value.recipe) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   for (const entry of value.journal) {
     if (!entry || !entry.before || !entry.after || (entry.undone !== undefined && typeof entry.undone !== 'boolean')
       || (!!entry.step === !!entry.registry)) throw new Error('The deployment journal is damaged.')
@@ -201,7 +202,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   if (value.frameGenerationMode !== undefined && value.frameGenerationMode !== null
     && !FRAME_GENERATION_IDS.includes(value.frameGenerationMode)) throw new Error('The frame-generation selection is damaged.')
   if (value.hdrMode !== undefined && value.hdrMode !== null && !HDR_MODES.includes(value.hdrMode)) throw new Error('The HDR selection is damaged.')
-  for (const path of [...Object.keys(value.files), ...Object.keys(value.ownedConfigs)]) assertGamePath(path)
+  for (const path of Object.keys(value.files)) assertGamePath(path)
   if (value.gameVersion !== undefined && value.gameVersion !== null && typeof value.gameVersion !== 'string') throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.createdDirectories !== undefined) {
     if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
@@ -464,7 +465,7 @@ export async function deployContent(
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
     includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode, recipe: plan.recipe, journal: [], createdDirectories: [],
     cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files)],
-    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + (autoHdr ? 1 : 0) + 1 }, ownedConfigs: {}, files: {},
+    generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + (autoHdr ? 1 : 0) + 1 }, files: {},
     backupFolder,
   }
   const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
@@ -480,7 +481,6 @@ export async function deployContent(
     await applySteps({ platform, record, save, report, owned: originals, firstDeployment: true, from: backupFolder ? 0.5 : 0.4 }, plan.steps)
     if (autoHdr) await applyAutoHdrOff(platform, record, save, autoHdr)
     record.files = await stampFiles(platform, record, plan.expectedFiles, report)
-    record.ownedConfigs = await readOwnedConfigs(platform, gameFolder, plan)
     // The checkpoints cover only this deployment's own steps; later journal entries are undone through the record.
     // Every file was just hashed, so the record is healthy for this game version and the next check needn't hash again.
     const complete: DeploymentRecord = { ...record, status: 'complete', undoCheckpoints: undefined, gameVersion }
@@ -761,57 +761,6 @@ async function stampFiles(platform: Platform, record: DeploymentRecord, expected
   return files
 }
 
-async function readOwnedConfigs(platform: Platform, gameFolder: string, plan: Plan) {
-  const root = joinPath(gameFolder, 'game')
-  const configs: Record<string, string> = {}
-  for (const config of plan.recipe.ownedConfigs) configs[config.path] = await platform.readText(await platform.resolveGamePath(root, config.path))
-  return configs
-}
-
-/**
- * What the new version ships for each owned config: the cached file it copies there, with every
- * `ini_set` for that file (the recipe's, then the selected profile's) applied in plan order.
- * Only config files are read as text; other assets are tracked by hash through renames.
- */
-async function incomingConfigTexts(platform: Platform, cache: string, plan: Plan, record: DeploymentRecord): Promise<Map<string, string>> {
-  type Entry = { hash?: string; text?: string }
-  const virtual = new Map<string, Entry>()
-  const configKeys = new Set(plan.recipe.ownedConfigs.map((c) => fileKey(c.path)))
-  const baseText = (path: string) => {
-    const key = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(path))
-    return key === undefined ? undefined : record.ownedConfigs[key]
-  }
-  for (const step of plan.steps) {
-    if (step.kind === 'copy') virtual.set(fileKey(step.to), { hash: step.file })
-    else if (step.kind === 'rename') {
-      const entry = virtual.get(fileKey(step.from))
-      if (entry) { virtual.set(fileKey(step.to), entry); virtual.delete(fileKey(step.from)) }
-    } else if (step.kind === 'delete') virtual.delete(fileKey(step.path))
-    else if (step.kind === 'ini_set' && configKeys.has(fileKey(step.file))) {
-      const key = fileKey(step.file)
-      let entry = virtual.get(key)
-      if (!entry) {
-        const base = baseText(step.file)
-        if (base === undefined) continue
-        entry = { text: base }
-        virtual.set(key, entry)
-      }
-      if (entry.text === undefined) entry.text = await platform.readText(joinPath(cache, entry.hash!))
-      const config = readIni(entry.text)
-      config.set(step.section, step.key, step.value)
-      entry.text = config.toString()
-      delete entry.hash
-    }
-  }
-  const result = new Map<string, string>()
-  for (const config of plan.recipe.ownedConfigs) {
-    const entry = virtual.get(fileKey(config.path))
-    if (!entry) continue
-    result.set(fileKey(config.path), entry.text ?? await platform.readText(joinPath(cache, entry.hash!)))
-  }
-  return result
-}
-
 /** `reshade-presets/Example.ini` -> `reshade-presets/Example (my edits).ini`, numbered while taken. */
 function myEditsPath(presetPath: string, taken: Set<string>): string {
   const parts = presetPath.replace(/\\/g, '/').split('/')
@@ -833,14 +782,16 @@ function writtenPath(step: PlanStep): string | null {
 /**
  * Moves a complete deployment to another content version, planned from the deployment as it stands: downloads only the
  * files the cache lacks, applies the recipe, and deletes the files the version no longer deploys, all through the journal.
- * Owned configs are merged key by key (see `mergeIni`) and backed up first; an edited shipped preset is kept when
- * Lucent's version is unchanged, or saved as "(my edits)" when it changed too. Enabled or Disabled, and the
- * performance profile where the tier still has it, are kept. Given another tier and `graphics`, it switches the deployment
- * to that tier's recipe the same way. A failure or interruption undoes only the update.
+ * Config files follow the config update rule the new version gives each one (see `configs.ts`): `keep` leaves it,
+ * `addMissingKeys` writes only the keys it lacks, and `replace` writes the new baseline from the stored first-install choices,
+ * after the journal has backed the file up. An edited shipped preset is kept when Lucent's version is unchanged, or saved as
+ * "(my edits)" when it changed too. Enabled or Disabled, and the stored choices where the tier still offers them, are kept.
+ * Given another tier and `graphics`, it switches the deployment to that tier's recipe the same way. A failure or
+ * interruption undoes only the update. `note` hears one line per config file, once the update has finished.
  */
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
-  graphics?: GpuAdapter, screen: ResolvedScreen | null = null,
+  graphics?: GpuAdapter, screen: ResolvedScreen | null = null, note: (line: string) => void = () => {},
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
@@ -850,26 +801,7 @@ export async function updateDeployment(
   const targetRecipe = content.tiers[tier.id]
   const gpuName = graphics?.name ?? record.graphics.name
   const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, gpuName)
-  const options = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], graphics?.name ?? record.graphics.name)
-  const oldOptions = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
-  const currentMode = oldOptions.length ? await frameGenerationModeOnDisk(platform, record) : null
-  const frameGenerationMode = !options.length ? null
-    : !oldOptions.length || (currentMode && !options.some((option) => option.id === currentMode))
-      ? defaultFrameGenerationMode(options, screen?.refreshHz ?? 60) : currentMode
-  const currentHdr = record.recipe.hdrOptions?.length ? await hdrStateOnDisk(platform, record) : null
-  const hdrSettingsOverride = currentHdr?.mode === null && targetRecipe.hdrOptions?.length
-    ? await declaredSettingsOnDisk(platform, record, targetRecipe.hdrOptions.flatMap((option) => option.settings)) : undefined
-  const hdrSelection: Pick<PlanSelection, 'hdrMode' | 'hdrActive'> = currentHdr && targetRecipe.hdrOptions?.length
-    && (currentHdr.mode === null || targetRecipe.hdrOptions.some((option) => option.id === currentHdr.mode))
-    ? { hdrMode: currentHdr.mode, hdrActive: currentHdr.active } : {}
-  // An update never moves a screen-derived value Lucent wrote before; only a key the content adds is computed from the screen.
-  const screenSettingsKept = (targetRecipe.screenDerivedSettings ?? []).flatMap((setting) => {
-    const written = Object.entries(record.ownedConfigs).find(([path]) => fileKey(path) === fileKey(setting.file))
-    const value = written ? readIni(written[1]).get(setting.section, setting.key) : undefined
-    return value === undefined ? [] : [{ file: setting.file, section: setting.section, key: setting.key, value }]
-  })
-  const selection: PlanSelection = { gpuName, outputHeight: screen?.height, frameGenerationOptions: options, frameGenerationMode, hdrOn: screen?.hdrOn ?? false, hdrSettingsOverride, screen, screenSettingsKept, ...hdrSelection }
-  const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, selection)
+  const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, storedSelection(record, targetRecipe, gpuName, screen))
   if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
@@ -884,53 +816,38 @@ export async function updateDeployment(
   await save()
   try {
     const root = joinPath(gameFolder, 'game')
-    const incomingTexts = await incomingConfigTexts(platform, paths.cache, plan, record)
-    const resetKeys = plan.recipe.resetKeys ?? []
-    // Merge each owned config Lucent wrote before and that is still on disk, following the new layout.
-    const mergedTexts = new Map<string, string>()
+    const baselines = await configBaselines(platform, paths.cache, plan)
+    let steps: PlanStep[] = plan.steps
+    let expectedFiles = plan.expectedFiles
+    const notes: string[] = []
+    // A config the player has keeps whatever its rule says; a missing, unreadable or new one is written from the baseline.
+    const keptConfigs: string[] = []
     for (const config of plan.recipe.ownedConfigs) {
       const key = fileKey(config.path)
-      const incomingText = incomingTexts.get(key)
-      const basePath = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === key)
-      if (incomingText === undefined || basePath === undefined) continue
+      const rule = updateRule(config)
+      const deployed = Object.keys(record.files).some((path) => fileKey(path) === key)
       const diskPath = await platform.resolveGamePath(root, config.path)
-      if ((await maybeStat(platform, diskPath))?.kind !== 'file') continue
-      const diskText = await platform.readText(diskPath)
-      if (diskText.includes('\0')) continue
-      let mergedText = mergeIni(record.ownedConfigs[basePath], diskText, incomingText, resetKeys.filter((k) => fileKey(k.file) === key))
-      if (currentMode === null && oldOptions.length) {
-        // A Custom combination has no managed target to apply. Keep its frame-generation keys
-        // verbatim while the rest of the config follows the incoming recipe.
-        const onDisk = readIni(diskText)
-        const merged = readIni(mergedText)
-        for (const setting of oldOptions.flatMap((option) => [...option.settings, ...(option.hdrSettings ?? [])])) {
-          if (fileKey(setting.file) !== key) continue
-          const value = onDisk.get(setting.section, setting.key)
-          if (value === undefined) merged.remove(setting.section, setting.key)
-          else merged.set(setting.section, setting.key, value)
-        }
-        mergedText = merged.toString()
-      }
-      mergedTexts.set(key, mergedText)
-    }
-    let steps: PlanStep[] = []
-    const emittedMerged = new Set<string>()
-    for (const step of plan.steps) {
-      const target = writtenPath(step)
-      const mergedKey = target && mergedTexts.has(fileKey(target)) ? fileKey(target) : null
-      if (mergedKey) {
-        if (!emittedMerged.has(mergedKey)) {
-          steps.push({ kind: 'write', path: plan.recipe.ownedConfigs.find((c) => fileKey(c.path) === mergedKey)!.path, text: mergedTexts.get(mergedKey)! })
-          emittedMerged.add(mergedKey)
-        }
+      const diskText = deployed && (await maybeStat(platform, diskPath))?.kind === 'file' ? await platform.readText(diskPath) : null
+      if (diskText === null || diskText.includes('\0')) {
+        notes.push(`${config.path}: ${deployed ? 'missing, written from the new baseline' : 'new, written from the baseline'}`)
         continue
       }
-      steps.push(step)
+      if (rule === 'replace') { notes.push(`${config.path}: replaced from the new baseline, the previous file is backed up`); continue }
+      const baseline = baselines.get(key)
+      const merged = rule === 'addMissingKeys' && baseline !== undefined ? addMissingKeys(diskText, baseline) : null
+      notes.push(`${config.path}: ${rule === 'keep' ? 'kept as it is' : merged?.added.length
+        ? `added ${merged.added.length === 1 ? '1 missing key' : `${merged.added.length} missing keys`} (${merged.added.join(', ')})` : 'no missing keys, kept as it is'}`)
+      // The config's own steps go, and so does the staging file a rename brings to it.
+      const staging = new Set(steps.flatMap((s) => s.kind === 'rename' && fileKey(s.to) === key ? [fileKey(s.from)] : []))
+      const writes = (step: PlanStep) => { const target = writtenPath(step); return !!target && (fileKey(target) === key || staging.has(fileKey(target))) }
+      const first = steps.findIndex(writes)
+      steps = steps.filter((step) => !writes(step))
+      expectedFiles = expectedFiles.filter((f) => fileKey(f.path) !== key)
+      if (merged?.added.length) {
+        steps.splice(Math.max(first, 0), 0, { kind: 'write', path: config.path, text: merged.text })
+        expectedFiles = [...expectedFiles, { path: config.path, sha256: null }]
+      } else keptConfigs.push(config.path)
     }
-    for (const [key, text] of mergedTexts) {
-      if (!emittedMerged.has(key)) steps.push({ kind: 'write', path: plan.recipe.ownedConfigs.find((c) => fileKey(c.path) === key)!.path, text })
-    }
-    let expectedFiles = plan.expectedFiles.map((f) => mergedTexts.has(fileKey(f.path)) ? { path: f.path, sha256: null } : f)
     // Shipped presets: keep an edited one Lucent did not change; preserve one it changed too as "(my edits)".
     const keptPresets: { path: string; sha256: string }[] = []
     const preservedPresets = new Map<string, PlanStep>()
@@ -977,30 +894,39 @@ export async function updateDeployment(
     }
     await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)) }, steps)
     const files = await stampFiles(platform, record, expectedFiles, report)
+    // A config left as it is keeps the file the player has; Lucent only stamps what is there, since a health check reads no more of it.
+    for (const path of keptConfigs) {
+      const target = await platform.resolveGamePath(root, path)
+      files[path] = { ...await platform.stat(target), sha256: await platform.hashFile(target) }
+    }
     for (const kept of keptPresets) {
       const path = await platform.resolveGamePath(root, kept.path)
       files[kept.path] = { ...await platform.stat(path), sha256: kept.sha256 }
     }
-    const ownedConfigs: Record<string, string> = {}
-    for (const config of plan.recipe.ownedConfigs) ownedConfigs[config.path] = incomingTexts.get(fileKey(config.path)) ?? await platform.readText(await platform.resolveGamePath(root, config.path))
     const generated = record.generatedFiles ?? []
     const present = new Set(scan.files.map(fileKey))
     Object.assign(updated, {
       tier: tier.id, graphics: graphics ?? record.graphics,
-      contentVersion: content.id, includeReShade: plan.includeReShade, profile: plan.profile,
-      frameGenerationMode: plan.frameGenerationMode, recipe: plan.recipe,
+      contentVersion: content.id, includeReShade: plan.includeReShade,
+      // The stored first-install choices stay as the player made them, even where this content doesn't offer one; Reset
+      // offers them again. The profile moves only where the content renames it (the old two-pass Fidelity is Ultra). Another
+      // tier has its own options, so the choices that tier's baseline was written with replace them.
+      ...(tier.id === record.tier ? { profile: plan.profile ?? record.profile ?? null }
+        : { profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode }),
+      recipe: plan.recipe,
       // Another tier's recipes can't be rolled back to on this graphics card.
       cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...(record.cachedVersions ?? []).filter((v) => v.content.id !== content.id && v.tier.id === tier.id)].slice(0, 3),
       // A tier switch on the same content version keeps the player's pin.
       pinned: content.id === record.contentVersion ? record.pinned : content.id < record.contentVersion,
       pendingSelection: { skip: content.id < record.contentVersion ? record.contentVersion : null },
       journal: record.journal, createdDirectories: record.createdDirectories,
-      files, ownedConfigs,
+      files,
       generatedFiles: [...generated, ...plan.recipe.generatedFiles.map((p) => p.path)
         .filter((p) => !present.has(fileKey(p)) && !generated.some((g) => fileKey(g) === fileKey(p)))],
     } satisfies Partial<DeploymentRecord>)
     await platform.writeText(paths.record, JSON.stringify(updated, null, 2))
     report({ phase: 'checking', progress: 1, file: null })
+    for (const line of notes) note(line)
     return updated
   } catch (error) {
     try { await undoDeployment(platform, record) } catch (recoveryError) {
@@ -1025,37 +951,52 @@ async function cacheFile(platform: Platform, cache: string, file: ContentFile, s
 }
 
 /**
- * Restores the drifted files to what Lucent last wrote, through the journal, against the deployed content version.
- * Deployed files come back from the cache, downloading only what is missing; an owned config comes back as its last-written copy.
- * Disabled entry files are restored under their disabled names, so Repair keeps the deployment Disabled.
+ * Puts back the drifted files, through the journal, against the deployed content version. Deployed files come back from the
+ * cache, downloading only what is missing, and a Disabled deployment's entry files under their disabled names. A config file
+ * is written only when it is missing (or can't be read as text): from the content's baseline and the stored first-install
+ * choices, with the frame cap and peak brightness computed from `screen` now. A config that is there is the player's, so
+ * Repair never restores its contents.
  */
 export async function repairDeployment(
   platform: Platform, gameFolder: string, drifted: string[], content: ContentVersion | null, source: ContentSource | null, report: (progress: DeploymentProgress) => void,
+  screen: ResolvedScreen | null = null,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before repairing it.')
   const paths = await dataPaths(platform, gameFolder)
   const root = joinPath(gameFolder, 'game')
-  const configFor = (relative: string) => Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(relative))
-  const targets = drifted.map((relative) => {
+  const isConfig = (relative: string) => record.recipe.ownedConfigs.some((c) => fileKey(c.path) === fileKey(relative))
+  const targets: { relative: string; config: boolean; text: string | null; sha256: string }[] = []
+  for (const relative of drifted) {
     const stamped = Object.keys(record.files).find((p) => fileKey(p) === fileKey(relative))
     if (!stamped) throw new Error(`Repair found a file the deployment does not own: ${relative}`)
-    const config = configFor(stamped)
-    return { relative: stamped, config: config === undefined ? null : record.ownedConfigs[config], sha256: record.files[stamped].sha256 }
-  })
-  for (const target of targets) if (target.config !== null) target.sha256 = await hashText(target.config)
-  const assets = [...new Set(targets.filter((t) => t.config === null).map((t) => t.sha256))]
+    const config = isConfig(stamped)
+    if (config && await readableText(platform, await platform.resolveGamePath(root, stamped)) !== null) continue
+    targets.push({ relative: stamped, config, text: null, sha256: record.files[stamped].sha256 })
+  }
+  if (!targets.length) return record
+  const snapshot = record.cachedVersions?.find((v) => v.content.id === record.contentVersion)
+  const baselinePlan = targets.some((t) => t.config) ? storedBaselinePlan(record, content, snapshot, screen) : null
+  const assets = [...new Set([...targets.filter((t) => !t.config).map((t) => t.sha256), ...(baselinePlan ? configBaselineAssets(baselinePlan) : [])])]
   const missing: ContentFile[] = []
   for (const asset of assets) {
     const cached = joinPath(paths.cache, asset)
     if ((await maybeStat(platform, cached))?.kind === 'file' && await platform.hashFile(cached) === asset) continue
-    const file = content?.files.find((f) => f.sha256 === asset)
+    const file = content?.files.find((f) => f.sha256 === asset) ?? snapshot?.content.files.find((f) => f.sha256 === asset)
     if (!file || !source) throw new PlatformError('network', 'Lucent couldn’t download a content file for the repair.')
     missing.push(file)
   }
   // A missing asset without a source already stopped the repair above.
   await downloadFiles(platform, paths.cache, missing, source!, (done, total) => report({ phase: 'downloading', progress: total ? done / total * 0.4 : 0.4, file: null, done, total }))
+  if (baselinePlan) {
+    const baselines = await configBaselines(platform, paths.cache, baselinePlan)
+    for (const target of targets.filter((t) => t.config)) {
+      target.text = baselines.get(fileKey(target.relative)) ?? null
+      if (target.text === null) throw new Error(`Lucent can’t rebuild ${target.relative} from this content version.`)
+      target.sha256 = await hashText(target.text)
+    }
+  }
   await requireGameStopped(platform)
   // `record` journals the repair while it applies; `repaired` replaces it once every file is back.
   const repaired = structuredClone(record)
@@ -1065,7 +1006,7 @@ export async function repairDeployment(
   await save()
   try {
     for (let i = 0; i < targets.length; i++) {
-      const { relative, config, sha256 } = targets[i]
+      const { relative, text, sha256 } = targets[i]
       report({ phase: 'applying', progress: 0.4 + i / targets.length * 0.5, file: relative, done: i, total: targets.length })
       const path = await platform.resolveGamePath(root, relative)
       const stat = await maybeStat(platform, path)
@@ -1080,7 +1021,7 @@ export async function repairDeployment(
       await save()
       await requireGameStopped(platform)
       const target = await platform.resolveGamePath(root, relative)
-      if (config !== null) await platform.writeText(target, config, parentPath(gameFolder))
+      if (text !== null) await platform.writeText(target, text, parentPath(gameFolder))
       else await platform.copyFile(joinPath(paths.cache, sha256), target, before !== null, parentPath(gameFolder))
       if (await platform.hashFile(target) !== sha256) throw new PlatformError('hash-mismatch', `The repaired file failed its hash check: ${relative}`)
       repaired.files[relative] = { ...await platform.stat(target), sha256 }
@@ -1095,6 +1036,41 @@ export async function repairDeployment(
     }
     throw new DeploymentError(error, false)
   }
+}
+
+/**
+ * The plan that writes the deployed content's baseline again, from the stored first-install choices: the recipe the record kept,
+ * as it would be deployed to an empty folder. Its assets come from the manifest's content or the record's snapshot of it.
+ */
+function storedBaselinePlan(record: DeploymentRecord, content: ContentVersion | null, snapshot: CachedVersion | undefined, screen: ResolvedScreen | null): Plan {
+  const known = [...(content?.id === record.contentVersion ? content.files : []), ...(snapshot?.content.files ?? [])]
+  const files = [...new Set(record.recipe.recipe.flatMap((step) => step.kind === 'copy' ? [step.file] : []))]
+    .map((sha256) => known.find((f) => f.sha256 === sha256) ?? { sha256, size: 0, release: `content-${record.contentVersion}` })
+  const stored: ContentVersion = { id: record.contentVersion, channel: 'stable', minAppVersion: '0.0.0', changelog: [], components: [], files, tiers: { [record.tier]: record.recipe } }
+  const tier: Tier = snapshot?.tier ?? { id: record.tier, label: record.tier, status: 'stable', gpuMatch: 'any', neuralRendering: false, requiresReShade: record.includeReShade }
+  const profile = selectProfileForUpdate(record.recipe, record.recipe, record.profile ?? null, record.graphics.name)
+  return planDeployment(stored, tier, record.includeReShade, { files: [], ownedFiles: [], cachedFiles: [] }, profile, record.enabled, storedSelection(record, record.recipe, record.graphics.name, screen))
+}
+
+/**
+ * A 0.1.1 record keeps the config text Lucent last wrote, to merge on update. Config files belong to the player now, so
+ * it drops that and infers the first-install choices Reset offers again: the recorded profile (the old two-pass Fidelity is
+ * Ultra), frame generation Off and HDR Off where the content has them. Every file on disk stays as it is. Returns the
+ * migrated record, or null when the record was already migrated (or isn't a complete deployment).
+ */
+export async function migrateDeployment(platform: Platform, gameFolder: string): Promise<DeploymentRecord | null> {
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete' || !('ownedConfigs' in record)) return null
+  const { ownedConfigs: _lastWritten, ...rest } = record as DeploymentRecord & { ownedConfigs: unknown }
+  const legacyFidelity = record.recipe.performanceProfilesV2 === undefined && record.profile === 'fidelity' && !!record.recipe.performanceProfiles?.some((p) => p.id === 'fidelity')
+  const migrated: DeploymentRecord = {
+    ...rest,
+    profile: legacyFidelity ? 'ultra' : record.profile ?? null,
+    frameGenerationMode: frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name).some((o) => o.id === 'off') ? 'off' : null,
+    hdrMode: record.recipe.hdrOptions?.some((o) => o.id === 'off') ? 'off' : null,
+  }
+  await platform.writeText((await dataPaths(platform, gameFolder)).record, JSON.stringify(migrated, null, 2))
+  return migrated
 }
 
 /** The game-folder files that were there before the deployment and that uninstall puts back: each path whose first step found a file. */
@@ -1145,72 +1121,6 @@ export async function restoreAutoHdrPreference(platform: Platform, record: Deplo
   await platform.writeUserGpuPreferences(userSid, name, restored)
   if (await platform.readUserGpuPreferences(userSid, name) !== restored) throw new Error('Windows did not restore the per-game Auto HDR preference. Try again.')
   return true
-}
-
-/** Reads the frame-generation mode the owned configs hold, so an update carries it forward; null means the disk is Custom. */
-async function frameGenerationModeOnDisk(platform: Platform, record: DeploymentRecord): Promise<FrameGenerationId | null> {
-  const options = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
-  if (!options.length) return null
-  const declared = new Map<string, IniSetting>()
-  for (const option of options) for (const setting of [...option.settings, ...(option.hdrSettings ?? [])]) {
-    const id = `${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`
-    if (!declared.has(id)) declared.set(id, setting)
-  }
-  const texts = new Map<string, string>()
-  const root = joinPath(record.gameFolder, 'game')
-  const onDisk: IniSetting[] = []
-  for (const setting of declared.values()) {
-    const file = Object.keys(record.ownedConfigs).find((path) => fileKey(path) === fileKey(setting.file))
-    if (!file) continue
-    let text = texts.get(fileKey(file))
-    if (text === undefined) {
-      try { text = await platform.readText(await platform.resolveGamePath(root, file)) }
-      catch { continue }
-      texts.set(fileKey(file), text)
-    }
-    const value = readIni(text).get(setting.section, setting.key)
-    if (value !== undefined) onDisk.push({ ...setting, value })
-  }
-  return matchFrameGenerationMode(options, onDisk)
-}
-
-async function declaredSettingsOnDisk(platform: Platform, record: DeploymentRecord, settings: IniSetting[]): Promise<IniSetting[]> {
-  const textByFile = new Map<string, ReturnType<typeof readIni> | null>()
-  const values: IniSetting[] = []
-  const root = joinPath(record.gameFolder, 'game')
-  const seen = new Set<string>()
-  for (const setting of settings) {
-    const key = `${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    const file = Object.keys(record.ownedConfigs).find((path) => fileKey(path) === fileKey(setting.file))
-    if (!file) continue
-    let ini = textByFile.get(fileKey(file))
-    if (ini === undefined) {
-      try { ini = readIni(await platform.readText(await platform.resolveGamePath(root, file))) }
-      catch { ini = null }
-      textByFile.set(fileKey(file), ini)
-    }
-    if (!ini) continue
-    const value = ini.get(setting.section, setting.key)
-    if (value !== undefined) values.push({ ...setting, value })
-  }
-  return values
-}
-
-/** Reads the HDR mode from every declared owned config, so an update carries it forward; an unknown combination is Custom. */
-async function hdrStateOnDisk(platform: Platform, record: DeploymentRecord): Promise<{ mode: HdrMode | null; active: boolean }> {
-  const options = record.recipe.hdrOptions ?? []
-  if (!options.length) return { mode: null, active: false }
-  const settings = options.flatMap((option) => option.settings)
-  const enabledSettings = settings.filter((setting) => setting.key.toLowerCase() === 'ffxivhdr')
-  const onDisk = await declaredSettingsOnDisk(platform, record, settings)
-  const valueId = (setting: IniSetting) => `${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`
-  const values = new Map(onDisk.map((setting) => [valueId(setting), setting.value]))
-  const valueFor = (file: string, section: string, key: string) => values.get(`${fileKey(file)}|${section.toLowerCase()}|${key.toLowerCase()}`)
-  const mode = matchHdrMode(options, valueFor)
-  const configured = enabledSettings.some((setting) => valueFor(setting.file, setting.section, setting.key)?.toLowerCase() === 'true')
-  return { mode, active: mode === 'off' ? false : mode !== null || configured }
 }
 
 /**
