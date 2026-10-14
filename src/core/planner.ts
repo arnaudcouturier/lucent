@@ -1,13 +1,13 @@
-import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE, type FrameGenerationId, type FrameGenerationOption, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
+import { assertGamePath, DEFAULT_PROFILE, LEGACY_DEFAULT_PROFILE, type ContentFile, type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
 import type { ExistingSetup } from './existingSetup'
-import { frameGenerationSettingKeys } from './frameGeneration'
+import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profilesForRecipe, recommendedProfile } from './profileValues'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
 /** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
 export const disabledName = (path: string) => `${path}.disabled`
 /** A deployment keeps its profile where the tier still offers it; otherwise the tier's default applies. */
 export const keptProfile = (content: ContentVersion, tier: Tier, profile: ProfileId | null | undefined): ProfileId | null =>
-  content.tiers[tier.id]?.performanceProfiles?.some((p) => p.id === profile) ? profile! : null
+  content.tiers[tier.id] && profilesForRecipe(content.tiers[tier.id]).some((p) => p.id === profile) ? profile! : null
 export interface DeploymentScan {
   /** Every file in the game folder, relative to it. */
   files: string[]
@@ -47,12 +47,17 @@ export interface Plan {
   downloadSize: number
 }
 
+export interface ProfilePlanContext {
+  gpuName?: string
+  outputHeight?: number
+}
+
 /**
  * Pure planning: all facts about the folder and verified cache are supplied by Scan.
  * Planned from a current deployment (its files are `scan.ownedFiles`), the steps also delete the owned files the content no
  * longer deploys, and a Disabled deployment gets its entry files renamed aside.
  */
-export interface PlanSelection {
+export interface PlanSelection extends ProfilePlanContext {
   /** Options already filtered to the player's GPU. Omit to keep every manifest variant. */
   frameGenerationOptions?: FrameGenerationOption[]
   frameGenerationMode?: FrameGenerationId | null
@@ -68,16 +73,21 @@ export function planDeployment(
   const included = (v: { when?: 'reshade' }) => !v.when || includeReShade
   const includedConfig = (file: string) => recipe.ownedConfigs.some((c) => included(c) && fileKey(c.path) === fileKey(file))
   const recipeSteps = recipe.recipe.filter(included).map((s) => ({ ...s }))
-  const selected = recipe.performanceProfiles?.length ? recipe.performanceProfiles.find((p) => p.id === (profile ?? DEFAULT_PROFILE)) : null
-  if (recipe.performanceProfiles?.length && !selected) throw new Error('Choose a performance profile for this tier.')
+  const profiles = profilesForRecipe(recipe)
+  const defaultProfile = recipe.performanceProfilesV2 !== undefined
+    ? recommendedProfile(profiles, selection.gpuName ?? '')?.id ?? DEFAULT_PROFILE
+    : LEGACY_DEFAULT_PROFILE
+  const selected = profiles.length ? profiles.find((p) => p.id === (profile ?? defaultProfile)) : null
+  if (profiles.length && !selected) throw new Error('Choose a performance profile for this tier.')
   const frameGenerationOptions = selection.frameGenerationOptions ?? recipe.frameGenerationOptions ?? []
   const selectedFrameGeneration = selection.frameGenerationMode
     ? frameGenerationOptions.find((option) => option.id === selection.frameGenerationMode) ?? null
     : null
-  const frameGenerationKeys = frameGenerationSettingKeys(recipe.frameGenerationOptions ?? [])
-  const profileSettings = (selected?.settings ?? []).filter((setting) =>
-    !frameGenerationKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`))
-  // The profile applies after the recipe but stays out of the saved recipe: the record names it on its own.
+  const profileOwnedElsewhereKeys = profileOwnedElsewhereSettingKeys(recipe)
+  const resolvedProfileSettings = selected ? profileSettingsForHeight(selected, selection.outputHeight ?? 2160) : []
+  const profileSettings = resolvedProfileSettings.filter((setting) =>
+    !profileOwnedElsewhereKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`))
+  // Profiles apply after the recipe; frame generation then owns every key shared with a profile.
   const contentSteps: Step[] = [
     ...recipeSteps,
     ...profileSettings.filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
@@ -137,6 +147,7 @@ export function planDeployment(
   const paths = (items: TierRecipe['entryFiles']) => items.filter(included).map((p) => ({ ...p }))
   const filteredRecipe = { ...recipe, recipe: recipeSteps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles),
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
+    ...(recipe.performanceProfilesV2 ? { performanceProfilesV2: recipe.performanceProfilesV2.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.screenDerivedSettings ? { screenDerivedSettings: recipe.screenDerivedSettings.filter((s) => includedConfig(s.file)) } : {}),
     ...(recipe.frameGenerationOptions || selection.frameGenerationOptions ? { frameGenerationOptions: frameGenerationOptions.map((option) => ({
       ...option,

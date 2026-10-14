@@ -67,10 +67,11 @@ Here is an example for one tested tier; add entries for the other tested tiers a
       "shippedPresets": [{ "path": "reshade-presets/Example.ini", "when": "reshade" }],
       "generatedFiles": [{ "path": "OptiScaler.log" }, { "path": "ReShade.log", "when": "reshade" }],
       "overlay": "neural-rendering",
-      "performanceProfiles": [
-        { "id": "fidelity", "label": "Fidelity", "description": "Two Neural Rendering passes.", "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "2" }] },
-        { "id": "balanced", "label": "Balanced", "description": "One Neural Rendering pass.", "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }] },
-        { "id": "performance", "label": "Performance", "description": "One pass with spatial compression.", "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "DlssNr", "key": "SpatialCompression", "value": "true" }] }
+      "performanceProfilesV2": [
+        { "id": "ultra", "label": "Ultra", "description": "Two Neural Rendering passes.", "summary": "Two Neural Rendering passes, Quality upscaling.", "gpuNamePatterns": ["RTX 4090|RTX 4080"], "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "2" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "2", "1440p": "2", "4k+": "2" } }] },
+        { "id": "fidelity", "label": "Fidelity", "description": "One Neural Rendering pass with Quality upscaling.", "summary": "One Neural Rendering pass, Quality upscaling.", "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "2", "1440p": "2", "4k+": "2" } }] },
+        { "id": "balanced", "label": "Balanced", "description": "One Neural Rendering pass with resolution-aware upscaling.", "summary": { "1080p": "One Neural Rendering pass, Quality upscaling.", "1440p": "One Neural Rendering pass, Balanced upscaling.", "4k+": "One Neural Rendering pass, Balanced upscaling." }, "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "2", "1440p": "1", "4k+": "1" } }] },
+        { "id": "performance", "label": "Performance", "description": "One pass with compression and residual frame generation.", "summary": { "1080p": "One pass, compression, residual frame generation, Balanced upscaling.", "1440p": "One pass, compression, residual frame generation, Balanced upscaling.", "4k+": "One pass, compression, residual frame generation, Performance upscaling." }, "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "DlssNr", "key": "SpatialCompression", "value": "true" }, { "file": "OptiScaler.ini", "section": "DlssNr", "key": "ResidualFG", "value": "true" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "1", "1440p": "1", "4k+": "0" } }] }
       ],
       "resetKeys": [{ "file": "OptiScaler.ini", "section": "Logging", "key": "LogToFile" }]
     }
@@ -111,9 +112,13 @@ it with its hash. Copy steps inherit a source's `when` unless explicitly set. Fo
 ]
 ```
 
-`knownBrokenGameVersions`, `performanceProfiles` and `resetKeys` are stored and validated by the shared manifest schema.
-Profiles use string values for INI settings. Tiers without profiles can omit that field or use
-an empty list. `knownUserShaders` is optional: it lists shader filenames or relative shader
+`knownBrokenGameVersions`, legacy `performanceProfiles`, `performanceProfilesV2` and `resetKeys` are stored and validated by the shared manifest schema.
+The V2 field must contain all four profiles and can store a string or `1080p` / `1440p` / `4k+` values for each setting. The
+app chooses a column from XIV's output height (<1300, <2000 or 2000+); GPU-name regexes optionally
+recommend a profile, with Balanced as the fallback. The old field remains readable for older content,
+and `performanceProfilesV2` is an optional addition that Lucent 0.1.x ignores. An optional `summary`
+is the short Home description and accepts a string or the same resolution columns, so the UI can
+describe upscaling without interpreting content keys. Tiers without profiles can omit the profile fields or use an empty list. `knownUserShaders` is optional: it lists shader filenames or relative shader
 paths a preset may reference but the user must supply. Those files are excluded from sources,
 even with `shaders: "all"`, and a recipe cannot copy or rename another file onto their paths.
 Preset validation checks the effects each preset turns on (its `Techniques`,

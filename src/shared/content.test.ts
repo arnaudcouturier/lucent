@@ -55,3 +55,31 @@ it('orders profiles Fidelity, Balanced, Performance whatever the manifest order'
   nvidia(m).performanceProfiles!.reverse()
   expect(nvidia(parseManifest(JSON.stringify(m))).performanceProfiles!.map((p) => p.id)).toEqual(['fidelity', 'balanced', 'performance'])
 })
+
+it('accepts four resolution-aware profiles with recommended GPU patterns in the optional recipe field', () => {
+  const m = profileContent()
+  const recipe = nvidia(m) as unknown as Record<string, unknown>
+  recipe.performanceProfilesV2 = [
+    { id: 'ultra', label: 'Ultra', description: 'Two passes.', summary: { '1080p': 'Two passes, Quality upscaling', '1440p': 'Two passes, Quality upscaling', '4k+': 'Two passes, Quality upscaling' }, gpuNamePatterns: ['RTX 4090'], settings: [{ file: 'OptiScaler.ini', section: 'DlssNr', key: 'Passes', value: '2' }] },
+    { id: 'fidelity', label: 'Fidelity', description: 'One pass.', settings: [{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: { '1080p': '2', '1440p': '2', '4k+': '2' } }] },
+    { id: 'balanced', label: 'Balanced', description: 'Balanced upscaling.', settings: [{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: { '1080p': '2', '1440p': '1', '4k+': '1' } }] },
+    { id: 'performance', label: 'Performance', description: 'The highest frame rate.', settings: [{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: { '1080p': '1', '1440p': '1', '4k+': '0' } }] },
+  ]
+  const parsed = parseManifest(JSON.stringify(m))
+  const profiles = (parsed.versions[0].tiers['rtx-30-40'] as unknown as { performanceProfilesV2: { id: string }[] }).performanceProfilesV2
+  expect(parsed.schemaVersion).toBe(2)
+  expect(profiles.map(({ id }) => id)).toEqual(['ultra', 'fidelity', 'balanced', 'performance'])
+})
+
+it('rejects incomplete resolution columns and malformed recommended GPU patterns', () => {
+  const m = profileContent()
+  const recipe = nvidia(m) as unknown as Record<string, unknown>
+  recipe.performanceProfilesV2 = [
+    { id: 'ultra', label: 'Ultra', description: 'Two passes.', gpuNamePatterns: ['['], settings: [{ file: 'OptiScaler.ini', section: 'DlssNr', key: 'Passes', value: '2' }] },
+    ...(['fidelity', 'balanced', 'performance'] as const).map((id) => ({ id, label: id, description: 'Profile.', settings: [{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: { '1080p': '2', '1440p': '2' } }] })),
+  ]
+  expect(() => parseManifest(JSON.stringify(m))).toThrow(/pattern/i)
+  const first = (recipe.performanceProfilesV2 as Record<string, unknown>[])[0]
+  first.gpuNamePatterns = ['RTX 4090']
+  expect(() => parseManifest(JSON.stringify(m))).toThrow(/resolution/i)
+})

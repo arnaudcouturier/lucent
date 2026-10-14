@@ -4,6 +4,8 @@ import { FlowError } from './DeploymentScreens'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { customProfileSummary } from '../core/customProfile'
 import { setupChoices } from '../core/core'
+import { profileSummaryForHeight } from '../core/profileValues'
+import { SegmentedControl } from './SegmentedControl'
 
 /** The Profile screen's title already names the choice, so only the main screen shows a legend. */
 export function ProfileSelector({ legend = true }: { legend?: boolean }) {
@@ -11,20 +13,39 @@ export function ProfileSelector({ legend = true }: { legend?: boolean }) {
   const { profiles, selectedProfile, customProfile, busy, recoveryRequired, activity } = state
   const custom = activity.kind === 'deployment' ? customProfile : null
   if (!profiles.length) return null
-  return <fieldset className="profile-selector" disabled={activity.kind === 'deployment' ? !gameActionsAvailable(state) : busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
+  if (activity.kind === 'deployment') {
+    const selected = profiles.find((profile) => profile.id === selectedProfile)
+    const line = custom
+      ? `Custom · based on ${profiles.find((profile) => profile.id === custom.basedOn)?.label ?? custom.basedOn}: ${customProfileSummary(custom.changed)}`
+      : selected ? profileSummaryForHeight(selected, state.screen?.height ?? 2160) : ''
+    return <div className="profile-selector profile-home-selector">
+      <SegmentedControl
+        value={custom ? null : selectedProfile}
+        options={profiles.map(({ id, label }) => ({ id, label }))}
+        disabled={!gameActionsAvailable(state)}
+        ariaLabel="Performance profile"
+        onChange={(id) => { const profile = profiles.find((item) => item.id === id); if (profile) void core.selectProfile(profile.id) }}
+      />
+      <p className={`profile-home-description ${custom ? 'is-custom' : ''}`}>{line}</p>
+    </div>
+  }
+  return <fieldset className="profile-selector" disabled={busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
     {legend && <legend>Performance profile</legend>}
     <div className="card profile-rows">{profiles.map((profile) => {
-      const selected = selectedProfile === profile.id && !custom
+      const selected = selectedProfile === profile.id
+      const recommended = activity.kind === 'profile' && state.recommendedProfile === profile.id
+      const gpuName = state.graphics.status === 'found' ? recommendationName(state.graphics.adapter.name) : ''
       return <label className={`option-row profile-row ${selected ? 'is-selected' : ''}`} key={profile.id}>
         <input type="radio" name="performance-profile" value={profile.id} checked={selected} onChange={() => void core.selectProfile(profile.id)} />
-        <span><strong>{profile.label}</strong><small>{profile.description}</small></span>
+        <span><strong>{profile.label}{recommended && gpuName && <small className="profile-recommended">Recommended for your {gpuName}</small>}</strong><small>{profile.description}</small></span>
       </label>
     })}
-    {custom && <label className="option-row profile-row is-selected is-custom">
-      <input type="radio" name="performance-profile" value="custom" checked readOnly />
-      <span><strong>Custom · based on {profiles.find((p) => p.id === custom.basedOn)?.label}</strong><small>{customProfileSummary(custom.changed)}</small></span>
-    </label>}</div>
+    </div>
   </fieldset>
+}
+
+function recommendationName(name: string): string {
+  return name.replace(/^(?:NVIDIA\s+)?(?:GeForce\s+)?/i, '').replace(/^(?:AMD\s+)?Radeon\s+|^Intel\s+Arc\s+/i, '')
 }
 
 /** Every first-run choice lives here, so Review only reviews. */

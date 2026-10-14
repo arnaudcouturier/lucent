@@ -4,9 +4,10 @@ import { readIni } from './ini'
 import { joinPath } from './paths'
 import type { Platform } from './platform'
 import { fileKey } from './planner'
+import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profilesForRecipe } from './profileValues'
 
 /** One of the profile's settings whose value on disk differs. */
-export interface ChangedSetting { file: string; section: string; key: string }
+export interface ChangedSetting { file: string; section: string; key: string; value: string | undefined }
 
 /** The selected performance profile after the player changed one of its settings on disk. */
 export interface CustomProfile {
@@ -18,31 +19,32 @@ export interface CustomProfile {
 const sameValue = (disk: string, value: string) => disk.toLowerCase() === value.toLowerCase()
   || (disk !== '' && value.trim() !== '' && Number(disk) === Number(value))
 
-/** Compares the selected profile's settings with the deployed configs; null unless one differs. Unreadable configs are drift, the health check's job. */
-export async function detectCustomProfile(platform: Platform, record: DeploymentRecord): Promise<CustomProfile | null> {
-  const profile = record.recipe.performanceProfiles?.find((p) => p.id === record.profile)
+/** Compares profile settings with Lucent's last-written copy; unreadable configs are drift, the health check's job. */
+export async function detectCustomProfile(platform: Platform, record: DeploymentRecord, outputHeight = 2160): Promise<CustomProfile | null> {
+  const profile = profilesForRecipe(record.recipe).find((p) => p.id === record.profile)
   if (!profile) return null
   const root = joinPath(record.gameFolder, 'game')
-  const configs = new Map<string, ReturnType<typeof readIni> | null>()
+  const configs = new Map<string, { disk: ReturnType<typeof readIni> | null; baseline: ReturnType<typeof readIni> | null }>()
   const changed: ChangedSetting[] = []
-  for (const { file, section, key, value } of profile.settings) {
-    if (record.recipe.screenDerivedSettings?.some((setting) => fileKey(setting.file) === fileKey(file)
-      && setting.section.toLowerCase() === section.toLowerCase() && setting.key.toLowerCase() === key.toLowerCase())) continue
+  const profileKeys = profileOwnedElsewhereSettingKeys(record.recipe)
+  for (const { file, section, key } of profileSettingsForHeight(profile, outputHeight)) {
+    if (profileKeys.has(`${fileKey(file)}|${section.toLowerCase()}|${key.toLowerCase()}`)) continue
     const config = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(file))
     if (!config) continue
-    if (!configs.has(config)) configs.set(config, await platform.readText(await platform.resolveGamePath(root, config)).then(readIni, () => null))
-    const ini = configs.get(config)
-    const disk = ini?.get(section, key)
-    if (ini && (disk === undefined || !sameValue(disk, value))) changed.push({ file: config, section, key })
+    if (!configs.has(config)) {
+      const disk = await platform.readText(await platform.resolveGamePath(root, config)).then(readIni, () => null)
+      const baseline = typeof record.ownedConfigs[config] === 'string' ? readIni(record.ownedConfigs[config]) : null
+      configs.set(config, { disk, baseline })
+    }
+    const configState = configs.get(config)!
+    const disk = configState.disk?.get(section, key)
+    const baseline = configState.baseline?.get(section, key)
+    if (configState.disk && (baseline === undefined || disk === undefined || !sameValue(disk, baseline))) changed.push({ file: config, section, key, value: disk })
   }
   return changed.length ? { basedOn: profile.id, changed } : null
 }
 
-/** "2 settings changed in the OptiScaler and ReShade overlays". */
+/** "Passes set to 2" or a compact list of the user's changed setting values. */
 export function customProfileSummary(changed: ChangedSetting[]): string {
-  const names = new Map<string, string>()
-  for (const { file } of changed) if (!names.has(fileKey(file))) names.set(fileKey(file), file.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, ''))
-  const overlays = [...names.values()]
-  const list = overlays.length > 1 ? `${overlays.slice(0, -1).join(', ')} and ${overlays.at(-1)}` : overlays[0]
-  return `${changed.length} ${changed.length === 1 ? 'setting' : 'settings'} changed in the ${list} ${overlays.length === 1 ? 'overlay' : 'overlays'}`
+  return changed.map(({ key, value }) => value === undefined ? `${key} removed` : value === '' ? `${key} cleared` : `${key} set to ${value}`).join(', ')
 }

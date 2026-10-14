@@ -260,22 +260,40 @@ says to remove them in XIVLauncher's settings. No XIVLauncher, or no Lucent add-
 
 ## Performance profiles
 
-Each content tier may supply `performanceProfiles`. Omit it or use `[]` for a tier without
-profiles: Lucent hides the Home selector, and the first-run step becomes Options when ReShade or
-Start menu choices remain, or is skipped when there are no choices. Otherwise supply all three
-IDs, `fidelity`, `balanced` and `performance`, each with a one-line `label` and tier-specific
-`description`, and nonempty `settings`. Each setting is `{ "file": "OptiScaler.ini", "section": "DlssNr",
-"key": "Passes", "value": "2" }`; its file must be declared in `ownedConfigs`. Values are
-single-line strings, including empty strings. Configs must be deployed before an `ini_set` step.
-An `ini_set` targeting a conditional config uses the same `when` condition.
+Older content may supply `performanceProfiles`: the three legacy IDs `fidelity`, `balanced` and
+`performance`, each with a one-line `label` and tier-specific `description`, and nonempty scalar
+`settings`. Lucent keeps reading this field with its original Fidelity default.
 
-Scan → Profile → Review uses Fidelity initially, and the rows always appear in ID order. The
-selected profile is applied after the recipe, and settings for an excluded ReShade config are
-omitted. The saved recipe keeps only the content's own steps; the record names the profile. The
-main screen uses the profiles saved with the deployed content version, so a new manifest cannot
-change an existing deployment's choices. Picking a profile writes only its keys, saves those
-values into the last-written copy, and keeps unrelated user changes distinct from values Lucent
-wrote. Enabled remains unchanged.
+New content may supply `performanceProfilesV2`, which takes precedence when both fields are
+present. Omit it or use `[]` for a tier without profiles: Lucent hides the Home selector, and the
+first-run step becomes Options when ReShade or Start menu choices remain, or is skipped when there
+are no choices. Otherwise supply all four IDs in this order: `ultra`, `fidelity`, `balanced` and
+`performance`. Each profile has a one-line `label` and `description`, nonempty `settings`, and may
+include `summary`, a short Home description that accepts a string or the same resolution-column map
+as a setting. If omitted, Home uses `description`. Content can therefore describe the resolved
+upscaling choice without Lucent inferring meaning from a particular INI key. A profile may also
+include `gpuNamePatterns`, a list of case-insensitive regular expressions matched against the
+graphics card name. The first matching profile is recommended; Balanced is the fallback.
+
+A setting is `{ "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality",
+"value": "2" }`; its file must be declared in `ownedConfigs`. Values may be a single-line string,
+including an empty string, or contain one value for each resolution column:
+`{ "1080p": "2", "1440p": "1", "4k+": "1" }`. Lucent chooses the column from XIV's output
+height: below 1300 uses `1080p`, below 2000 uses `1440p`, and 2000 or above uses `4k+`. The output
+height is independent of aspect ratio, so 3440×1440 ultrawide uses `1440p`. All three columns are
+required. Configs must be deployed before an `ini_set` step; a conditional config and its `ini_set`
+step use the same `when` condition. Frame-generation option keys stay owned by frame generation,
+even if a profile also lists them. The optional field does not change the manifest schema version
+and is ignored by Lucent 0.1.x.
+
+Scan → Profile → Review preselects the first matching recommendation. The selected profile is
+applied after the recipe, and settings for an excluded ReShade config are omitted. The saved recipe
+keeps only the content's own steps; the record names the profile and stores the profile data from
+that content version. Picking a profile writes only its keys, saves those values into the
+last-written copy, and keeps unrelated user changes distinct from values Lucent wrote. Enabled
+remains unchanged. When the screen's resolution column changes, Lucent updates a profile setting
+only while the on-disk value still matches Lucent's last-written value; a player edit remains
+Custom across later resolution changes.
 
 Config edits preserve BOM, line endings, whitespace, ordering and comment lines; a no-op round
 trip is byte-identical for the UTF-8 configs supported by the Platform port. Neither ReShade nor

@@ -61,15 +61,34 @@ export interface FrameGenerationOption {
   /** Values that replace these keys when the active display has HDR enabled. */
   hdrSettings?: IniSetting[]
 }
-/** Also the order of the radio rows. */
-export const PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
+/** Also the order of the profile rows and segmented-control options. */
+export const PROFILE_IDS = ['ultra', 'fidelity', 'balanced', 'performance'] as const
 export type ProfileId = typeof PROFILE_IDS[number]
-export const DEFAULT_PROFILE: ProfileId = 'fidelity'
+export const LEGACY_PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
+export type LegacyProfileId = typeof LEGACY_PROFILE_IDS[number]
+/** Fallback for new content when no GPU recommendation matches. */
+export const DEFAULT_PROFILE: ProfileId = 'balanced'
+/** The 0.1.x `performanceProfiles` field keeps its original default and meaning. */
+export const LEGACY_DEFAULT_PROFILE: LegacyProfileId = 'fidelity'
+export const RESOLUTION_COLUMNS = ['1080p', '1440p', '4k+'] as const
+export type ResolutionColumn = typeof RESOLUTION_COLUMNS[number]
+export type ResolutionProfileValue = string | Record<ResolutionColumn, string>
+export interface ProfileSetting extends IniKey { value: ResolutionProfileValue }
+export interface LegacyPerformanceProfile {
+  id: LegacyProfileId
+  label: string
+  description: string
+  settings: IniSetting[]
+}
 export interface PerformanceProfile {
   id: ProfileId
   label: string
   description: string
-  settings: IniSetting[]
+  /** Optional short Home line; resolution-aware content can describe the resolved upscaling mode. */
+  summary?: ResolutionProfileValue
+  /** Case-insensitive regular expressions matched against the graphics card's name. */
+  gpuNamePatterns?: string[]
+  settings: ProfileSetting[]
 }
 export type Step = (
   | { kind: 'copy'; file: string; to: string }
@@ -84,7 +103,10 @@ export interface TierRecipe {
   shippedPresets: ConditionalPath[]
   generatedFiles: ConditionalPath[]
   overlay: 'neural-rendering' | 'upscaling' | null
-  performanceProfiles?: PerformanceProfile[]
+  /** Legacy 0.1.x profiles: Fidelity, Balanced and Performance with scalar values. */
+  performanceProfiles?: LegacyPerformanceProfile[]
+  /** Four profiles with resolution-aware values; safely ignored by Lucent 0.1.x. */
+  performanceProfilesV2?: PerformanceProfile[]
   /** Optional frame-generation choices; unknown to apps that predate this field. */
   frameGenerationOptions?: FrameGenerationOption[]
   /** Settings computed from XIV's current monitor; unknown to Lucent 0.1.x. */
@@ -297,13 +319,53 @@ function singleLine(value: unknown, field: string): string {
   if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
   return value as string
 }
-function profile(value: unknown): PerformanceProfile {
+function profile(value: unknown): LegacyPerformanceProfile {
   const p = object(value, 'Performance profile')
-  if (!PROFILE_IDS.includes(p.id as ProfileId)) invalid('Unknown performance profile.')
+  if (!LEGACY_PROFILE_IDS.includes(p.id as LegacyProfileId)) invalid('Unknown legacy performance profile.')
   const settings = array(p.settings, 'Profile settings').map((value) => iniSetting(object(value, 'Profile setting')))
   unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Profile keys')
   if (!settings.length) invalid('A performance profile needs settings.')
-  return { id: p.id as ProfileId, label: singleLine(p.label, 'Profile label'), description: singleLine(p.description, 'Profile description'), settings }
+  return { id: p.id as LegacyProfileId, label: singleLine(p.label, 'Profile label'), description: singleLine(p.description, 'Profile description'), settings }
+}
+function profileValue(value: unknown): ResolutionProfileValue {
+  if (typeof value === 'string') {
+    if (/[\r\n\0]/.test(value)) invalid('Profile values must be single-line strings.')
+    return value
+  }
+  const columns = object(value, 'Resolution profile values')
+  if (Object.keys(columns).length !== RESOLUTION_COLUMNS.length || RESOLUTION_COLUMNS.some((column) => !(column in columns))) {
+    invalid('Resolution profile values need 1080p, 1440p and 4k+ columns.')
+  }
+  const result = Object.fromEntries(RESOLUTION_COLUMNS.map((column) => {
+    const entry = columns[column]
+    if (typeof entry !== 'string' || /[\r\n\0]/.test(entry)) invalid('Resolution profile values must be single-line strings.')
+    return [column, entry]
+  })) as Record<ResolutionColumn, string>
+  return result
+}
+function performanceProfileSetting(value: unknown): ProfileSetting {
+  const setting = object(value, 'Profile setting')
+  return { ...iniKey(setting), value: profileValue(setting.value) }
+}
+function performanceProfile(value: unknown): PerformanceProfile {
+  const p = object(value, 'Performance profile')
+  if (!PROFILE_IDS.includes(p.id as ProfileId)) invalid('Unknown performance profile.')
+  const settings = array(p.settings, 'Profile settings').map(performanceProfileSetting)
+  unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Profile keys')
+  if (!settings.length) invalid('A performance profile needs settings.')
+  let gpuNamePatterns: string[] | undefined
+  if (p.gpuNamePatterns !== undefined) {
+    gpuNamePatterns = array(p.gpuNamePatterns, 'Profile GPU-name patterns').map((value) => {
+      const pattern = nonemptyString(value, 'Profile GPU-name pattern')
+      try { new RegExp(pattern, 'i') } catch { invalid(`Invalid profile GPU-name pattern: ${pattern}`) }
+      return pattern
+    })
+    if (!gpuNamePatterns.length) invalid('Profile GPU-name patterns must not be empty when supplied.')
+  }
+  const summary = p.summary === undefined ? undefined : profileValue(p.summary)
+  return { id: p.id as ProfileId, label: singleLine(p.label, 'Profile label'), description: singleLine(p.description, 'Profile description'),
+    ...(summary !== undefined ? { summary } : {}),
+    ...(gpuNamePatterns ? { gpuNamePatterns } : {}), settings }
 }
 function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
   const v = object(value, 'Content version')
@@ -350,8 +412,14 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     if (r.performanceProfiles !== undefined) {
       const profiles = array(r.performanceProfiles, 'Performance profiles').map(profile)
       unique(profiles.map((p) => p.id), 'Performance profile ids')
-      if (profiles.length && profiles.length !== PROFILE_IDS.length) invalid('A tier must offer Fidelity, Balanced and Performance together.')
-      recipes[id].performanceProfiles = profiles.sort((a, b) => PROFILE_IDS.indexOf(a.id) - PROFILE_IDS.indexOf(b.id))
+      if (profiles.length && profiles.length !== LEGACY_PROFILE_IDS.length) invalid('A legacy tier must offer Fidelity, Balanced and Performance together.')
+      recipes[id].performanceProfiles = profiles.sort((a, b) => LEGACY_PROFILE_IDS.indexOf(a.id) - LEGACY_PROFILE_IDS.indexOf(b.id))
+    }
+    if (r.performanceProfilesV2 !== undefined) {
+      const profiles = array(r.performanceProfilesV2, 'Resolution-aware performance profiles').map(performanceProfile)
+      unique(profiles.map((p) => p.id), 'Performance profile ids')
+      if (profiles.length && profiles.length !== PROFILE_IDS.length) invalid('A resolution-aware tier must offer Ultra, Fidelity, Balanced and Performance together.')
+      recipes[id].performanceProfilesV2 = profiles.sort((a, b) => PROFILE_IDS.indexOf(a.id) - PROFILE_IDS.indexOf(b.id))
     }
     if (r.frameGenerationOptions !== undefined) {
       const options = array(r.frameGenerationOptions, 'Frame-generation options').map(frameGenerationOption)
@@ -373,6 +441,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       if (s.kind === 'ini_set' && ownedConfig(s.file).when !== s.when) invalid('INI steps must use their owned config condition.')
     }
     for (const s of (recipes[id].performanceProfiles ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
+    for (const s of (recipes[id].performanceProfilesV2 ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
     for (const option of recipes[id].frameGenerationOptions ?? []) {
       for (const setting of [...option.settings, ...(option.hdrSettings ?? [])]) ownedConfig(setting.file)
     }

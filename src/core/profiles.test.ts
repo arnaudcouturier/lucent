@@ -1,14 +1,62 @@
 import { expect, it } from 'vitest'
 import { createCore, setupChoices } from './core'
-import { createFakePlatform } from '../platform/fake'
+import { DEFAULT_ENV, createFakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { dataPaths, readDeployment } from './deployment'
 import { PROFILE_MANIFEST } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
 import { planDeployment } from './planner'
+import type { PerformanceProfile, TierRecipe } from '../shared/manifest'
+import type { MonitorInfo } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
 const profileMachine = () => machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+
+function fourProfileManifest() {
+  const manifest = structuredClone(PROFILE_MANIFEST)
+  for (const recipe of Object.values(manifest.versions[0].tiers) as TierRecipe[]) {
+    if (!recipe.performanceProfiles) continue
+    recipe.performanceProfilesV2 = (['ultra', 'fidelity', 'balanced', 'performance'] as const).map((id): PerformanceProfile => {
+      const ultra = id === 'ultra'
+      const performance = id === 'performance'
+      const quality = id === 'ultra' || id === 'fidelity'
+        ? { '1080p': '2', '1440p': '2', '4k+': '2' }
+        : id === 'balanced' ? { '1080p': '2', '1440p': '1', '4k+': '1' }
+          : { '1080p': '1', '1440p': '1', '4k+': '0' }
+      const summary = Object.fromEntries(Object.entries(quality).map(([column, value]) => [column,
+        `${ultra ? 'Two' : 'One'} Neural Rendering ${ultra ? 'passes' : 'pass'}, ${value === '2' ? 'Quality' : value === '1' ? 'Balanced' : 'Performance'} upscaling`])) as PerformanceProfile['summary']
+      return {
+        id, label: id[0].toUpperCase() + id.slice(1), description: ultra ? 'Two Neural Rendering passes for more detail.' : 'One Neural Rendering pass.', summary,
+        ...(id === 'ultra' ? { gpuNamePatterns: ['RTX 4090|RTX 4080'] } : id === 'fidelity' ? { gpuNamePatterns: ['RTX 4070'] } : {}),
+        settings: [
+          { file: 'OptiScaler.ini', section: 'DlssNr', key: 'Passes', value: ultra ? '2' : '1' },
+          { file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: quality },
+          { file: 'OptiScaler.ini', section: 'DlssNr', key: 'SpatialCompression', value: String(performance) },
+          { file: 'OptiScaler.ini', section: 'DlssNr', key: 'ResidualFG', value: String(performance) },
+        ],
+      }
+    })
+    delete recipe.performanceProfiles
+  }
+  return manifest
+}
+
+function fourProfileMachine(manifest = fourProfileManifest()) {
+  const content = fixtureContentHost()
+  return machine(content, { remoteText: { ...content.remoteText, [MANIFEST_URL]: JSON.stringify(manifest) } }, graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+}
+
+const xivDisplayConfig = `${DEFAULT_ENV.Documents}\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg`
+const profileMonitor = (height: number): MonitorInfo => ({
+  deviceName: '\\\\.\\DISPLAY1', bounds: { left: 0, top: 0, right: 3840, bottom: height }, primary: true,
+  refreshHz: 144, width: height * 16 / 9, height, hdrSupported: true, hdrOn: false, peakNits: 1000,
+})
+function screenProfileMachine(height: number) {
+  return machine(fourProfileMachine(), {
+    monitors: [profileMonitor(height)],
+    files: { [xivDisplayConfig]: '<Display Settings>\r\nMainAdapter NVIDIA (\\\\.\\DISPLAY1)\r\nScreenMode 2\r\n' },
+  })
+}
 
 it('offers profiles between Scan and Review and deploys the selected values with a last-written copy', async () => {
   const platform = createFakePlatform(profileMachine())
@@ -185,6 +233,80 @@ it('applies the profile after the recipe without saving it into the deployed rec
   const performance = content.tiers[tier.id].performanceProfiles!.find((p) => p.id === 'performance')!
   expect(plan.steps.slice(-performance.settings.length)).toEqual(performance.settings.map((s) => ({ kind: 'ini_set', ...s })))
   expect(plan.recipe.recipe).toEqual(content.tiers[tier.id].recipe)
+})
+
+it('preselects the first matching GPU recommendation and exposes all four profiles', async () => {
+  const platform = createFakePlatform(fourProfileMachine())
+  const core = createCore(platform)
+  await core.scan()
+  expect(core.getState()).toMatchObject({ selectedProfile: 'ultra', recommendedProfile: 'ultra' })
+  await core.continueSetup()
+  expect(core.getState().profiles.map(({ id }) => id)).toEqual(['ultra', 'fidelity', 'balanced', 'performance'])
+})
+
+it('moves an existing legacy Fidelity deployment to Ultra on its first four-profile content update', async () => {
+  const machineState = profileMachine()
+  const platform = createFakePlatform(machineState)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  expect(core.getState().deployment?.profile).toBe('fidelity')
+  await core.setEnabled(false)
+  const config = `${ROOT}\\game\\OptiScaler.ini`
+  await platform.writeText(config, (await platform.readText(config))
+    .replace('Passes = 2', 'Passes = 3').replace('LogToFile = false', 'LogToFile = true'))
+
+  const target = { ...fourProfileManifest().versions[0], id: '2026.11.02' }
+  const update = structuredClone(PROFILE_MANIFEST)
+  update.versions = [...PROFILE_MANIFEST.versions, target]
+  machineState.remoteText![MANIFEST_URL] = JSON.stringify(update)
+  await core.scan()
+  await core.applyVersion(target.id)
+
+  expect(core.getState()).toMatchObject({ error: null, deployment: { contentVersion: target.id, profile: 'ultra', enabled: false }, selectedProfile: 'ultra' })
+  expect(await platform.readText(config)).toContain('Passes = 3\r\n')
+  expect(await platform.readText(config)).toContain('LogToFile = true\r\n')
+  expect(await platform.listFiles(`${ROOT}\\game`)).toContain('winmm.dll.disabled')
+  expect(core.getState().customProfile).toMatchObject({ basedOn: 'ultra', changed: [{ key: 'Passes', value: '3' }] })
+})
+
+it.each([[1080, '2'], [1440, '1'], [2160, '1']] as const)(
+  'plans Balanced upscaling at output height %s using its matching column', (outputHeight, value) => {
+    const manifest = fourProfileManifest()
+    const content = manifest.versions[0]
+    const tier = manifest.tiers.find((item) => item.id === 'rtx-30-40')!
+    const plan = planDeployment(content, tier, false, { files: [], cachedFiles: [], ownedFiles: [] }, 'balanced', true, { outputHeight })
+    expect(plan.steps).toContainEqual({ kind: 'ini_set', file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value })
+  },
+)
+
+it('rewrites mapped profile values on resolution changes but keeps player edits Custom across later changes', async () => {
+  const machineState = screenProfileMachine(1080)
+  const platform = createFakePlatform(machineState)
+  const core = createCore(platform)
+  await core.scan()
+  await core.continueSetup()
+  await core.selectProfile('balanced')
+  await core.review()
+  await core.deploy()
+  core.finish()
+  const config = `${ROOT}\\game\\OptiScaler.ini`
+  expect(await platform.readText(config)).toMatch(/ForcePerfQuality\s*=\s*2/)
+
+  machineState.monitors = [profileMonitor(1440)]
+  const at1440 = createCore(platform)
+  await at1440.scan()
+  expect(await platform.readText(config)).toMatch(/ForcePerfQuality\s*=\s*1/)
+  expect(at1440.getState().customProfile).toBeNull()
+
+  await platform.writeText(config, (await platform.readText(config)).replace(/ForcePerfQuality\s*=\s*1/, 'ForcePerfQuality = 0'))
+  machineState.monitors = [profileMonitor(2160)]
+  const at4k = createCore(platform)
+  await at4k.scan()
+  expect(await platform.readText(config)).toMatch(/ForcePerfQuality\s*=\s*0/)
+  expect(at4k.getState().customProfile).toMatchObject({ basedOn: 'balanced', changed: [{ key: 'ForcePerfQuality', value: '0' }] })
 })
 
 it('keeps unrelated user config changes through a profile switch, and they are not drift', async () => {

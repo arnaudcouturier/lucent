@@ -544,6 +544,10 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 /* ---------- Performance profiles ---------- */
 .profile-selector { border: 0; padding: 0; margin: 0; min-width: 0; }
 .profile-selector legend { padding: 0; margin-bottom: var(--space-3); color: var(--ink-2); font-size: var(--text-label); }
+.profile-home-selector { min-width: 0; }
+.profile-home-description { min-height: 18px; margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--text-label); line-height: 1.4; }
+.profile-home-description.is-custom { color: var(--warning-ink, var(--ink-2)); }
+.profile-recommended { display: inline-block; margin-left: var(--space-2); padding: 2px 6px; border-radius: var(--r-chip); background: var(--accent-tint); color: var(--accent); font-size: 10px; font-weight: 500; vertical-align: 1px; }
 .profile-row { cursor: pointer; }
 .profile-row + .profile-row { box-shadow: inset 0 1px 0 var(--line); }
 .profile-row:hover { background: var(--hover); }

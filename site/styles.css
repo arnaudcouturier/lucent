@@ -1324,7 +1324,7 @@ kbd {
 
 .profile-table [role='row'] {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-3) 0;

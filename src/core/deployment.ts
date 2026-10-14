@@ -1,7 +1,7 @@
 import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type IniSetting, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
+import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { mergeIni, readIni } from './ini'
@@ -9,7 +9,8 @@ import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
-import { defaultFrameGenerationMode, effectiveFrameGenerationSettings, frameGenerationOptionsForGpu, frameGenerationSettingKeys, matchFrameGenerationMode } from './frameGeneration'
+import { defaultFrameGenerationMode, effectiveFrameGenerationSettings, frameGenerationOptionsForGpu, matchFrameGenerationMode } from './frameGeneration'
+import { profileOwnedElsewhereSettingKeys, profileResolutionSettingsForHeight, profileSettingsForHeight, profilesForRecipe, selectProfileForUpdate } from './profileValues'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -778,21 +779,24 @@ function writtenPath(step: PlanStep): string | null {
  */
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
-  graphics?: GpuAdapter, refreshHz = 60,
+  graphics?: GpuAdapter, refreshHz = 60, outputHeight?: number,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before updating it.')
   // No existing-setup signatures: without a Review to explain a takeover, a setup that appeared since blocks the update instead.
   const scan = await scanDeployment(platform, gameFolder, content, record, [])
+  const targetRecipe = content.tiers[tier.id]
+  const gpuName = graphics?.name ?? record.graphics.name
+  const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, gpuName)
   const options = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], graphics?.name ?? record.graphics.name)
   const oldOptions = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
   const currentMode = oldOptions.length ? await frameGenerationModeOnDisk(platform, record) : null
   const frameGenerationMode = !options.length ? null
     : !oldOptions.length || (currentMode && !options.some((option) => option.id === currentMode))
       ? defaultFrameGenerationMode(options, refreshHz) : currentMode
-  const selection: PlanSelection = { frameGenerationOptions: options, frameGenerationMode }
-  const plan = planDeployment(content, tier, record.includeReShade, scan, keptProfile(content, tier, record.profile), record.enabled, selection)
+  const selection: PlanSelection = { gpuName, outputHeight, frameGenerationOptions: options, frameGenerationMode }
+  const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, selection)
   if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
@@ -1146,10 +1150,10 @@ export async function changePerformanceProfile(
 ): Promise<DeploymentRecord> {
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing its performance profile.')
-  const profile = record.recipe.performanceProfiles?.find((p) => p.id === profileId)
+  const profile = profilesForRecipe(record.recipe).find((p) => p.id === profileId)
   if (!profile) throw new Error('This performance profile is unavailable for the deployed tier.')
-  const frameGenerationKeys = frameGenerationSettingKeys(record.recipe.frameGenerationOptions ?? [])
-  const settings = (settingsOverride ?? profile.settings).filter((setting) =>
+  const frameGenerationKeys = profileOwnedElsewhereSettingKeys(record.recipe)
+  const settings = (settingsOverride ?? profileSettingsForHeight(profile, 2160)).filter((setting) =>
     !frameGenerationKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`))
   return changeOwnedIniSettings(platform, gameFolder, settings, (changed) => { changed.profile = profileId })
 }
@@ -1209,26 +1213,65 @@ interface DerivedConfigPlan {
   changes: ScreenDerivedChange[]
 }
 
-/** Finds owned config files whose declared screen-derived values need a write. */
+/** Finds owned config files whose screen-derived or resolution-aware profile values need a write. */
 export async function screenDerivedWriteTargets(
   platform: Platform, gameFolder: string, screen: ResolvedScreen, settings: IniSetting[] = [],
 ): Promise<string[]> {
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') return []
-  return (await screenDerivedPlan(platform, record, screen, settings)).filter((plan) => plan.beforeHash !== plan.afterHash).map((plan) => plan.file)
+  const profileSettings = await resolutionProfileSettings(platform, record, screen)
+  return (await screenDerivedPlan(platform, record, screen, [...settings, ...profileSettings]))
+    .filter((plan) => plan.beforeHash !== plan.afterHash).map((plan) => plan.file)
 }
 
-/** Applies the recipe's screen-derived values with the same durable journal and recovery path as other config writes. */
+/** Applies screen-derived and baseline-safe resolution profile values through the owned-config journal. */
 export async function applyScreenDerivedSettings(
   platform: Platform, gameFolder: string, screen: ResolvedScreen, settings: IniSetting[] = [], sideEffect?: OwnedIniSideEffect,
 ): Promise<{ record: DeploymentRecord; changes: ScreenDerivedChange[] }> {
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before updating its screen-derived settings.')
-  const allSettings = screenSettingsFor(record, screen, settings)
+  const profileSettings = await resolutionProfileSettings(platform, record, screen)
+  const allSettings = screenSettingsFor(record, screen, [...settings, ...profileSettings])
   const plans = await screenDerivedPlan(platform, record, screen, settings)
   const changes = plans.flatMap((plan) => plan.changes)
   const changed = await changeOwnedIniSettings(platform, gameFolder, allSettings, undefined, sideEffect)
   return { record: changed, changes: changes.filter((change) => change.previousValue !== change.value) }
+}
+
+/** Resolution columns follow the monitor only while each mapped value still matches Lucent's last write. */
+async function resolutionProfileSettings(platform: Platform, record: DeploymentRecord, screen: ResolvedScreen): Promise<IniSetting[]> {
+  const profile = profilesForRecipe(record.recipe).find((candidate) => candidate.id === record.profile)
+  if (!profile) return []
+  const root = joinPath(record.gameFolder, 'game')
+  const configs = new Map<string, { disk: ReturnType<typeof readIni>; baseline: ReturnType<typeof readIni> }>()
+  const load = async (path: string) => {
+    const config = Object.keys(record.ownedConfigs).find((candidate) => fileKey(candidate) === fileKey(path))
+    if (!config) return null
+    if (!configs.has(config)) {
+      let text: string
+      try { text = await platform.readText(await platform.resolveGamePath(root, config)) }
+      catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') return null; throw error }
+      if (text.includes('\0')) throw new Error(`The config cannot be read as an INI file: ${config}`)
+      configs.set(config, { disk: readIni(text), baseline: readIni(record.ownedConfigs[config]) })
+    }
+    return configs.get(config)!
+  }
+  const valueId = (file: string, section: string, key: string) => `${fileKey(file)}|${section.toLowerCase()}|${key.toLowerCase()}`
+  const current = new Map<string, string | undefined>()
+  const baseline = new Map<string, string | undefined>()
+  for (const setting of profile.settings) {
+    if (typeof setting.value === 'string') continue
+    const config = await load(setting.file)
+    if (!config) continue
+    const id = valueId(setting.file, setting.section, setting.key)
+    current.set(id, config.disk.get(setting.section, setting.key))
+    baseline.set(id, config.baseline.get(setting.section, setting.key))
+  }
+  const ownedByAnotherFeature = profileOwnedElsewhereSettingKeys(record.recipe)
+  return profileResolutionSettingsForHeight(profile, screen.height,
+    (file, section, key) => current.get(valueId(file, section, key)),
+    (file, section, key) => baseline.get(valueId(file, section, key)),
+    (file, section, key) => ownedByAnotherFeature.has(valueId(file, section, key)))
 }
 
 function screenSettingsFor(record: DeploymentRecord, screen: ResolvedScreen, extra: IniSetting[]): IniSetting[] {

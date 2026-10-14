@@ -1,6 +1,6 @@
 import { PlatformError, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
-import { assertGamePath, FRAME_GENERATION_IDS, type FrameGenerationId, type ProfileId } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, PROFILE_IDS, type FrameGenerationId, type ProfileId } from '../shared/manifest'
 import type { State } from './core'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
@@ -79,8 +79,8 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
     || !['deploy', 'repair', 'uninstall', 'recover', 'update', 'tier', 'profile', 'frame-generation', 'enabled'].includes(request.kind)
     || ((request.kind === 'deploy' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
     || (request.kind === 'tier' && typeof request.tier !== 'string')
-    || (request.kind === 'deploy' && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !['fidelity', 'balanced', 'performance'].includes(request.profile))))
-    || (request.kind === 'profile' && !['fidelity', 'balanced', 'performance'].includes(request.profile))
+    || (request.kind === 'deploy' && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !(PROFILE_IDS as readonly string[]).includes(request.profile))))
+    || (request.kind === 'profile' && !(PROFILE_IDS as readonly string[]).includes(request.profile))
     || (request.kind === 'frame-generation' && !FRAME_GENERATION_IDS.includes(request.mode))
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')
   if (request.kind === 'deploy') {
