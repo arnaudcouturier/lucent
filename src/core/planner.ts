@@ -1,7 +1,8 @@
-import { assertGamePath, DEFAULT_PROFILE, LEGACY_DEFAULT_PROFILE, type ContentFile, type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
+import { assertGamePath, DEFAULT_PROFILE, LEGACY_DEFAULT_PROFILE, type ContentFile, type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type NeuralRenderingChoice, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
 import type { ExistingSetup } from './existingSetup'
 import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profilesForRecipe, recommendedProfile } from './profileValues'
 import { effectiveFrameGenerationSettings } from './frameGeneration'
+import { mfgUnlockFor, mfgUnlockSettings, neuralRenderingSettings, normalizeNeuralRendering } from './neuralRendering'
 import { screenDerivedValue, type ScreenValues } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
@@ -32,6 +33,10 @@ export interface Plan {
   includeReShade: boolean
   profile: ProfileId | null
   frameGenerationMode: FrameGenerationId | null
+  /** The Neural Rendering picks these steps write; null when the tier has no Neural Rendering controls. */
+  neuralRendering: NeuralRenderingChoice | null
+  /** Whether the experimental multi-frame unlock is on; always false where the card isn't offered it. */
+  mfgUnlocked: boolean
   /** The HDR mode these steps write; null when the tier has no HDR. */
   hdrMode: HdrMode | null
   steps: PlanStep[]
@@ -67,6 +72,10 @@ export interface PlanSelection extends ProfilePlanContext {
   /** Options already filtered to the player's GPU. Omit to keep every manifest variant. */
   frameGenerationOptions?: FrameGenerationOption[]
   frameGenerationMode?: FrameGenerationId | null
+  /** Omit to write the card's default picks; ignored by tiers that still use performance profiles. */
+  neuralRendering?: Partial<NeuralRenderingChoice> | null
+  /** The multi-frame unlock switch, for cards the content offers it to. */
+  mfgUnlocked?: boolean
   /** Omit to apply the recipe's default HDR mode; null applies no HDR settings. */
   hdrMode?: HdrMode | null
   /** Whether Windows HDR is enabled on XIV's current display. */
@@ -95,6 +104,12 @@ export function planDeployment(
   const selectedFrameGeneration = selection.frameGenerationMode
     ? frameGenerationOptions.find((option) => option.id === selection.frameGenerationMode) ?? null
     : null
+  const controls = recipe.neuralRenderingControls ?? null
+  const frameGenerationMode = selectedFrameGeneration?.id ?? null
+  const neuralRendering = controls ? normalizeNeuralRendering(selection.neuralRendering, controls, selection.gpuName ?? '', frameGenerationMode) : null
+  const unlock = mfgUnlockFor(recipe, selection.gpuName ?? '')
+  // A mode the unlock gates needs it, so choosing one switches it on.
+  const mfgUnlocked = !!unlock && (selection.mfgUnlocked === true || (frameGenerationMode !== null && unlock.gates.includes(frameGenerationMode)))
   const hdrOptions = recipe.hdrOptions ?? []
   const hdrMode = selection.hdrMode === undefined ? (hdrOptions.length ? 'hdr' : null) : selection.hdrMode
   const selectedHdr = hdrMode === null ? null : hdrOptions.find((option) => option.id === hdrMode) ?? null
@@ -112,12 +127,14 @@ export function planDeployment(
   const contentSteps: Step[] = [
     ...recipeSteps,
     ...profileSettings.filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...(controls && neuralRendering ? neuralRenderingSettings(controls, neuralRendering) : []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...(selectedHdr?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     // The frame-generation provider follows the player's HDR choice. Windows HDR can be
     // off while the player is choosing HDR (and Lucent explains how to turn it on), so
     // deriving this from the current display state would deploy FSR for a future HDR pick.
     ...(selectedFrameGeneration ? effectiveFrameGenerationSettings(selectedFrameGeneration, hdrActive) : [])
       .filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...mfgUnlockSettings(unlock, mfgUnlocked).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...screenSettings.filter((s) => includedConfig(s.file)),
   ]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
@@ -205,7 +222,7 @@ export function planDeployment(
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
     contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null,
-    frameGenerationMode: selectedFrameGeneration?.id ?? null, hdrMode: selectedHdr?.id ?? null, steps, files, filesToDownload,
+    frameGenerationMode, neuralRendering, mfgUnlocked, hdrMode: selectedHdr?.id ?? null, steps, files, filesToDownload,
     filesToBackup: [...backups.values()], unclaimedPaths: [...unclaimed.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),

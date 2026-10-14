@@ -72,6 +72,12 @@ const choicesStep = (m: Machine, gpu: Machine, stage: 'profile' | 'review' | 'do
   if (stage === 'done') await core.deploy()
   return core
 }
+const nrPicks = (core: Core) => core.setNeuralRendering({ preset: 'dlaa' })
+const nrEverything = (core: Core) => {
+  core.setMfgUnlocked(true)
+  core.selectFrameGenerationMode('4x')
+  core.setNeuralRendering({ preset: 'ultra-quality', passes: 3, scale: 125, spatialCompression: true, residualFg: true })
+}
 const resetFlow = (stage: 'confirmation' | 'profile') => async () => {
   const core = await workflow('healthy')()
   if (stage === 'profile') await core.resetSetup()
@@ -385,6 +391,12 @@ const STATES: GalleryState[] = [
   { key: 'profile-v2-rtx4070', label: 'Profile · RTX 4070 · Balanced fallback', setup: recommendedProfileHome('NVIDIA GeForce RTX 4070') },
   { key: 'choices-rtx40-240-hdr', label: 'Profile · RTX 40, 240 Hz HDR', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090')) },
   { key: 'choices-rtx30-60', label: 'Profile · RTX 30, 60 Hz SDR', setup: choicesStep(MACHINES.choices60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
+  { key: 'nr-rtx4090', label: 'Graphics · RTX 4090, 240 Hz HDR', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090')) },
+  { key: 'nr-dlaa', label: 'Graphics · DLAA, resolution hint', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', nrPicks) },
+  { key: 'nr-everything', label: 'Graphics · Every option on', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', nrEverything) },
+  { key: 'nr-rtx30', label: 'Graphics · RTX 30, 60 Hz SDR', setup: choicesStep(MACHINES.nr60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
+  { key: 'nr-review', label: 'Review · Neural Rendering picks', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'review', nrEverything) },
+  { key: 'nr-done', label: 'Done · Neural Rendering picks', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'done', nrEverything) },
   { key: 'choices-experimental', label: 'Profile · Experimental picks (4×, Scene HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', experimentalPicks) },
   { key: 'choices-options', label: 'Options · tier without profiles (Radeon, HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002)) },
   { key: 'choices-options-intel', label: 'Options · tier without profiles (Intel, ReShade only)', setup: choicesStep(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086)) },

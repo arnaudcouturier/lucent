@@ -7,7 +7,8 @@ import pkg from './package.json' with { type: 'json' }
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  // Tests pin the app version: they compare it with fixture releases, so a version bump must not change their outcome.
+  define: { __APP_VERSION__: JSON.stringify(process.env.VITEST ? '0.2.0-beta.1' : pkg.version) },
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },
   build: { target: 'chrome120', outDir: 'dist' },
   test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'] },

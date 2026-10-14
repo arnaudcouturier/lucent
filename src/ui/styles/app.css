@@ -578,6 +578,37 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .segmented-choice-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
 .segmented-choice-option:has(input:disabled) { opacity: 0.45; cursor: default; }
 .segmented-choice-experimental { color: var(--caution-ink); font-size: 10px; line-height: 1; font-weight: 500; }
+/* Neural Rendering: one card of labelled blocks, each a control and the line that says what it does. */
+.neural-rendering { padding: var(--space-4); }
+.neural-rendering > h2 { margin-bottom: var(--space-3); }
+.nr-block + .nr-block { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.07)); }
+.nr-block > h3 { margin: 0 0 var(--space-2); color: var(--ink); font-size: var(--text-label); font-weight: 600; }
+.preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.preset-option {
+  position: relative; display: grid; gap: 2px; padding: 9px var(--space-3); border-radius: var(--r-control); cursor: pointer;
+  background: var(--control); box-shadow: var(--ring-control); color: var(--ink-2);
+  transition: background var(--duration) var(--ease), color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+.preset-option input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.preset-option strong { color: var(--ink); font-size: var(--text-label); font-weight: 500; }
+.preset-option small { color: var(--ink-3); font-size: 11px; }
+.preset-option:hover { background: var(--hover); }
+.preset-option.is-selected { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent); }
+.preset-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.preset-grid:disabled .preset-option { cursor: default; opacity: 0.45; }
+.choice-hint { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: var(--space-2) 0 0; padding: 8px var(--space-3); border-radius: var(--r-control); background: var(--accent-tint); color: var(--ink); font-size: var(--text-label); line-height: 1.4; }
+.choice-hint .btn { flex: none; }
+.nr-toggles { display: grid; gap: var(--space-2); }
+.nr-block.nr-toggles, .choice-group > .nr-toggles { margin-top: var(--space-3); }
+.toggle-row { display: flex; align-items: flex-start; gap: var(--space-3); padding: 9px var(--space-3); border-radius: var(--r-control); cursor: pointer; background: var(--control); box-shadow: var(--ring-control); transition: background var(--duration) var(--ease); }
+.toggle-row:hover { background: var(--hover); }
+.toggle-row input[role='switch'] { flex: none; margin-top: 1px; width: 34px; height: 20px; }
+.toggle-row strong { display: flex; align-items: center; gap: var(--space-2); font-weight: 500; }
+.toggle-row small { display: block; margin-top: 2px; color: var(--ink-2); font-size: var(--text-label); line-height: 1.4; }
+.toggle-row .toggle-reason { color: var(--caution-ink); }
+.toggle-row.is-unavailable { cursor: default; }
+.toggle-row.is-unavailable strong, .toggle-row.is-unavailable > span > small:not(.toggle-reason) { opacity: 0.6; }
+@media (max-width: 960px) { .preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .option-list { margin-top: var(--space-4); }
 .choice-group + .option-list, .profile-selector + .option-list { margin-top: var(--space-2); }
 .option-list.is-inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

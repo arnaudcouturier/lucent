@@ -98,6 +98,53 @@ export interface PerformanceProfile {
   gpuNamePatterns?: string[]
   settings: ProfileSetting[]
 }
+/** The DLSS presets OptiScaler can force on the game, in the order the choices are listed. */
+export const NR_PRESET_IDS = ['dlaa', 'ultra-quality', 'quality', 'balanced', 'performance', 'ultra-performance'] as const
+export type NrPresetId = typeof NR_PRESET_IDS[number]
+/** What fraction of the frame Neural Rendering works at, in percent. Above 100 the model supersamples. */
+export const NR_SCALES = [75, 100, 125] as const
+export type NrScale = typeof NR_SCALES[number]
+export const NR_PASSES = [1, 2, 3] as const
+export type NrPasses = typeof NR_PASSES[number]
+/** One DLSS preset: its upscaling ratio and the value `ForcePerfQuality` takes. */
+export interface NrPresetOption { id: NrPresetId; label: string; ratio: number; value: string }
+export interface NrToggle { key: IniKey; label: string; description: string; experimental?: boolean }
+export interface NrDefault {
+  /** Case-insensitive regular expressions matched against the graphics card's name. The last default has none. */
+  gpuNamePatterns?: string[]
+  preset: NrPresetId
+  passes: NrPasses
+}
+/** The player's Neural Rendering picks. */
+export interface NeuralRenderingChoice {
+  preset: NrPresetId
+  passes: NrPasses
+  scale: NrScale
+  spatialCompression: boolean
+  residualFg: boolean
+}
+/** The Neural Rendering controls a tier offers, replacing the performance profiles. */
+export interface NeuralRenderingControls {
+  presetKey: IniKey
+  presets: NrPresetOption[]
+  passesKey: IniKey
+  scaleKey: IniKey
+  spatialCompression: NrToggle
+  /** Only offered on these cards, and only with frame generation on. */
+  residualFg: NrToggle & { gpuNamePatterns: string[] }
+  /** The first default whose patterns match the card applies; the last one matches every card. */
+  defaults: NrDefault[]
+}
+/** A separate switch for the experimental multi-frame generation unlock. */
+export interface MfgUnlock {
+  gpuNamePatterns: string[]
+  label: string
+  description: string
+  /** Frame-generation modes that only work with the unlock on. */
+  gates: FrameGenerationId[]
+  /** Written after the frame-generation settings when the unlock is on. */
+  settings: IniSetting[]
+}
 export type Step = (
   | { kind: 'copy'; file: string; to: string }
   | { kind: 'rename'; from: string; to: string }
@@ -116,6 +163,10 @@ export interface TierRecipe {
   performanceProfiles?: LegacyPerformanceProfile[]
   /** Four profiles with resolution-aware values; safely ignored by Lucent 0.1.x. */
   performanceProfilesV2?: PerformanceProfile[]
+  /** Specific Neural Rendering controls in place of profiles; unknown to apps before 0.3.0. */
+  neuralRenderingControls?: NeuralRenderingControls
+  /** The experimental multi-frame generation unlock, offered as its own switch. */
+  mfgUnlock?: MfgUnlock
   /** Optional frame-generation choices; unknown to apps that predate this field. */
   frameGenerationOptions?: FrameGenerationOption[]
   /** Settings computed from XIV's current monitor; unknown to Lucent 0.1.x. */
@@ -399,6 +450,62 @@ function performanceProfile(value: unknown): PerformanceProfile {
     ...(summary !== undefined ? { summary } : {}),
     ...(gpuNamePatterns ? { gpuNamePatterns } : {}), settings }
 }
+function gpuPatterns(value: unknown, field: string): string[] {
+  const list = array(value, field).map((v) => {
+    const pattern = nonemptyString(v, field)
+    try { new RegExp(pattern, 'i') } catch { invalid(`Invalid ${field}: ${pattern}`) }
+    return pattern
+  })
+  if (!list.length) invalid(`${field} cannot be empty.`)
+  return list
+}
+function nrToggle(value: unknown, field: string): NrToggle {
+  const t = object(value, field)
+  if (t.experimental !== undefined && typeof t.experimental !== 'boolean') invalid(`${field} experimental must be a boolean.`)
+  return { key: iniKey(t.key), label: singleLine(t.label, `${field} label`), description: singleLine(t.description, `${field} description`),
+    ...(t.experimental === undefined ? {} : { experimental: t.experimental }) }
+}
+function neuralRenderingControls(value: unknown): NeuralRenderingControls {
+  const c = object(value, 'Neural Rendering controls')
+  const order = NR_PRESET_IDS as readonly string[]
+  const presets = array(c.presets, 'Neural Rendering presets').map((v): NrPresetOption => {
+    const p = object(v, 'Neural Rendering preset')
+    if (!order.includes(p.id as string)) invalid('Unknown Neural Rendering preset.')
+    if (typeof p.ratio !== 'number' || !(p.ratio >= 1 && p.ratio <= 4)) invalid('A preset ratio must be between 1 and 4.')
+    const presetValue = nonemptyString(p.value, 'Preset value')
+    if (/[\r\n\0]/.test(presetValue)) invalid('Preset values must be single-line strings.')
+    return { id: p.id as NrPresetId, label: singleLine(p.label, 'Preset label'), ratio: p.ratio, value: presetValue }
+  })
+  unique(presets.map((p) => p.id), 'Neural Rendering preset ids')
+  if (presets.length !== NR_PRESET_IDS.length) invalid('The Neural Rendering presets must include all six DLSS presets.')
+  presets.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+  const defaults = array(c.defaults, 'Neural Rendering defaults').map((v): NrDefault => {
+    const d = object(v, 'Neural Rendering default')
+    if (!order.includes(d.preset as string)) invalid('Unknown default preset.')
+    if (!(NR_PASSES as readonly unknown[]).includes(d.passes)) invalid('Default passes must be 1, 2 or 3.')
+    return { ...(d.gpuNamePatterns === undefined ? {} : { gpuNamePatterns: gpuPatterns(d.gpuNamePatterns, 'default GPU name pattern') }),
+      preset: d.preset as NrPresetId, passes: d.passes as NrPasses }
+  })
+  if (!defaults.length || defaults.at(-1)!.gpuNamePatterns) invalid('The last Neural Rendering default must match every card.')
+  if (defaults.slice(0, -1).some((d) => !d.gpuNamePatterns)) invalid('Only the last Neural Rendering default may match every card.')
+  const residual = object(c.residualFg, 'Residual frame generation')
+  return { presetKey: iniKey(c.presetKey), presets, passesKey: iniKey(c.passesKey), scaleKey: iniKey(c.scaleKey),
+    spatialCompression: nrToggle(c.spatialCompression, 'Spatial compression'),
+    residualFg: { ...nrToggle(residual, 'Residual frame generation'), gpuNamePatterns: gpuPatterns(residual.gpuNamePatterns, 'residual GPU name pattern') }, defaults }
+}
+function mfgUnlock(value: unknown): MfgUnlock {
+  const m = object(value, 'Multi-frame unlock')
+  const gates = array(m.gates, 'Multi-frame unlock gates').map((id) => {
+    if (!FRAME_GENERATION_IDS.includes(id as FrameGenerationId) || id === 'off' || id === '2x') invalid('A multi-frame unlock gates 3× to 6× or Dynamic.')
+    return id as FrameGenerationId
+  })
+  if (!gates.length) invalid('A multi-frame unlock must gate at least one mode.')
+  unique(gates, 'Multi-frame unlock gates')
+  const settings = array(m.settings, 'Multi-frame unlock settings').map((setting) => iniSetting(object(setting, 'Multi-frame unlock setting')))
+  if (!settings.length) invalid('A multi-frame unlock needs settings.')
+  return { gpuNamePatterns: gpuPatterns(m.gpuNamePatterns, 'unlock GPU name pattern'), label: singleLine(m.label, 'Unlock label'),
+    description: singleLine(m.description, 'Unlock description'), gates, settings }
+}
 function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
   const v = object(value, 'Content version')
   const id = nonemptyString(v.id, 'Content version id')
@@ -474,6 +581,8 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       }
       recipes[id].hdrOptions = options
     }
+    if (r.neuralRenderingControls !== undefined) recipes[id].neuralRenderingControls = neuralRenderingControls(r.neuralRenderingControls)
+    if (r.mfgUnlock !== undefined) recipes[id].mfgUnlock = mfgUnlock(r.mfgUnlock)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
     const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
     for (const s of recipe) {
@@ -487,6 +596,12 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     }
     for (const s of (recipes[id].screenDerivedSettings ?? [])) ownedConfig(s.file)
     for (const s of (recipes[id].hdrOptions ?? []).flatMap((option) => option.settings)) ownedConfig(s.file)
+    const nr = recipes[id].neuralRenderingControls
+    if (nr) {
+      if (recipes[id].performanceProfilesV2 || recipes[id].performanceProfiles?.length) invalid('A tier offers Neural Rendering controls or performance profiles, not both.')
+      for (const key of [nr.presetKey, nr.passesKey, nr.scaleKey, nr.spatialCompression.key, nr.residualFg.key]) ownedConfig(key.file)
+    }
+    for (const s of recipes[id].mfgUnlock?.settings ?? []) ownedConfig(s.file)
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
     : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))

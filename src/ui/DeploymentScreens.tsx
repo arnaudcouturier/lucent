@@ -10,6 +10,7 @@ import { EasedNumber, ProgressBar, percentLabel } from './Progress'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { sizeLabel } from '../core/format'
 import { frameGenerationLabel, hdrLabel } from '../core/choices'
+import { neuralRenderingExtras, neuralRenderingSummary } from '../core/neuralRendering'
 import { frameGenerationDescription } from '../core/frameGeneration'
 import type { HdrMode } from '../shared/manifest'
 
@@ -35,6 +36,8 @@ export function ReviewScreen() {
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   const profile = profiles.find((p) => p.id === plan.profile)
+  const controls = plan.recipe.neuralRenderingControls ?? null
+  const extras = plan.neuralRendering ? neuralRenderingExtras(controls, plan.neuralRendering) : []
   return <Screen title="Review" sub={setupMode === 'reset' ? 'Here’s the tested setup Lucent will write again.' : setupMode === 'tier' ? 'Here’s the setup for this graphics card.' : 'Here’s what Lucent will put in your game folder.'}>
     {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <dl className="card plan-numbers">
@@ -44,7 +47,8 @@ export function ReviewScreen() {
     </dl>
     <dl className="card summary-list">
       {profile && <div><dt>Profile</dt><dd>{profile.label}</dd></div>}
-      {plan.frameGenerationMode && <div><dt>Frame generation</dt><dd>{frameGenerationLabel(plan.frameGenerationMode)}{screen && <small>{frameGenerationDescription(plan.frameGenerationMode, screen.frameCap, screen.refreshHz)}</small>}</dd></div>}
+      {plan.neuralRendering && <div><dt>Neural Rendering</dt><dd>{neuralRenderingSummary(controls, plan.neuralRendering)}{extras.length > 0 && <small>{extras.join(' and ')} on.</small>}</dd></div>}
+      {plan.frameGenerationMode && <div><dt>Frame generation</dt><dd>{frameGenerationLabel(plan.frameGenerationMode)}{screen && <small>{frameGenerationDescription(plan.frameGenerationMode, screen.frameCap, screen.refreshHz)}</small>}{plan.mfgUnlocked && <small>Multi-frame unlock on.</small>}</dd></div>}
       {plan.hdrMode && <div><dt>HDR</dt><dd>{hdrLabel(plan.hdrMode)}{hdrNote(plan.hdrMode, !!screen?.hdrSupported)}</dd></div>}
       <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
@@ -131,6 +135,8 @@ function ChosenSetup() {
   const profile = profiles.find((p) => p.id === deployment.profile)
   const chosen = [
     profile && `${profile.label} profile`,
+    deployment.neuralRendering && `Neural Rendering ${neuralRenderingSummary(deployment.recipe.neuralRenderingControls ?? null, deployment.neuralRendering)}`,
+    ...(deployment.neuralRendering ? neuralRenderingExtras(deployment.recipe.neuralRenderingControls ?? null, deployment.neuralRendering) : []),
     deployment.frameGenerationMode && `Frame generation ${frameGenerationLabel(deployment.frameGenerationMode)}`,
     deployment.hdrMode && `HDR ${hdrLabel(deployment.hdrMode)}`,
     deployment.includeReShade && 'ReShade',

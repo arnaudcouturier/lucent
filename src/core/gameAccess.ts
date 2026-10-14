@@ -1,6 +1,6 @@
 import { PlatformError, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
-import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, PROFILE_IDS, type FrameGenerationId, type HdrMode, type ProfileId } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, NR_PASSES, NR_PRESET_IDS, NR_SCALES, PROFILE_IDS, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId } from '../shared/manifest'
 import type { State } from './core'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
@@ -42,13 +42,17 @@ export async function guardGameWrites(platform: Platform, gameFolder: string): P
 }
 
 export type GameWriteRequest = { gameFolder: string } & (
-  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; reviewedPaths: string[] }
-  | { kind: 'reset'; contentVersion: string; tier: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; reviewedPaths: string[]; backupPath: string }
+  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[] }
+  | { kind: 'reset'; contentVersion: string; tier: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[]; backupPath: string }
   | { kind: 'repair' | 'uninstall' | 'recover' }
   | { kind: 'update'; contentVersion: string }
   | { kind: 'tier'; tier: string; contentVersion: string }
   | { kind: 'enabled'; enabled: boolean }
 )
+
+const validNeuralRendering = (value: NeuralRenderingChoice) => !!value && typeof value === 'object'
+  && (NR_PRESET_IDS as readonly string[]).includes(value.preset) && (NR_PASSES as readonly number[]).includes(value.passes) && (NR_SCALES as readonly number[]).includes(value.scale)
+  && typeof value.spatialCompression === 'boolean' && typeof value.residualFg === 'boolean'
 
 const resumeDirectory = async (platform: Platform) => joinPath(await platform.envFolder('LocalAppData'), 'Lucent')
 
@@ -81,7 +85,9 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
     || ((request.kind === 'reset' || request.kind === 'tier') && typeof request.tier !== 'string')
     || ((request.kind === 'deploy' || request.kind === 'reset') && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !(PROFILE_IDS as readonly string[]).includes(request.profile))
       || (request.frameGenerationMode !== null && !(FRAME_GENERATION_IDS as readonly string[]).includes(request.frameGenerationMode as string))
-      || (request.hdrMode !== null && !(HDR_MODES as readonly string[]).includes(request.hdrMode as string))))
+      || (request.hdrMode !== null && !(HDR_MODES as readonly string[]).includes(request.hdrMode as string))
+      || (request.mfgUnlocked !== undefined && typeof request.mfgUnlocked !== 'boolean')
+      || (request.neuralRendering !== undefined && request.neuralRendering !== null && !validNeuralRendering(request.neuralRendering))))
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')
   if (request.kind === 'deploy' || request.kind === 'reset') {
     if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')

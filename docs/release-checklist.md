@@ -27,9 +27,11 @@ the vanilla game folder's relative file paths and bytes before the first deploym
 the listing outside the game folder. Compare against it after uninstall, accounting separately
 for files the game itself generates. Use two real content versions for the update checks.
 
-- [ ] Deploy from a vanilla game folder, picking a profile on the Profile step; confirm the game
-  picks up its settings.
-- [ ] On the Profile step, confirm the frame generation modes match the card (RTX 4090 vs RTX 3080), the
+- [ ] Deploy from a vanilla game folder, picking a DLSS preset, passes and Neural Rendering resolution on the Graphics
+  step; confirm the game picks up its settings (`ForcePerfQuality`, `Passes`, `WorkingScale` in `OptiScaler.ini`).
+- [ ] On the Graphics step, confirm the DLAA hint (75%), that residual frame generation is greyed out with a reason on RTX 30 and with
+  frame generation Off, and that Unlock multi-frame generation gates 3×–6× and Dynamic on RTX 40 while 2× works with it on or off.
+- [ ] On the Graphics step, confirm the frame generation modes match the card (RTX 4090 vs RTX 3080), the
   default is 2× at 120 Hz and up and Off below, HDR is offered only on an HDR monitor, and the line under each
   choice reads correctly. Deploy with HDR on: Windows Auto HDR is off for `ffxiv_dx11.exe` afterwards, and
   Uninstall puts it back. The step is usable at 1000×680 and 880×600 (it scrolls above its pinned actions in the

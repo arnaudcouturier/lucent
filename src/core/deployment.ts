@@ -1,4 +1,4 @@
-import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
@@ -41,6 +41,10 @@ export interface DeploymentRecord {
   enabled: boolean
   profile?: ProfileId | null
   frameGenerationMode?: FrameGenerationId | null
+  /** The first-install Neural Rendering picks, kept so Reset can offer them again. Absent for content with performance profiles. */
+  neuralRendering?: NeuralRenderingChoice | null
+  /** Whether the experimental multi-frame unlock was on at install. */
+  mfgUnlocked?: boolean
   /** The first-install HDR choice, kept so Reset can offer it again. Absent from 0.1.1 deployments until `migrateDeployment` infers it. */
   hdrMode?: HdrMode | null
   /** An interrupted change to a complete deployment (a profile change or a repair) undoes only the journal entries from this index onward. */
@@ -488,7 +492,7 @@ export async function deployContent(
   await requireGameStopped(platform)
   const record: DeploymentRecord = {
     schemaVersion: 1, status: 'applying', gameFolder, tier: tier.id, graphics, contentVersion: content.id,
-    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode, recipe: plan.recipe, journal: [], createdDirectories: [],
+    includeReShade: plan.includeReShade, enabled: true, profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, neuralRendering: plan.neuralRendering, mfgUnlocked: plan.mfgUnlocked, hdrMode: plan.hdrMode, recipe: plan.recipe, journal: [], createdDirectories: [],
     cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files)],
     generatedFiles: plan.recipe.generatedFiles.map((p) => p.path).filter((p) => !present.has(fileKey(p)) || takenOver.has(fileKey(p))), undoCheckpoints: { id: crypto.randomUUID(), size: plan.steps.length + (autoHdr ? 1 : 0) + 1 }, files: {},
     backupFolder,
@@ -1067,14 +1071,16 @@ export async function updateDeployment(
       // tier has its own options, so the choices that tier's baseline was written with replace them.
       ...(reset ? {
         profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode,
+        neuralRendering: plan.neuralRendering, mfgUnlocked: plan.mfgUnlocked,
       } : tier.id === record.tier ? {
+        neuralRendering: record.neuralRendering ?? plan.neuralRendering, mfgUnlocked: record.mfgUnlocked ?? plan.mfgUnlocked,
         // Migration records the old two-pass Fidelity as Ultra even while a legacy recipe still only exposes Fidelity.
         // Keep that stored choice until four-profile content can represent it; the plan itself still uses legacy Fidelity
         // settings through selectProfileForUpdate.
         profile: record.profile === 'ultra' && targetRecipe.performanceProfilesV2 === undefined
           ? record.profile : plan.profile ?? record.profile ?? null,
       }
-        : { profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode }),
+        : { profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode, neuralRendering: plan.neuralRendering, mfgUnlocked: plan.mfgUnlocked }),
       recipe: plan.recipe,
       // Another tier's recipes can't be rolled back to on this graphics card.
       cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...previousSnapshots].slice(0, 3),

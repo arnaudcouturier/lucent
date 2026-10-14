@@ -320,6 +320,21 @@ Uninstalling Lucent from Settings → Apps also removes Lucent's two XIVLauncher
 whether or not the game folder is restored. If XIVLauncher is running, the uninstall still finishes and
 says to remove them in XIVLauncher's settings. No XIVLauncher, or no Lucent add-ons, changes nothing.
 
+## Neural Rendering controls
+
+A tier may declare `neuralRenderingControls` in place of profiles (a tier with both is invalid). Lucent 0.3.0
+and later offer them on the Graphics step and write the picks once, like the profile values they replace:
+
+- `presetKey` and `presets`: all six DLSS presets (`dlaa`, `ultra-quality`, `quality`, `balanced`, `performance`, `ultra-performance`), each with a `label`, the upscaling `ratio` shown to the player and the `value` written to `presetKey`.
+- `passesKey` takes 1, 2 or 3; `scaleKey` takes the fraction for 75%, 100% or 125% (the app writes `0.750000`, `1.000000` or `1.250000`).
+- `spatialCompression` and `residualFg`: a `key`, a `label`, a plain `description` and an optional `experimental` flag. `residualFg` also lists the `gpuNamePatterns` it is offered to; it is only on with frame generation at 2× or higher.
+- `defaults`: the first entry whose `gpuNamePatterns` match the card gives the preset and passes; the last entry has no patterns and matches every card. The resolution starts at 100% and both switches off.
+
+Every key must target an owned config. An optional `mfgUnlock` (`gpuNamePatterns`, `label`, `description`, `gates`, `settings`) adds the
+experimental unlock as its own switch: without it the `gates` modes (3×–6× and Dynamic) are not offered, and with it
+the `settings` are written after the frame-generation values, so 2× can use the unlock too. A mode in `gates`
+that is already stored turns the switch on. The record keeps the picks (`neuralRendering`, `mfgUnlocked`) for Reset.
+
 ## Performance profiles
 
 Older content may supply `performanceProfiles`: the three legacy IDs `fidelity`, `balanced` and

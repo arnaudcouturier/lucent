@@ -1,6 +1,6 @@
 // Tiny, inert content for tests and browser development. Never published or used by the real app.
 import manifest from '../../manifest.json'
-import type { ContentVersion, HdrOption, Manifest, PerformanceProfile, TierRecipe } from '../shared/manifest'
+import type { ContentVersion, HdrOption, Manifest, MfgUnlock, NeuralRenderingControls, PerformanceProfile, TierRecipe } from '../shared/manifest'
 
 export const OPTISCALER_HASH = 'f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02'
 export const RESHADE_HASH = '2b2b1cc6036edf59fae14ea7237a88c38ca7f425b0467046493061c18dc3d3ce'
@@ -72,7 +72,9 @@ const rtx30FrameGeneration = ['off', '2x'].map((id) => ({
 const rtx40FrameGeneration = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'].map((id) => ({
   id: id as 'off' | '2x' | '3x' | '4x' | '5x' | '6x' | 'dynamic',
   gpuNamePatterns: ['\\bRTX\\s+40[0-9]{2}\\b'], experimental: ['3x', '4x', '5x', '6x'].includes(id),
-  settings: [frameGenerationSetting(id), frameGenerationBackend('rtx40')],
+  // As in the published content, every mode writes the unlock key itself: the modes that need it turn it on.
+  settings: [frameGenerationSetting(id), frameGenerationBackend('rtx40'),
+    { file: 'OptiScaler.ini', section: 'DLSSG', key: 'AdaMfgUnlock', value: ['off', '2x'].includes(id) ? 'false' : 'true' }],
 }))
 
 const profileSetting = (key: string, value: string) => ({ file: 'OptiScaler.ini', section: 'DlssNr', key, value })
@@ -194,3 +196,51 @@ export const BETA_CONTENT: ContentVersion = {
 }
 export const BETA_MANIFEST: Manifest = { ...PROFILE_MANIFEST, versions: [PROFILE_CONTENT, BETA_CONTENT] }
 export const betaFixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.11.10/${hash}`
+
+const nrKey = (section: string, key: string) => ({ file: 'OptiScaler.ini', section, key })
+/** The Neural Rendering controls as the published content declares them; inert values for tests and the gallery. */
+export const NEURAL_RENDERING_CONTROLS: NeuralRenderingControls = {
+  presetKey: nrKey('QualityOverrides', 'ForcePerfQuality'),
+  presets: [
+    { id: 'dlaa', label: 'DLAA', ratio: 1, value: '5' },
+    { id: 'ultra-quality', label: 'Ultra Quality', ratio: 1.3, value: '4' },
+    { id: 'quality', label: 'Quality', ratio: 1.5, value: '2' },
+    { id: 'balanced', label: 'Balanced', ratio: 1.7, value: '1' },
+    { id: 'performance', label: 'Performance', ratio: 2, value: '0' },
+    { id: 'ultra-performance', label: 'Ultra Performance', ratio: 3, value: '3' },
+  ],
+  passesKey: nrKey('DlssNr', 'Passes'),
+  scaleKey: nrKey('DlssNr', 'WorkingScale'),
+  spatialCompression: {
+    key: nrKey('DlssNr', 'SpatialCompression'), label: 'Spatial compression',
+    description: 'Saves performance by giving the edges of the screen less Neural Rendering detail. The centre is untouched.',
+  },
+  residualFg: {
+    key: nrKey('DlssNr', 'ResidualFG'), label: 'Residual frame generation', experimental: true,
+    description: 'Runs Neural Rendering on every second frame and lets NVIDIA frame generation fill the rest. Faster, but the image arrives one frame late, so motion blur and the HUD can look slightly off.',
+    gpuNamePatterns: ['RTX\\s?40[0-9]{2}', 'RTX\\s?50[0-9]{2}'],
+  },
+  defaults: [
+    { gpuNamePatterns: ['RTX\\s?4090', 'RTX\\s?4080', 'RTX\\s?5090', 'RTX\\s?5080'], preset: 'quality', passes: 2 },
+    { gpuNamePatterns: ['RTX\\s?4070\\s?Ti', 'RTX\\s?5070\\s?Ti', 'RTX\\s?3090', 'RTX\\s?3080\\s?Ti'], preset: 'quality', passes: 1 },
+    { preset: 'balanced', passes: 1 },
+  ],
+}
+export const MFG_UNLOCK: MfgUnlock = {
+  gpuNamePatterns: ['RTX\\s?40[0-9]{2}'], label: 'Unlock multi-frame generation',
+  description: 'Adds 3× to 6× and Dynamic on RTX 40, which NVIDIA doesn’t officially support. It also works with 2×.',
+  gates: ['3x', '4x', '5x', '6x', 'dynamic'], settings: [{ ...nrKey('DLSSG', 'AdaMfgUnlock'), value: 'true' }],
+}
+
+/** Inert Neural Rendering controls in place of profiles, for tests and the gallery; these values are never published. */
+export const NEURAL_RENDERING_MANIFEST: Manifest = {
+  ...HDR_FRAME_GENERATION_MANIFEST,
+  versions: HDR_FRAME_GENERATION_MANIFEST.versions.map((content) => ({
+    ...content,
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => {
+      if (!id.startsWith('rtx-')) return [id, tier]
+      const { performanceProfiles: _legacy, performanceProfilesV2: _profiles, ...rest } = tier
+      return [id, { ...rest, neuralRenderingControls: NEURAL_RENDERING_CONTROLS, ...(id === 'rtx-30-40' ? { mfgUnlock: MFG_UNLOCK } : {}) }]
+    })),
+  })),
+}

@@ -5,7 +5,7 @@ import type { MonitorInfo } from '../core/platform'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
 import { appBetaReleaseHost } from './appUpdateFixture'
-import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, HDR_FRAME_GENERATION_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
+import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, HDR_FRAME_GENERATION_MANIFEST, NEURAL_RENDERING_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -147,6 +147,11 @@ export function firstInstallContentHost(): Machine {
   return { remoteText: { [MANIFEST_URL]: JSON.stringify(HDR_FRAME_GENERATION_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
 }
 
+/** First-install choices with Neural Rendering controls in place of profiles, frame generation, HDR and the multi-frame unlock. */
+export function neuralRenderingContentHost(): Machine {
+  return { remoteText: { [MANIFEST_URL]: JSON.stringify(NEURAL_RENDERING_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
+}
+
 /** The release host after the next content version is published: its manifest and its one new asset. */
 export function nextContentHost(): Machine {
   return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(NEXT_MANIFEST), [nextFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
@@ -205,6 +210,8 @@ export const MACHINES = {
   /** First-install choices on a 240 Hz HDR panel (RTX 40) and a 60 Hz SDR one (RTX 30), with frame generation, HDR and four profiles. */
   choices240Hdr: machine(screenGallery(240, true, false, firstInstallContentHost()), graphicsCard()),
   choices60Sdr: machine(screenGallery(60, false, false, firstInstallContentHost()), graphicsCard('NVIDIA GeForce RTX 3080')),
+  nr240Hdr: machine(screenGallery(240, true, false, neuralRenderingContentHost()), graphicsCard()),
+  nr60Sdr: machine(screenGallery(60, false, false, neuralRenderingContentHost()), graphicsCard('NVIDIA GeForce RTX 3080')),
   /** Beta content and an app pre-release are published; turn on Beta channel in Settings to be offered them. */
   beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>

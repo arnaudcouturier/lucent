@@ -49,7 +49,7 @@ export function Rail() {
   const [state] = useCore()
   const crystal = crystalState(state)
   const choices = setupChoices(state)
-  const steps = [{ kind: 'scan', title: 'Scan' }, ...(choices.any ? [{ kind: 'profile', title: choices.profiles ? 'Profile' : 'Options' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
+  const steps = [{ kind: 'scan', title: 'Scan' }, ...(choices.any ? [{ kind: 'profile', title: choices.profiles ? 'Profile' : choices.neuralRendering ? 'Graphics' : 'Options' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
   const step = steps.findIndex((s) => s.kind === state.activity.kind)
   const main = state.activity.kind === 'deployment'
   return (
