@@ -27,7 +27,7 @@ Lucent is a portable Windows app that manages graphics mods for XIV. It installs
 **[Lucent.exe](https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe)** &nbsp;·&nbsp; Windows 10 22H2 or 11 &nbsp;·&nbsp; x64
 
 > [!NOTE]
-> The first release isn't out yet. Until it is, [run from source](#development).
+> The first release isn't out yet.
 
 Lucent.exe isn't code-signed, so Windows warns on first launch. The site shows [what to expect](https://arnaudcouturier.github.io/lucent/#smartscreen) and how to verify the file.
 
@@ -69,26 +69,6 @@ Lucent installs other people's work. Each component ships with its licence.
 | SweetFX | [CeeJay.dk and contributors](https://github.com/CeeJayDK/SweetFX) |
 | Alive presets | [Wafflezs](https://www.nexusmods.com/finalfantasy14/mods/156) |
 | ipsuShade | [ipsusu](https://github.com/ipsusu/ipsuShade) |
-
-## Development
-
-```sh
-npm ci
-npm run dev          # UI in a browser, on a fake machine
-npm run tauri dev    # the real app
-npm test             # TypeScript tests
-npm run test:rust    # Rust tests
-npm run typecheck
-```
-
-`src/core/` is framework-free and reaches the machine only through the Platform port. `src-tauri/` is the Tauri 2 shell that implements it.
-
-| | |
-|:--|:--|
-| [CONTEXT.md](CONTEXT.md) | Glossary |
-| [docs/decisions.md](docs/decisions.md) | Design decisions |
-| [docs/publishing.md](docs/publishing.md) | Publishing a content version |
-| [docs/release-checklist.md](docs/release-checklist.md) | Cutting an app release |
 
 ## Licence
 
