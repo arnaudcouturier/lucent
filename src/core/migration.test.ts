@@ -104,6 +104,9 @@ it('an update after the migration keeps the tuned configs, and Repair puts back 
   await core.update()
   expect(core.getState().error).toBeNull()
   expect(core.getState().deployment?.contentVersion).toBe('2026.11.02')
+  // A legacy recipe still writes its two-pass Fidelity settings, but the migrated stored choice remains Ultra until
+  // four-profile content can represent it.
+  expect(core.getState().deployment?.profile).toBe('ultra')
   expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toBe(tuned)
 
   await platform.removeFile(`${GAME}\\OptiScaler.ini`)

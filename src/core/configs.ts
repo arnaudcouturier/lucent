@@ -3,7 +3,7 @@ import type { ConfigPath, ConfigUpdateRule } from '../shared/manifest'
 import { readIni } from './ini'
 import { joinPath } from './paths'
 import { fileKey, type Plan } from './planner'
-import type { Platform } from './platform'
+import { PlatformError, type Platform } from './platform'
 
 /** `keep` when the content gives the file no rule. */
 export const updateRule = (config: ConfigPath): ConfigUpdateRule => config.update ?? 'keep'
@@ -68,10 +68,26 @@ export function configUpdateNotes(configs: ConfigPath[], deployedFiles: Iterable
   ]
 }
 
-/** A config's text, or null when it can't be read as text: it is missing, locked, or binary. */
-export async function readableText(platform: Platform, path: string): Promise<string | null> {
+export type ConfigRead =
+  | { kind: 'readable'; text: string }
+  | { kind: 'missing' }
+  | { kind: 'unreadable' }
+  | { kind: 'locked'; error: PlatformError }
+
+/** Reads a config while preserving the distinction between a missing file and a file locked by another process. */
+export async function readConfig(platform: Platform, path: string): Promise<ConfigRead> {
   try {
     const text = await platform.readText(path)
-    return text.includes('\0') ? null : text
-  } catch { return null }
+    return text.includes('\0') ? { kind: 'unreadable' } : { kind: 'readable', text }
+  } catch (error) {
+    if (error instanceof PlatformError && error.kind === 'not-found') return { kind: 'missing' }
+    if (error instanceof PlatformError && error.kind === 'locked') return { kind: 'locked', error }
+    return { kind: 'unreadable' }
+  }
+}
+
+/** A config's text, or null when it is missing or cannot be read as text. */
+export async function readableText(platform: Platform, path: string): Promise<string | null> {
+  const result = await readConfig(platform, path)
+  return result.kind === 'readable' ? result.text : null
 }

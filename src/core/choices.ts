@@ -44,9 +44,15 @@ export function storedHdrChoice(recipe: TierRecipe, stored: HdrMode | null): Hdr
  */
 export function storedSelection(stored: { frameGenerationMode?: FrameGenerationId | null; hdrMode?: HdrMode | null }, recipe: TierRecipe, gpuName: string, screen: ResolvedScreen | null): PlanSelection {
   const frameGenerationOptions = frameGenerationOptionsForGpu(recipe.frameGenerationOptions ?? [], gpuName)
+  // A null value means the player chose no frame generation (the 0.1.1 migration
+  // also records this explicitly). It must not be treated like the card's current
+  // default when a later content version starts offering frame generation.
+  const frameGenerationMode = stored.frameGenerationMode == null
+    ? frameGenerationOptions.some((option) => option.id === 'off') ? 'off' : null
+    : frameGenerationChoice(frameGenerationOptions, stored.frameGenerationMode, screen?.refreshHz ?? 60)
   return {
     gpuName, outputHeight: screen?.height, frameGenerationOptions,
-    frameGenerationMode: frameGenerationChoice(frameGenerationOptions, stored.frameGenerationMode ?? null, screen?.refreshHz ?? 60),
+    frameGenerationMode,
     hdrMode: storedHdrChoice(recipe, stored.hdrMode ?? null), hdrOn: screen?.hdrOn ?? false, screen,
   }
 }

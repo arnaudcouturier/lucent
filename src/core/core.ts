@@ -671,7 +671,10 @@ export function createCore(platform: Platform): Core {
         : operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
       const targetGraphics = graphics ?? (state.graphics.status === 'found' && state.graphics.tier?.id === tier.id ? state.graphics.adapter : undefined)
-      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, await refreshScreen(), (line) => log.write('info', `Config ${line}`))
+      const rollbackConfigBackups = operation === 'rollback'
+        ? deployment.cachedVersions?.find((version) => version.content.id === content.id && version.tier.id === tier.id)?.configBackups ?? {}
+        : undefined
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, await refreshScreen(), (line) => log.write('info', `Config ${line}`), rollbackConfigBackups)
       applied = true
       log.write('success', `${title} finished in ${elapsed(since)}`)
       set({ deployment: record, ...recordedChoices(record) })

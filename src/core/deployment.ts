@@ -5,7 +5,7 @@ import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentS
 import { detectExistingSetups } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { addMissingKeys, readIni } from './ini'
-import { configBaselineAssets, configBaselines, readableText, updateRule } from './configs'
+import { configBaselineAssets, configBaselines, readConfig, readableText, updateRule } from './configs'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
@@ -220,6 +220,13 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     if (!Array.isArray(value.cachedVersions) || value.cachedVersions.length > 3) throw new Error('The content cache record is damaged.')
     for (const cached of value.cachedVersions) {
       if (!cached?.tier || cached.tier.id !== value.tier) throw new Error('The cached tier is damaged.')
+      if (cached.configBackups !== undefined) {
+        if (!cached.configBackups || typeof cached.configBackups !== 'object' || Array.isArray(cached.configBackups)) throw new Error('The cached config history is damaged.')
+        for (const [path, hash] of Object.entries(cached.configBackups)) {
+          assertGamePath(path)
+          if (hash !== null && !/^[a-f0-9]{64}$/.test(hash)) throw new Error('The cached config backup hash is invalid.')
+        }
+      }
       validateManifest({ schemaVersion: 2, tiers: [{ ...cached.tier, gpuMatch: 'any' }], versions: [cached.content] })
     }
   }
@@ -792,6 +799,8 @@ function writtenPath(step: PlanStep): string | null {
 export async function updateDeployment(
   platform: Platform, gameFolder: string, content: ContentVersion, tier: Tier, source: ContentSource, report: (progress: DeploymentProgress) => void,
   graphics?: GpuAdapter, screen: ResolvedScreen | null = null, note: (line: string) => void = () => {},
+  /** Rollback restores configs journaled when the target version was left, ignoring the target's update rules. */
+  rollbackConfigBackups?: Record<string, string | null>,
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
@@ -820,31 +829,93 @@ export async function updateDeployment(
     let steps: PlanStep[] = plan.steps
     let expectedFiles = plan.expectedFiles
     const notes: string[] = []
-    // A config the player has keeps whatever its rule says; a missing, unreadable or new one is written from the baseline.
+    // A config the player has keeps whatever its rule says. A missing or unreadable config is only written by a rule that
+    // explicitly asks for content; `keep` leaves it alone so Repair remains the operation that restores it. A locked config
+    // is a separate failure: it must not be mistaken for a missing file and overwritten while another process holds it.
     const keptConfigs: string[] = []
+    const untouchedConfigs: string[] = []
+    const removeConfigSteps = (key: string) => {
+      const staging = new Set(steps.flatMap((s) => s.kind === 'rename' && fileKey(s.to) === key ? [fileKey(s.from)] : []))
+      const writes = (step: PlanStep) => { const target = writtenPath(step); return !!target && (fileKey(target) === key || staging.has(fileKey(target))) }
+      const first = steps.findIndex(writes)
+      steps = steps.filter((step) => !writes(step))
+      expectedFiles = expectedFiles.filter((f) => fileKey(f.path) !== key)
+      return Math.max(first, 0)
+    }
     for (const config of plan.recipe.ownedConfigs) {
       const key = fileKey(config.path)
       const rule = updateRule(config)
       const deployed = Object.keys(record.files).some((path) => fileKey(path) === key)
       const diskPath = await platform.resolveGamePath(root, config.path)
-      const diskText = deployed && (await maybeStat(platform, diskPath))?.kind === 'file' ? await platform.readText(diskPath) : null
-      if (diskText === null || diskText.includes('\0')) {
+      const state = deployed ? await readConfig(platform, diskPath) : { kind: 'missing' as const }
+      const stampedPath = Object.keys(record.files).find((path) => fileKey(path) === key)
+      if (state.kind === 'locked') {
+        // `keep` never needs to inspect or write the player's file. A replacement or rollback must fail clearly rather
+        // than making a decision from a file another process currently has open.
+        if (rollbackConfigBackups || rule !== 'keep') throw state.error
+        removeConfigSteps(key)
+        if (stampedPath) untouchedConfigs.push(stampedPath)
+        notes.push(`${config.path}: locked, kept as it is`)
+        continue
+      }
+
+      // Rollback uses the backup made when this version was left. Every other config stays exactly as it is, even if the
+      // older recipe says `replace`; the player's current contents have no newer journal entry to restore from.
+      if (rollbackConfigBackups) {
+        const backupEntry = Object.entries(rollbackConfigBackups).find(([path]) => fileKey(path) === key)
+        if (backupEntry) {
+          const [, backupHash] = backupEntry
+          // A player may have tuned the current version after the update. The journal only knows what was present when
+          // Lucent left the target version, so preserve a current file whose hash no longer matches its deployment stamp.
+          const playerChanged = state.kind === 'readable' && stampedPath
+            && record.files[stampedPath]?.sha256 !== await platform.hashFile(diskPath)
+          if (playerChanged) {
+            removeConfigSteps(key)
+            keptConfigs.push(config.path)
+            notes.push(`${config.path}: kept the player's changes during rollback`)
+            continue
+          }
+          const first = removeConfigSteps(key)
+          if (backupHash === null) {
+            steps.splice(first, 0, { kind: 'delete', path: config.path })
+            if (stampedPath) untouchedConfigs.push(stampedPath)
+          } else {
+            const backupPath = joinPath(paths.backups, backupHash)
+            const backupText = await platform.readText(backupPath)
+            if (await hashText(backupText) !== backupHash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${config.path}`, backupPath)
+            steps.splice(first, 0, { kind: 'write', path: config.path, text: backupText })
+            expectedFiles = [...expectedFiles, { path: config.path, sha256: backupHash }]
+          }
+          notes.push(`${config.path}: restored from the previous version's journal`)
+        } else {
+          removeConfigSteps(key)
+          if (state.kind === 'readable') keptConfigs.push(config.path)
+          else if (stampedPath) untouchedConfigs.push(stampedPath)
+          notes.push(`${config.path}: kept as it is during rollback`)
+        }
+        continue
+      }
+
+      if (state.kind !== 'readable') {
+        if (rule === 'keep') {
+          removeConfigSteps(key)
+          if (stampedPath) untouchedConfigs.push(stampedPath)
+          notes.push(`${config.path}: ${deployed ? 'missing or unreadable, kept as it is' : 'not present, kept as it is'}`)
+          continue
+        }
         notes.push(`${config.path}: ${deployed ? 'missing, written from the new baseline' : 'new, written from the baseline'}`)
         continue
       }
+      const diskText = state.text
       if (rule === 'replace') { notes.push(`${config.path}: replaced from the new baseline, the previous file is backed up`); continue }
       const baseline = baselines.get(key)
       const merged = rule === 'addMissingKeys' && baseline !== undefined ? addMissingKeys(diskText, baseline) : null
       notes.push(`${config.path}: ${rule === 'keep' ? 'kept as it is' : merged?.added.length
         ? `added ${merged.added.length === 1 ? '1 missing key' : `${merged.added.length} missing keys`} (${merged.added.join(', ')})` : 'no missing keys, kept as it is'}`)
       // The config's own steps go, and so does the staging file a rename brings to it.
-      const staging = new Set(steps.flatMap((s) => s.kind === 'rename' && fileKey(s.to) === key ? [fileKey(s.from)] : []))
-      const writes = (step: PlanStep) => { const target = writtenPath(step); return !!target && (fileKey(target) === key || staging.has(fileKey(target))) }
-      const first = steps.findIndex(writes)
-      steps = steps.filter((step) => !writes(step))
-      expectedFiles = expectedFiles.filter((f) => fileKey(f.path) !== key)
+      const first = removeConfigSteps(key)
       if (merged?.added.length) {
-        steps.splice(Math.max(first, 0), 0, { kind: 'write', path: config.path, text: merged.text })
+        steps.splice(first, 0, { kind: 'write', path: config.path, text: merged.text })
         expectedFiles = [...expectedFiles, { path: config.path, sha256: null }]
       } else keptConfigs.push(config.path)
     }
@@ -899,10 +970,29 @@ export async function updateDeployment(
       const target = await platform.resolveGamePath(root, path)
       files[path] = { ...await platform.stat(target), sha256: await platform.hashFile(target) }
     }
+    // A kept config can be missing or unreadable. Preserve its old stamp so the next health check still reports drift and
+    // Repair can restore it; update itself must not turn a `keep` rule into a write.
+    for (const path of untouchedConfigs) files[path] = record.files[path]
     for (const kept of keptPresets) {
       const path = await platform.resolveGamePath(root, kept.path)
       files[kept.path] = { ...await platform.stat(path), sha256: kept.sha256 }
     }
+    // Keep the first backup for every config touched while leaving the current version. A cached version therefore
+    // carries the exact journaled config state to restore if the player later rolls back to it, independently of the
+    // older version's update rule.
+    const leavingConfigKeys = new Set(record.recipe.ownedConfigs.map((config) => fileKey(config.path)))
+    const leavingConfigBackups: Record<string, string | null> = {}
+    for (const entry of record.journal.slice(record.changeStart)) {
+      for (const [path, before] of Object.entries(entry.before)) {
+        if (leavingConfigKeys.has(fileKey(path)) && !(path in leavingConfigBackups)) leavingConfigBackups[path] = before
+      }
+    }
+    const leavingSnapshot = (record.cachedVersions ?? []).find((version) => version.content.id === record.contentVersion && version.tier.id === record.tier)
+    const cachedBefore = leavingSnapshot && Object.keys(leavingConfigBackups).length
+      ? { ...leavingSnapshot, configBackups: { ...(leavingSnapshot.configBackups ?? {}), ...leavingConfigBackups } }
+      : leavingSnapshot
+    const previousSnapshots = (record.cachedVersions ?? []).filter((version) => version.content.id !== content.id && version.tier.id === tier.id)
+      .map((version) => version === leavingSnapshot && cachedBefore ? cachedBefore : version)
     const generated = record.generatedFiles ?? []
     const present = new Set(scan.files.map(fileKey))
     Object.assign(updated, {
@@ -911,11 +1001,17 @@ export async function updateDeployment(
       // The stored first-install choices stay as the player made them, even where this content doesn't offer one; Reset
       // offers them again. The profile moves only where the content renames it (the old two-pass Fidelity is Ultra). Another
       // tier has its own options, so the choices that tier's baseline was written with replace them.
-      ...(tier.id === record.tier ? { profile: plan.profile ?? record.profile ?? null }
+      ...(tier.id === record.tier ? {
+        // Migration records the old two-pass Fidelity as Ultra even while a legacy recipe still only exposes Fidelity.
+        // Keep that stored choice until four-profile content can represent it; the plan itself still uses legacy Fidelity
+        // settings through selectProfileForUpdate.
+        profile: record.profile === 'ultra' && targetRecipe.performanceProfilesV2 === undefined
+          ? record.profile : plan.profile ?? record.profile ?? null,
+      }
         : { profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode }),
       recipe: plan.recipe,
       // Another tier's recipes can't be rolled back to on this graphics card.
-      cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...(record.cachedVersions ?? []).filter((v) => v.content.id !== content.id && v.tier.id === tier.id)].slice(0, 3),
+      cachedVersions: [cacheSnapshot(content, tier, plan.recipe, plan.files), ...previousSnapshots].slice(0, 3),
       // A tier switch on the same content version keeps the player's pin.
       pinned: content.id === record.contentVersion ? record.pinned : content.id < record.contentVersion,
       pendingSelection: { skip: content.id < record.contentVersion ? record.contentVersion : null },

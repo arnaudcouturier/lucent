@@ -7,7 +7,12 @@ import type { Settings } from './settings'
 import { needsNewerApp, onChannel, type Channel } from './updates'
 
 /** Recipes and assets retained with the journal, independent of the live manifest. Current first. */
-export interface CachedVersion { content: ContentVersion; tier: Tier }
+export interface CachedVersion {
+  content: ContentVersion
+  tier: Tier
+  /** Hashes of config backups made when leaving this version, keyed by config path. A null value means it was absent. */
+  configBackups?: Record<string, string | null>
+}
 export interface VersionChoice {
   id: string
   changelog: string[]
@@ -19,8 +24,8 @@ export interface VersionChoice {
   unavailable: string | null
 }
 
-export function cacheSnapshot(content: ContentVersion, tier: Tier, recipe: DeploymentRecord['recipe'], files: ContentFile[]): CachedVersion {
-  return { content: { ...content, files, tiers: { [tier.id]: recipe } }, tier }
+export function cacheSnapshot(content: ContentVersion, tier: Tier, recipe: DeploymentRecord['recipe'], files: ContentFile[], configBackups?: Record<string, string | null>): CachedVersion {
+  return { content: { ...content, files, tiers: { [tier.id]: recipe } }, tier, ...(configBackups ? { configBackups } : {}) }
 }
 
 /** The cache is shared by game folders. Never prune assets needed by another journal. */

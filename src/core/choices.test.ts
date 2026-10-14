@@ -82,4 +82,10 @@ describe('stored first-install choices', () => {
     expect(storedSelection({ frameGenerationMode: '4x', hdrMode: null }, recipe, 'NVIDIA GeForce RTX 3080', screen))
       .toMatchObject({ frameGenerationMode: '2x', hdrMode: 'off' })
   })
+
+  it('keeps a stored Off selection Off when newer content starts offering frame generation', () => {
+    const screen = { deviceName: 'DISPLAY1', refreshHz: 240, width: 3840, height: 2160, hdrSupported: true, hdrOn: true, peakNits: 1000, frameCap: 224 }
+    expect(storedSelection({ frameGenerationMode: null, hdrMode: null }, recipe, 'NVIDIA GeForce RTX 4090', screen))
+      .toMatchObject({ frameGenerationMode: 'off', hdrMode: 'off' })
+  })
 })

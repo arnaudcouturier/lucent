@@ -4,6 +4,7 @@ import { createFakePlatform, type FakePlatform, type Machine } from '../platform
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { NEXT_CONTENT, NEXT_MANIFEST, nextFixtureUrl } from '../platform/contentFixture'
 import type { ConfigUpdateRule, ContentVersion } from '../shared/manifest'
+import { PlatformError } from './platform'
 import { dataPaths, readDeployment } from './deployment'
 import { MANIFEST_URL } from './manifest'
 import { LUCENT_LOG } from './log'
@@ -150,14 +151,61 @@ it('replace writes OptiScaler.ini from the stored profile, with the new contentâ
   expect(core.getState().deployment).toMatchObject({ profile: 'fidelity', frameGenerationMode: null, hdrMode: null })
 })
 
-it('a config the player deleted is written from the baseline whatever its rule', async () => {
+it('rollback restores a tuned config from the journal when the newer version replaced it', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, TUNED)
+  await nextWithReShadeBaseline(m, NEW_BASELINE, 'replace')
+  const core = await reopen(platform)
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(NEW_BASELINE)
+  await core.applyVersion('2026.10.12')
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(TUNED)
+})
+
+it('does not overwrite a locked config during an update', async () => {
+  const { platform, m } = await deployed()
+  const config = `${GAME}\\ReShade.ini`
+  const before = await platform.readText(config)
+  await nextWithReShadeBaseline(m, NEW_BASELINE, 'replace')
+  const read = platform.readText.bind(platform)
+  platform.readText = async (path) => {
+    if (path.toLowerCase() === config.toLowerCase()) throw new PlatformError('locked', 'Sharing violation', path)
+    return read(path)
+  }
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toMatch(/file is in use/i)
+  platform.readText = read
+  expect(await platform.readText(config)).toBe(before)
+})
+
+it('lets a keep update pass a locked config without touching it', async () => {
+  const { platform, m } = await deployed()
+  const config = `${GAME}\\ReShade.ini`
+  const before = await platform.readText(config)
+  await nextWithReShadeBaseline(m, NEW_BASELINE)
+  const read = platform.readText.bind(platform)
+  platform.readText = async (path) => {
+    if (path.toLowerCase() === config.toLowerCase()) throw new PlatformError('locked', 'Sharing violation', path)
+    return read(path)
+  }
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  platform.readText = read
+  expect(await platform.readText(config)).toBe(before)
+})
+
+it('a config the player deleted stays missing under keep so Repair can restore it', async () => {
   const { platform, m } = await deployed()
   await platform.removeFile(`${GAME}\\ReShade.ini`)
   await nextWithReShadeBaseline(m, NEW_BASELINE)
   const core = await reopen(platform)
   await core.update()
   expect(core.getState().error).toBeNull()
-  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(NEW_BASELINE)
+  await expect(platform.readText(`${GAME}\\ReShade.ini`)).rejects.toThrow(/Not found/)
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'drift', files: 1 })
 })
 
 it('the changelog names the files an update adds keys to or replaces, and the activity log has a line per file', async () => {

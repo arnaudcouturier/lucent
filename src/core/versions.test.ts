@@ -13,6 +13,7 @@ import { PlatformError } from './platform'
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
 const FIRST = NEXT_MANIFEST.versions[0]
+const TUNED_RESHADE = '; Tuned before updates\n[GENERAL]\nPresetPath=reshade-presets/Mine.ini\n'
 
 async function deployed() {
   const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
@@ -46,6 +47,18 @@ async function publish(m: Machine, id: string, text: string, previous: ContentVe
   return version
 }
 
+function replaceReShadeOn(m: Machine, versions: ContentVersion[]): ContentVersion[] {
+  const changed = versions.map((version) => {
+    const recipe = version.tiers['rtx-30-40']
+    return { ...version, tiers: { ...version.tiers, 'rtx-30-40': {
+      ...recipe,
+      ownedConfigs: recipe.ownedConfigs.map((config) => config.path === 'ReShade.ini' ? { ...config, update: 'replace' as const } : config),
+    } } }
+  })
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: changed })
+  return changed
+}
+
 it('updates twice, then rolls back without downloads, pins the target, skips the version left behind, and announces a newer version', async () => {
   const { platform, core: first, m } = await deployed()
   await first.setEnabled(false)
@@ -68,6 +81,27 @@ it('updates twice, then rolls back without downloads, pins the target, skips the
   expect((await readSettings(platform)).skippedContent).toContain('2026.11.20')
   expect(statusCard(core.getState())).toMatchObject({ kind: 'update', version: '2026.12.01' })
   expect((await reopen(platform)).getState().versions.find((v) => v.current)?.pinned).toBe(true)
+})
+
+it('keeps journaled config history for multi-hop rollback', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, TUNED_RESHADE)
+  const second = await publish(m, '2026.11.02', 'Second OptiScaler')
+  const [firstWithReplace, secondWithReplace] = replaceReShadeOn(m, [FIRST, second])
+  await (await reopen(platform)).update()
+  const third = await publish(m, '2026.11.20', 'Third OptiScaler', [firstWithReplace, secondWithReplace])
+  replaceReShadeOn(m, [firstWithReplace, secondWithReplace, third])
+  await (await reopen(platform)).update()
+
+  const rolledToSecond = await reopen(platform)
+  await rolledToSecond.applyVersion(second.id)
+  expect(rolledToSecond.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).not.toBe(TUNED_RESHADE)
+
+  const rolledToFirst = await reopen(platform)
+  await rolledToFirst.applyVersion(FIRST.id)
+  expect(rolledToFirst.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(TUNED_RESHADE)
 })
 
 it('keeps the current content and two previous versions, prunes older assets, and retains shared files', async () => {

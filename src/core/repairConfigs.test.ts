@@ -4,7 +4,7 @@ import { dataPaths, readDeployment } from './deployment'
 import { runHeadless } from './autoRepair'
 import { DEFAULT_ENV, createFakePlatform, type FakePlatform } from '../platform/fake'
 import { firstInstallContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
-import type { MonitorInfo } from './platform'
+import { PlatformError, type MonitorInfo } from './platform'
 import { statusCard } from './statusCard'
 import type { FrameGenerationId, HdrMode } from '../shared/manifest'
 
@@ -94,6 +94,22 @@ it('leaves a tuned config alone while it puts back a patched file', async () => 
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=reshade-presets/Mine.ini\n')
   // Only the patched file went through the journal.
   expect((await readDeployment(platform, ROOT))!.journal).toHaveLength(journalLength + 1)
+})
+
+it('reports a locked config separately and leaves it for the process holding it', async () => {
+  const { platform } = await deployed()
+  const before = await platform.readText(CONFIG)
+  const read = platform.readText.bind(platform)
+  platform.readText = async (path) => {
+    if (path.toLowerCase() === CONFIG.toLowerCase()) throw new PlatformError('locked', 'Sharing violation', path)
+    return read(path)
+  }
+  const core = await reopen(platform)
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'drift', files: 1 })
+  await core.repair()
+  expect(core.getState().error).toMatch(/file is in use/i)
+  platform.readText = read
+  expect(await platform.readText(CONFIG)).toBe(before)
 })
 
 it('XIVLauncher’s repair on close follows the same rule', async () => {
