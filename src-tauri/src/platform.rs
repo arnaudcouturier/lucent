@@ -36,6 +36,10 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
 };
+use windows::Win32::UI::HiDpi::{
+    SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     ActivateKeyboardLayout, GetKeyNameTextW, GetKeyboardLayout, MapVirtualKeyExW,
     ACTIVATE_KEYBOARD_LAYOUT_FLAGS, HKL, MAPVK_VK_TO_VSC_EX,
@@ -566,8 +570,45 @@ fn display_config_monitor_colors() -> HashMap<String, AdvancedColorMetadata> {
     result
 }
 
+struct MonitorDpiContext {
+    previous: windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT,
+}
+
+impl MonitorDpiContext {
+    fn enter() -> Option<Self> {
+        // Per-monitor awareness keeps GDI monitor coordinates in physical pixels regardless
+        // of which Tauri worker thread executes this command. Windows 10 1607 supports V1;
+        // V2 is preferred when available.
+        unsafe {
+            let previous = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            if !previous.0.is_null() {
+                return Some(Self { previous });
+            }
+
+            let previous = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
+            (!previous.0.is_null()).then_some(Self { previous })
+        }
+    }
+}
+
+impl Drop for MonitorDpiContext {
+    fn drop(&mut self) {
+        // SAFETY: `previous` is the valid context returned by the successful enter call.
+        unsafe {
+            SetThreadDpiAwarenessContext(self.previous);
+        }
+    }
+}
+
 /// Enumerates physical desktop monitors and current color metadata for the TypeScript core.
 pub fn monitors() -> Result<Vec<MonitorInfo>> {
+    let _dpi_context = MonitorDpiContext::enter().ok_or_else(|| {
+        PlatformError::new(
+            ErrorKind::Unknown,
+            "Windows could not establish per-monitor DPI awareness for monitor enumeration.",
+            None,
+        )
+    })?;
     let native_monitors = enumerate_native_monitors()?;
     let display_config = display_config_monitor_colors();
     let dxgi = dxgi_monitor_colors();
@@ -1627,6 +1668,27 @@ mod tests {
                 peak_nits: None,
             }
         );
+    }
+
+    #[test]
+    fn monitor_dpi_scope_uses_per_monitor_awareness_and_restores_thread_context() {
+        use windows::Win32::UI::HiDpi::{
+            AreDpiAwarenessContextsEqual, GetThreadDpiAwarenessContext,
+        };
+
+        let original = unsafe { GetThreadDpiAwarenessContext() };
+        {
+            let _scope = MonitorDpiContext::enter().expect("per-monitor DPI context");
+            let active = unsafe { GetThreadDpiAwarenessContext() };
+            assert!(unsafe {
+                AreDpiAwarenessContextsEqual(active, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+                    .as_bool()
+                    || AreDpiAwarenessContextsEqual(active, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)
+                        .as_bool()
+            });
+        }
+        let restored = unsafe { GetThreadDpiAwarenessContext() };
+        assert!(unsafe { AreDpiAwarenessContextsEqual(original, restored).as_bool() });
     }
 
     #[test]
