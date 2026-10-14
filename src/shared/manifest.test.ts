@@ -19,6 +19,23 @@ const screenDerivedManifest = (screenDerivedSettings: unknown): unknown => {
   }
 }
 
+const frameGenerationManifest = (frameGenerationOptions: unknown): unknown => {
+  const hash = 'a'.repeat(64)
+  const tiers = Object.fromEntries(manifest.tiers.map((tier) => [tier.id, {
+    recipe: [{ kind: 'copy', file: hash, to: 'winmm.dll' }],
+    entryFiles: [{ path: 'winmm.dll' }], ownedConfigs: [{ path: 'OptiScaler.ini' }],
+    shippedPresets: [], generatedFiles: [], overlay: null, frameGenerationOptions,
+  }]))
+  return {
+    ...manifest,
+    versions: [{
+      id: '2026.10.13', channel: 'stable', minAppVersion: '0.1.0', changelog: ['Frame generation modes.'],
+      components: [{ name: 'Test', upstream: 'Test', licence: 'MIT', source: 'https://example.com' }],
+      files: [{ sha256: hash, size: 0, release: 'content-2026.10.13' }], tiers,
+    }],
+  }
+}
+
 describe('The shared manifest schema', () => {
   it('reads the published tier definitions', () => {
     const parsed = parseManifest(JSON.stringify(manifest))
@@ -47,6 +64,33 @@ describe('The shared manifest schema', () => {
     ])
   })
 
+  it('accepts peak nits as a screen-derived value', () => {
+    const parsed = parseManifest(JSON.stringify(screenDerivedManifest([
+      { file: 'OptiScaler.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' },
+    ])))
+    expect(parsed.versions[0].tiers['rtx-30-40'].screenDerivedSettings?.[0].value).toBe('peakNits')
+  })
+
+  it('reads GPU-specific frame-generation variants and HDR overrides as optional recipe data', () => {
+    const options = [
+      { id: 'off', settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Enabled', value: 'false' }] },
+      { id: '2x', gpuNamePatterns: ['RTX 30'], experimental: true,
+        settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'InterpolationCount', value: '1' }],
+        hdrSettings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'InterpolationCount', value: '2' }] },
+    ]
+    const input = frameGenerationManifest(options)
+    const parsed: Manifest = parseManifest(JSON.stringify(input))
+
+    expect(parsed.versions[0].tiers['rtx-30-40'].frameGenerationOptions).toEqual(options)
+  })
+
+  it('keeps an older recipe without frame-generation options valid', () => {
+    const input = frameGenerationManifest(undefined) as Manifest
+    for (const recipe of Object.values(input.versions[0].tiers)) delete recipe.frameGenerationOptions
+
+    expect(parseManifest(JSON.stringify(input)).versions[0].tiers['rtx-30-40'].frameGenerationOptions).toBeUndefined()
+  })
+
   it.each([
     ['unknown derived value', [{ file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'monitorSize' }]],
     ['unowned config', [{ file: 'Other.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' }]],
@@ -57,6 +101,20 @@ describe('The shared manifest schema', () => {
     ]],
   ])('rejects a screen-derived setting with %s', (_, settings) => {
     expect(() => parseManifest(JSON.stringify(screenDerivedManifest(settings)))).toThrow(ManifestError)
+  })
+
+  it.each([
+    ['unknown id', [{ id: '7x', settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Count', value: '7' }] }]],
+    ['invalid GPU regex', [{ id: '2x', gpuNamePatterns: ['['], settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Count', value: '1' }] }]],
+    ['empty GPU patterns', [{ id: '2x', gpuNamePatterns: [], settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Count', value: '1' }] }]],
+    ['empty settings', [{ id: 'off', settings: [] }]],
+    ['unowned settings file', [{ id: 'off', settings: [{ file: 'Other.ini', section: 'FrameGen', key: 'Enabled', value: 'false' }] }]],
+    ['duplicate variant', [
+      { id: '2x', gpuNamePatterns: ['RTX 40'], settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Count', value: '1' }] },
+      { id: '2x', gpuNamePatterns: ['rtx 40'], settings: [{ file: 'OptiScaler.ini', section: 'FrameGen', key: 'Count', value: '2' }] },
+    ]],
+  ])('rejects an invalid frame-generation option: %s', (_, options) => {
+    expect(() => parseManifest(JSON.stringify(frameGenerationManifest(options)))).toThrow(ManifestError)
   })
 
   it('reads a manifest written before existing-setup signatures as having none', () => {

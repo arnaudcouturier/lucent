@@ -183,7 +183,7 @@ describe('screen-derived settings', () => {
     const record = await readDeployment(platform, ROOT)
     expect(record?.gameVersion).toBe(patchedVersion)
     expect(record?.ownedConfigs['OptiScaler.ini']).toContain('FramerateLimit=138.000000')
-    expect(record?.journal.some((entry) => entry.step.kind === 'write' && entry.step.path === 'OptiScaler.ini' && entry.step.text?.includes('DynamicTargetFPS=138.000000'))).toBe(true)
+    expect(record?.journal.some((entry) => entry.step?.kind === 'write' && entry.step.path === 'OptiScaler.ini' && entry.step.text?.includes('DynamicTargetFPS=138.000000'))).toBe(true)
 
     const reopened = createCore(platform)
     await reopened.scan()

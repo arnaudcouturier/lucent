@@ -79,7 +79,9 @@ Each version contains:
 A tier recipe may also declare `screenDerivedSettings`, settings Lucent recalculates from the monitor XIV uses.
 Each entry names an owned config, section and key, plus the value computation. Lucent 0.1.x ignores this optional
 field, so content that depends on it should require an app version that supports it. The first computation is
-`"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz. For example,
+`"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz, or
+`"peakNits"`, written as a whole number clamped to 400–4000 with 1100 as the fallback when the monitor does not
+report a peak. For example,
 the frame cap declaration may target the OptiScaler limit, DLSS frame-generation target and XeFG target using
 three entries:
 

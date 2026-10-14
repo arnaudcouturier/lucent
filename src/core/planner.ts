@@ -1,5 +1,6 @@
-import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
+import { assertGamePath, type ContentFile, type ContentVersion, DEFAULT_PROFILE, type FrameGenerationId, type FrameGenerationOption, type ProfileId, type Step, type Tier, type TierRecipe } from '../shared/manifest'
 import type { ExistingSetup } from './existingSetup'
+import { frameGenerationSettingKeys } from './frameGeneration'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
 /** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
@@ -26,6 +27,7 @@ export interface Plan {
   tier: string
   includeReShade: boolean
   profile: ProfileId | null
+  frameGenerationMode: FrameGenerationId | null
   steps: PlanStep[]
   files: ContentFile[]
   filesToDownload: ContentFile[]
@@ -50,7 +52,16 @@ export interface Plan {
  * Planned from a current deployment (its files are `scan.ownedFiles`), the steps also delete the owned files the content no
  * longer deploys, and a Disabled deployment gets its entry files renamed aside.
  */
-export function planDeployment(content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan, profile: ProfileId | null = null, enabled = true): Plan {
+export interface PlanSelection {
+  /** Options already filtered to the player's GPU. Omit to keep every manifest variant. */
+  frameGenerationOptions?: FrameGenerationOption[]
+  frameGenerationMode?: FrameGenerationId | null
+}
+
+export function planDeployment(
+  content: ContentVersion, tier: Tier, includeReShade: boolean, scan: DeploymentScan,
+  profile: ProfileId | null = null, enabled = true, selection: PlanSelection = {},
+): Plan {
   const recipe = content.tiers[tier.id]
   if (!recipe) throw new Error('No content is available for this tier yet.')
   includeReShade ||= tier.requiresReShade
@@ -59,8 +70,19 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const recipeSteps = recipe.recipe.filter(included).map((s) => ({ ...s }))
   const selected = recipe.performanceProfiles?.length ? recipe.performanceProfiles.find((p) => p.id === (profile ?? DEFAULT_PROFILE)) : null
   if (recipe.performanceProfiles?.length && !selected) throw new Error('Choose a performance profile for this tier.')
+  const frameGenerationOptions = selection.frameGenerationOptions ?? recipe.frameGenerationOptions ?? []
+  const selectedFrameGeneration = selection.frameGenerationMode
+    ? frameGenerationOptions.find((option) => option.id === selection.frameGenerationMode) ?? null
+    : null
+  const frameGenerationKeys = frameGenerationSettingKeys(recipe.frameGenerationOptions ?? [])
+  const profileSettings = (selected?.settings ?? []).filter((setting) =>
+    !frameGenerationKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`))
   // The profile applies after the recipe but stays out of the saved recipe: the record names it on its own.
-  const contentSteps: Step[] = [...recipeSteps, ...(selected?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s }))]
+  const contentSteps: Step[] = [
+    ...recipeSteps,
+    ...profileSettings.filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...(selectedFrameGeneration?.settings ?? []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+  ]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
   const initial = new Set(scan.files.map(fileKey))
   const owned = new Set(scan.ownedFiles.map(fileKey))
@@ -116,6 +138,11 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const filteredRecipe = { ...recipe, recipe: recipeSteps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles),
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.screenDerivedSettings ? { screenDerivedSettings: recipe.screenDerivedSettings.filter((s) => includedConfig(s.file)) } : {}),
+    ...(recipe.frameGenerationOptions || selection.frameGenerationOptions ? { frameGenerationOptions: frameGenerationOptions.map((option) => ({
+      ...option,
+      settings: option.settings.filter((setting) => includedConfig(setting.file)),
+      ...(option.hdrSettings ? { hdrSettings: option.hdrSettings.filter((setting) => includedConfig(setting.file)) } : {}),
+    })) } : {}),
   }
   const entryPaths = filteredRecipe.entryFiles.map((p) => enabled ? p.path : disabledName(p.path))
   for (const path of [...entryPaths, ...filteredRecipe.ownedConfigs.map((p) => p.path), ...filteredRecipe.shippedPresets.map((p) => p.path)]) {
@@ -133,7 +160,8 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const filesToDownload = files.filter((f) => !cached.has(f.sha256))
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
-    contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null, steps, files, filesToDownload,
+    contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null,
+    frameGenerationMode: selectedFrameGeneration?.id ?? null, steps, files, filesToDownload,
     filesToBackup: [...backups.values()], unclaimedPaths: [...unclaimed.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),

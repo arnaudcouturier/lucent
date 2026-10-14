@@ -5,8 +5,8 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { applyScreenDerivedSettings, assertReviewedTakeovers, backupFolderName, replacedOriginals, changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, scanDeployment, screenDerivedWriteTargets, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { disabledName, fileKey, folderChanges, keptProfile, planDeployment, stepWritePaths, type FolderChanges, type Plan } from './planner'
+import { applyScreenDerivedSettings, assertReviewedTakeovers, backupFolderName, replacedOriginals, changeFrameGenerationMode, changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, frameGenerationModeOnDisk, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, scanDeployment, screenDerivedWriteTargets, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { disabledName, fileKey, folderChanges, keptProfile, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -14,7 +14,7 @@ export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
-import { DEFAULT_PROFILE, type ContentVersion, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
+import { DEFAULT_PROFILE, type ContentVersion, type FrameGenerationId, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
 import { detectCustomProfile, type CustomProfile } from './customProfile'
@@ -26,6 +26,7 @@ import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount } from './format'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
+import { defaultFrameGenerationMode, effectiveFrameGenerationSettings, frameGenerationOptionsForGpu, frameGenerationSettingKeys } from './frameGeneration'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -90,6 +91,8 @@ export interface State {
   graphics: GraphicsState
   /** XIV's resolved monitor and current frame-cap calculation. */
   screen: ResolvedScreen | null
+  /** Current mode read from OptiScaler's owned config; null is Custom or no declared option. */
+  frameGenerationMode: FrameGenerationId | null
   manifest: ManifestState
   xivLauncher: XivLauncherState
   plan: Plan | null
@@ -142,6 +145,9 @@ export interface Core {
   findGameFolder(): Promise<void>
   continueSetup(): Promise<void>
   selectProfile(profile: ProfileId): Promise<void>
+  selectFrameGenerationMode(mode: FrameGenerationId): Promise<void>
+  /** Reads the current mode from OptiScaler.ini, including after returning from the game or another window. */
+  refreshFrameGenerationMode(): Promise<void>
   /** Profile's "Include ReShade"; Scan's list follows it. */
   setIncludeReShade(include: boolean): void
   review(includeReShade?: boolean): Promise<void>
@@ -235,7 +241,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, frameGenerationMode: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -266,6 +272,12 @@ export function createCore(platform: Platform): Core {
     log.write('warning', `Drift in ${fileCount(drift.files.length)}${drift.patch ? ` after game patch ${drift.patch}` : ''}: ${drift.files.slice(0, 5).join(', ')}${more > 0 ? ` and ${more.toLocaleString('en')} more` : ''}`)
   }
   const profileNote = (profiles: PerformanceProfile[] | undefined, id: ProfileId | null | undefined) => id ? `, ${profiles?.find((p) => p.id === id)?.label ?? id} profile` : ''
+  const frameGenerationSelection = (content: ContentVersion, tier: Tier, mode?: FrameGenerationId | null): PlanSelection => {
+    const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : state.deployment?.graphics.name ?? ''
+    const options = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], gpuName)
+    return { frameGenerationOptions: options, frameGenerationMode: mode === undefined
+      ? defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60) : mode }
+  }
   const elapsed = (since: number) => `${Math.max(1, Math.round((performance.now() - since) / 1000))} s`
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
   /** A cached version rolls back without the manifest; any other comes from the published manifest. */
@@ -281,14 +293,21 @@ export function createCore(platform: Platform): Core {
     if (request.kind === 'deploy') return state.plan?.steps.flatMap(stepWritePaths) ?? []
     const record = await readDeployment(platform, request.gameFolder)
     if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
-    if (request.kind === 'profile') return record.recipe.performanceProfiles?.find((p) => p.id === request.profile)?.settings
-      .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))).map((s) => s.file) ?? []
+    if (request.kind === 'profile') {
+      const keys = frameGenerationSettingKeys(record.recipe.frameGenerationOptions ?? [])
+      return record.recipe.performanceProfiles?.find((p) => p.id === request.profile)?.settings
+        .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))
+          && !keys.has(`${fileKey(s.file)}|${s.section.toLowerCase()}|${s.key.toLowerCase()}`)).map((s) => s.file) ?? []
+    }
+    if (request.kind === 'frame-generation') return record.recipe.frameGenerationOptions?.find((option) => option.id === request.mode)?.settings.map((setting) => setting.file) ?? []
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
     if (request.kind === 'update' || request.kind === 'tier') {
       const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
       if (!target || target.content.id !== request.contentVersion) throw new Error('This content version is no longer published. Reopen Lucent to check again.')
       const scan = await scanDeployment(platform, record.gameFolder, target.content, record, [])
-      return planDeployment(target.content, target.tier, record.includeReShade, scan, keptProfile(target.content, target.tier, record.profile), record.enabled).steps.flatMap(stepWritePaths)
+      const selection = frameGenerationSelection(target.content, target.tier)
+      return [...planDeployment(target.content, target.tier, record.includeReShade, scan, keptProfile(target.content, target.tier, record.profile), record.enabled, selection).steps.flatMap(stepWritePaths),
+        ...(selection.frameGenerationOptions ?? []).flatMap((option) => option.settings.map((setting) => setting.file))]
     }
     return [...record.journal.slice(request.kind === 'recover' ? record.changeStart ?? 0 : 0).flatMap((entry) => Object.keys(entry.before)),
       ...(record.createdDirectories ?? []), ...(request.kind === 'uninstall' || record.uninstalling ? record.generatedFiles ?? [] : [])]
@@ -337,7 +356,7 @@ export function createCore(platform: Platform): Core {
     if (!scanned || !content || !tier || state.deployment) { set({ folderChanges: null }); return }
     const { gameFolder, files } = scanned
     try {
-      const plan = planDeployment(content, tier, state.includeReShade, { files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile)
+      const plan = planDeployment(content, tier, state.includeReShade, { files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true, frameGenerationSelection(content, tier))
       const changes = folderChanges(plan, await readableBackupPath(platform, gameFolder, await backupFolderName(platform, gameFolder)))
       if (scanned?.gameFolder === gameFolder) set({ folderChanges: changes })
     } catch { set({ folderChanges: null }) }
@@ -372,7 +391,8 @@ export function createCore(platform: Platform): Core {
     const targets = await screenDerivedWriteTargets(platform, gameFolder, screen)
     if (targets.length && !await prepareWrite({ kind: 'repair', gameFolder }, targets)) return { record: null, deferred: true }
     const applied = await applyScreenDerivedSettings(platform, gameFolder, screen)
-    set({ deployment: applied.record })
+    const frameGenerationMode = await frameGenerationModeOnDisk(platform, applied.record)
+    set({ deployment: applied.record, frameGenerationMode })
     if (applied.changes.length) {
       const previousValue = applied.changes[0].previousValue ?? 'unset'
       log.write('info', `Frame cap: ${screen.frameCap} fps for a ${screen.refreshHz} Hz screen, was ${previousValue}`)
@@ -419,6 +439,7 @@ export function createCore(platform: Platform): Core {
       }
       await refreshCustomProfile()
       await refreshKeybinds()
+      await refreshFrameGeneration()
       await pruneCache(record)
       await refreshVersions()
     }
@@ -467,7 +488,7 @@ export function createCore(platform: Platform): Core {
     const tier = manifest.tiers.find((t) => t.id === record.tier)
     if (!content || !tier) return null
     const scan = await scanDeployment(platform, record.gameFolder, content, record, [])
-    const plan = planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled)
+    const plan = planDeployment(content, tier, record.includeReShade, scan, record.profile ?? null, record.enabled, frameGenerationSelection(content, tier, record.frameGenerationMode ?? null))
     return { version: content.id, changelog: content.changelog, downloadSize: plan.downloadSize }
   }
   /** The health check right after a deployment, shown once the player leaves Done. */
@@ -487,6 +508,17 @@ export function createCore(platform: Platform): Core {
       const customProfile = await detectCustomProfile(platform, state.deployment)
       if (JSON.stringify(customProfile) !== JSON.stringify(state.customProfile)) set({ customProfile })
     } catch { /* The last result keeps showing; configs that can't be read are the health check's concern. */ }
+  }
+  const refreshFrameGeneration = async () => {
+    const record = state.deployment
+    if (state.activity.kind !== 'deployment' || record?.status !== 'complete') {
+      if (state.frameGenerationMode !== null) set({ frameGenerationMode: null })
+      return
+    }
+    try {
+      const frameGenerationMode = await frameGenerationModeOnDisk(platform, record)
+      if (state.deployment?.gameFolder === record.gameFolder && state.frameGenerationMode !== frameGenerationMode) set({ frameGenerationMode })
+    } catch { /* The last result stays visible; a failed health/read check reports the config problem separately. */ }
   }
   /** The keys as OptiScaler.ini and ReShade.ini say now; a file that can't be read leaves that tool on its defaults. */
   const refreshKeybinds = async () => {
@@ -630,7 +662,7 @@ export function createCore(platform: Platform): Core {
       const since = performance.now()
       const title = operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
-      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), graphics)
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), graphics, state.screen?.refreshHz ?? 60)
       applied = true
       log.write('success', `${title} finished in ${elapsed(since)}`)
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
@@ -748,9 +780,10 @@ export function createCore(platform: Platform): Core {
         if (state.gameRunning !== null && state.gameRunning !== gameRunning) log.write('info', gameRunning ? 'XIV started' : 'XIV closed')
         if (state.gameRunning !== gameRunning) set({ gameRunning })
         if (state.launching && (gameRunning || Date.now() > launchingUntil)) set({ launching: false })
-        if (closed) { await refreshCustomProfile(); await refreshKeybinds() }
+        if (closed) { await refreshCustomProfile(); await refreshKeybinds(); await refreshFrameGeneration() }
       } catch { if (state.gameRunning !== null) set({ gameRunning: null }) }
     },
+    async refreshFrameGenerationMode() { await refreshFrameGeneration() },
     async scan() {
       if (state.busy) return
       scanned = null
@@ -808,6 +841,7 @@ export function createCore(platform: Platform): Core {
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'profile') await core.selectProfile(resume.profile)
+          else if (resume.kind === 'frame-generation') await core.selectFrameGenerationMode(resume.mode)
           else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall()
@@ -860,6 +894,27 @@ export function createCore(platform: Platform): Core {
         log.write('info', `Performance profile: ${state.profiles.find((p) => p.id === profile)?.label ?? profile}`)
       } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
       finally {
+        await refreshHealthAfter()
+        set({ busy: false })
+      }
+    },
+    async selectFrameGenerationMode(mode) {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      const option = state.deployment.recipe.frameGenerationOptions?.find((candidate) => candidate.id === mode)
+      if (!option || state.frameGenerationMode === mode) return
+      const gameFolder = state.deployment.gameFolder
+      set({ busy: true, error: null })
+      try {
+        const screen = await refreshScreen()
+        if (!await prepareWrite({ kind: 'frame-generation', gameFolder, mode }, effectiveFrameGenerationSettings(option, screen?.hdrOn ?? false).map((setting) => setting.file))) return
+        await refreshHealth(state.deployment)
+        const deployment = await changeFrameGenerationMode(platform, gameFolder, mode, screen?.hdrOn ?? false)
+        set({ deployment, frameGenerationMode: mode })
+        await syncScreenSettings(gameFolder)
+        log.write('info', `Frame generation: ${mode === 'off' ? 'Off' : mode === 'dynamic' ? 'Dynamic' : `${mode.slice(0, -1)}×`}`)
+      } catch (error) {
+        set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired })
+      } finally {
         await refreshHealthAfter()
         set({ busy: false })
       }
@@ -994,10 +1049,11 @@ export function createCore(platform: Platform): Core {
         prepareProfiles(content)
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Choose the game folder before continuing.')
         if (!scanned || scanned.gameFolder !== state.gameFolder.path) throw new UnreviewedFilesError([])
+        const selection = frameGenerationSelection(content, state.graphics.tier)
         const acknowledged = resumeReviewedPaths ?? planDeployment(content, state.graphics.tier, includeReShade,
-          { files: scanned.files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile).filesToBackup
+          { files: scanned.files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true, selection).filesToBackup
         const scan = await scanDeployment(platform, state.gameFolder.path, content, null, signatures())
-        const plan = planDeployment(content, state.graphics.tier, includeReShade, scan, state.selectedProfile)
+        const plan = planDeployment(content, state.graphics.tier, includeReShade, scan, state.selectedProfile, true, selection)
         assertReviewedTakeovers(plan, acknowledged)
         reviewedPaths = [...plan.filesToBackup]
         set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
@@ -1024,6 +1080,7 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) { set({ activity: { kind: 'review' } }); return }
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
+        const selection = frameGenerationSelection(content, state.graphics.tier, state.plan.frameGenerationMode)
         // As the player, before any admin prompt, so the shortcut and the entry are theirs.
         if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
         if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile, reviewedPaths: acknowledged })) {
@@ -1032,7 +1089,7 @@ export function createCore(platform: Platform): Core {
         const since = performance.now()
         log.write('info', `Install: content ${content.id}, ${state.graphics.tier.label} tier${profileNote(state.profiles, state.selectedProfile)}${state.includeReShade ? '' : ', without ReShade'}`)
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source, acknowledged,
-          loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version)
+          loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version, selection)
         installed = record
         let completedRecord = record
         try { completedRecord = (await syncScreenSettings(record.gameFolder)).record ?? record }
@@ -1215,7 +1272,7 @@ export function createCore(platform: Platform): Core {
     ...core,
     scan: coordinated(core.scan, false), chooseGameFolder: coordinated(core.chooseGameFolder), findGameFolder: coordinated(core.findGameFolder, false),
     continueSetup: coordinated(core.continueSetup), review: coordinated(core.review), deploy: coordinated(core.deploy),
-    selectProfile: coordinated(core.selectProfile), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
+    selectProfile: coordinated(core.selectProfile), selectFrameGenerationMode: coordinated(core.selectFrameGenerationMode), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
     update: coordinated(core.update), applyVersion: coordinated(core.applyVersion), switchTier: coordinated(core.switchTier),
     updateApp: coordinated(core.updateApp), skipAppUpdate: coordinated(core.skipAppUpdate), skipUpdate: coordinated(core.skipUpdate),
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),

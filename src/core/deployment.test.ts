@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { dataPaths, readDeployment } from './deployment'
+import { changeOwnedIniSettings, dataPaths, readDeployment } from './deployment'
 import { createCore } from './core'
 import { createFakePlatform } from '../platform/fake'
 import { graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
@@ -271,7 +271,7 @@ it('journals intent and its verified backup before a rename takes effect', async
   platform.renameFile = async (from, to) => {
     const record = await readDeployment(platform, ROOT)
     const intent = record!.journal.at(-1)!
-    expect(intent.step.kind).toBe('rename')
+    expect(intent.step?.kind).toBe('rename')
     const before = intent.before['ReShade.download']!
     const paths = await dataPaths(platform, ROOT)
     expect(await platform.readText(`${paths.backups}\\${before}`)).toBe('ReShade')
@@ -282,6 +282,50 @@ it('journals intent and its verified backup before a rename takes effect', async
   await core.review()
   await core.deploy()
   expect(core.getState().activity.kind).toBe('done')
+})
+
+it('groups owned INI changes, preserves unrelated user edits, and journals side-effect intent before writing', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const target = `${ROOT}\\game\\ReShade.ini`
+  const userEdit = '\n[Player notes]\nKeepThis=mine\n'
+  await platform.writeText(target, (await platform.readText(target)) + userEdit)
+  const start = (await readDeployment(platform, ROOT))!.journal.length
+  const originalWrite = platform.writeText.bind(platform)
+  let writeCount = 0
+  let applied = false
+  platform.writeText = async (path, text, staging) => {
+    if (path.toLowerCase() === target.toLowerCase()) {
+      writeCount++
+      const applying = await readDeployment(platform, ROOT)
+      expect(applying?.status).toBe('applying')
+      expect(applying?.journal.find((entry) => entry.registry)?.registry).toMatchObject({ kind: 'user-gpu-preferences', after: 'new' })
+    }
+    await originalWrite(path, text, staging)
+  }
+  const changed = await changeOwnedIniSettings(platform, ROOT, [
+    { file: 'ReShade.ini', section: 'FrameGen', key: 'InterpolationCount', value: '2' },
+    { file: 'ReShade.ini', section: 'FrameGen', key: 'Enabled', value: 'true' },
+  ], undefined, {
+    async prepare() {
+      return { registry: { kind: 'user-gpu-preferences', userSid: 'S-1-5-21-10-20-30-1001', name: `${ROOT}\\game\\ffxiv_dx11.exe`, before: null, after: 'new' }, before: {}, after: {} }
+    },
+    async apply() { applied = true },
+  })
+  const text = await platform.readText(target)
+  expect(text).toContain('InterpolationCount=2')
+  expect(text).toContain('Enabled=true')
+  expect(text).toContain('KeepThis=mine')
+  expect(changed.ownedConfigs['ReShade.ini']).not.toContain('KeepThis=mine')
+  expect(changed.ownedConfigs['ReShade.ini']).toContain('InterpolationCount=2')
+  expect(changed.journal.slice(start)).toHaveLength(2)
+  expect(changed.journal.slice(start).filter((entry) => entry.step?.kind === 'write')).toHaveLength(1)
+  expect(changed.journal.slice(start)[0].registry).toBeDefined()
+  expect(writeCount).toBe(1)
+  expect(applied).toBe(true)
 })
 
 it('recovers an unfinished journal on reopening and keeps cached assets for retry', async () => {

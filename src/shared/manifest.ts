@@ -48,7 +48,19 @@ export interface Component { name: string; upstream: string; licence: string; so
 export interface ConditionalPath { path: string; when?: 'reshade' }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
-export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' }
+export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
+/** Also the order of the Home frame-generation choices. */
+export const FRAME_GENERATION_IDS = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'] as const
+export type FrameGenerationId = typeof FRAME_GENERATION_IDS[number]
+export interface FrameGenerationOption {
+  id: FrameGenerationId
+  /** Case-insensitive regular expressions matched against the player's GPU name. */
+  gpuNamePatterns?: string[]
+  experimental?: boolean
+  settings: IniSetting[]
+  /** Values that replace these keys when the active display has HDR enabled. */
+  hdrSettings?: IniSetting[]
+}
 /** Also the order of the radio rows. */
 export const PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
 export type ProfileId = typeof PROFILE_IDS[number]
@@ -73,6 +85,8 @@ export interface TierRecipe {
   generatedFiles: ConditionalPath[]
   overlay: 'neural-rendering' | 'upscaling' | null
   performanceProfiles?: PerformanceProfile[]
+  /** Optional frame-generation choices; unknown to apps that predate this field. */
+  frameGenerationOptions?: FrameGenerationOption[]
   /** Settings computed from XIV's current monitor; unknown to Lucent 0.1.x. */
   screenDerivedSettings?: ScreenDerivedSetting[]
   resetKeys?: IniKey[]
@@ -250,8 +264,34 @@ function iniSetting(s: Record<string, unknown>): IniSetting {
 }
 function screenDerivedSetting(value: unknown): ScreenDerivedSetting {
   const setting = object(value, 'Screen-derived setting')
-  if (setting.value !== 'frameCap') invalid('Unknown screen-derived value.')
-  return { ...iniKey(setting), value: 'frameCap' }
+  if (setting.value !== 'frameCap' && setting.value !== 'peakNits') invalid('Unknown screen-derived value.')
+  return { ...iniKey(setting), value: setting.value }
+}
+function frameGenerationOption(value: unknown): FrameGenerationOption {
+  const option = object(value, 'Frame-generation option')
+  if (!FRAME_GENERATION_IDS.includes(option.id as FrameGenerationId)) invalid('Unknown frame-generation option id.')
+  if (option.experimental !== undefined && typeof option.experimental !== 'boolean') invalid('Frame-generation experimental must be a boolean.')
+  let gpuNamePatterns: string[] | undefined
+  if (option.gpuNamePatterns !== undefined) {
+    gpuNamePatterns = array(option.gpuNamePatterns, 'Frame-generation GPU name patterns').map((value) => {
+      const pattern = nonemptyString(value, 'Frame-generation GPU name pattern')
+      try { new RegExp(pattern, 'i') } catch { invalid(`Invalid frame-generation GPU name pattern: ${pattern}`) }
+      return pattern
+    })
+    if (!gpuNamePatterns.length) invalid('Frame-generation GPU name patterns cannot be empty.')
+  }
+  const settings = array(option.settings, 'Frame-generation settings').map((value) => iniSetting(object(value, 'Frame-generation setting')))
+  if (!settings.length) invalid('A frame-generation option needs settings.')
+  const settingKey = (setting: IniKey) => JSON.stringify([pathKey(setting.file), setting.section.toLowerCase(), setting.key.toLowerCase()])
+  unique(settings.map(settingKey), 'Frame-generation setting keys')
+  let hdrSettings: IniSetting[] | undefined
+  if (option.hdrSettings !== undefined) {
+    hdrSettings = array(option.hdrSettings, 'HDR frame-generation settings').map((value) => iniSetting(object(value, 'HDR frame-generation setting')))
+    unique(hdrSettings.map(settingKey), 'HDR frame-generation setting keys')
+  }
+  return { id: option.id as FrameGenerationId, ...(gpuNamePatterns ? { gpuNamePatterns } : {}),
+    ...(option.experimental !== undefined ? { experimental: option.experimental } : {}), settings,
+    ...(hdrSettings !== undefined ? { hdrSettings } : {}) }
 }
 function singleLine(value: unknown, field: string): string {
   if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
@@ -313,6 +353,13 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       if (profiles.length && profiles.length !== PROFILE_IDS.length) invalid('A tier must offer Fidelity, Balanced and Performance together.')
       recipes[id].performanceProfiles = profiles.sort((a, b) => PROFILE_IDS.indexOf(a.id) - PROFILE_IDS.indexOf(b.id))
     }
+    if (r.frameGenerationOptions !== undefined) {
+      const options = array(r.frameGenerationOptions, 'Frame-generation options').map(frameGenerationOption)
+      // Variants may share an id for different GPU models, but two generic or identical variants are ambiguous.
+      const variantKeys = options.map((option) => JSON.stringify([option.id, option.gpuNamePatterns?.map((pattern) => pattern.toLowerCase()).sort() ?? null]))
+      unique(variantKeys, 'Frame-generation option variants')
+      recipes[id].frameGenerationOptions = options
+    }
     if (r.screenDerivedSettings !== undefined) {
       const settings = array(r.screenDerivedSettings, 'Screen-derived settings').map(screenDerivedSetting)
       unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Screen-derived keys')
@@ -326,6 +373,9 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       if (s.kind === 'ini_set' && ownedConfig(s.file).when !== s.when) invalid('INI steps must use their owned config condition.')
     }
     for (const s of (recipes[id].performanceProfiles ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
+    for (const option of recipes[id].frameGenerationOptions ?? []) {
+      for (const setting of [...option.settings, ...(option.hdrSettings ?? [])]) ownedConfig(setting.file)
+    }
     for (const s of (recipes[id].screenDerivedSettings ?? [])) ownedConfig(s.file)
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
