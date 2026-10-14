@@ -67,14 +67,14 @@
         <section class="doc-section" id="keys" aria-labelledby="keys-title">
           <p class="kicker">02 · Keybinds</p>
           <h2 id="keys-title">In-game keys</h2>
-          <p class="guide-text">These are the keys Lucent ships. If you change one in game, the <strong>Keys</strong> section of Lucent shows your keys as they are now, and what Lucent had set.</p>
+          <p class="guide-text">These bindings describe Beta content <code>2026.10.15</code>, which requires Lucent app <code>0.2.0-beta.1</code>. Stable content <code>2026.10.14</code> keeps its earlier bindings and options until you switch to Beta and update. The <strong>Keys</strong> section in Lucent shows the bindings your installed content uses.</p>
           <div class="key-table" role="table" aria-label="OptiScaler keys">
             <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">OptiScaler</span></div></div>
             <div role="row"><span role="cell"><kbd>Insert</kbd> / <kbd>INS</kbd></span><span role="cell">Open or close the OptiScaler menu: Neural Rendering, upscaling, frame generation and every setting below.</span></div>
-            <div role="row"><span role="cell">US <kbd>\</kbd> key (<kbd>*</kbd> on French AZERTY; <kbd>^</kbd> on German QWERTZ)</span><span role="cell">Neural Rendering on or off, with a small “On / Off” notice. The Keys section shows the binding your installed content ships; some content leaves it unbound.</span></div>
+            <div role="row"><span role="cell"><kbd>Delete</kbd> / <kbd>Suppr</kbd></span><span role="cell">Toggle Neural Rendering on or off, with a small “On / Off” notice.</span></div>
             <div role="row"><span role="cell"><kbd>End</kbd> / <kbd>FIN</kbd></span><span role="cell">Frame generation on or off.</span></div>
-            <div role="row"><span role="cell"><kbd>Page Up</kbd> / <kbd>PG.PREC</kbd></span><span role="cell">Show or hide OptiScaler’s FPS overlay.</span></div>
-            <div role="row"><span role="cell"><kbd>Page Down</kbd> / <kbd>PG.SUIV</kbd></span><span role="cell">Cycle the FPS overlay through its simple and detailed styles.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Up</kbd> / <kbd>PG.PREC</kbd></span><span role="cell">Unbound by Lucent so XIV keeps its normal zoom control.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Down</kbd> / <kbd>PG.SUIV</kbd></span><span role="cell">Unbound by Lucent so XIV keeps its normal zoom control.</span></div>
           </div>
           <div class="key-table" role="table" aria-label="ReShade keys">
             <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">ReShade</span></div></div>
@@ -90,7 +90,7 @@
         <section class="doc-section" id="settings" aria-labelledby="settings-title">
           <p class="kicker">03 · Settings explained</p>
           <h2 id="settings-title">What Lucent sets, and why</h2>
-          <p class="guide-text">Lucent writes three config files in the game’s <code>game</code> folder: <code>OptiScaler.ini</code>, <code>ReShade.ini</code> and <code>ReshadeEffectShaderToggler.ini</code>. You can change any setting in the OptiScaler or ReShade menu. When content updates, Lucent keeps your change unless the new content changes the same setting; a few settings, marked <span class="reset-tag">reset</span>, always return to Lucent’s value.</p>
+          <p class="guide-text">Lucent writes three config files in the game’s <code>game</code> folder: <code>OptiScaler.ini</code>, <code>ReShade.ini</code> and <code>ReshadeEffectShaderToggler.ini</code>. You can change any setting in the OptiScaler or ReShade menu. When content updates, Lucent keeps your change unless the new content changes the same setting; a few settings, marked <span class="reset-tag">reset</span>, always return to Lucent’s value. The screen-derived cap and frame-generation details below describe Beta content <code>2026.10.15</code> (app <code>0.2.0-beta.1</code>); earlier Stable content may use different values.</p>
 
           <h3 class="guide-subhead" id="profiles">Performance profiles</h3>
           <p class="guide-text">Each profile balances Neural Rendering detail and upscaling quality. Upscaling values follow XIV’s output height: below 1300 uses the 1080p column, below 2000 uses 1440p, and 2000 or higher uses 4K+. Ultrawide 3440×1440 uses the 1440p column. Changing XIV’s own 3D resolution slider has no effect while Lucent manages upscaling. Change a profile setting by hand and Lucent shows the profile as <strong>Custom</strong> until you choose a profile again.</p>
@@ -104,7 +104,7 @@
 
           <h3 class="guide-subhead">OptiScaler · Neural Rendering <code>[DlssNr]</code></h3>
           <dl class="setting-list">
-            <div><dt><code>Enabled</code><span>true</span></dt><dd>Turns on DLSS 5 Neural Rendering, which redraws detail and light in the upscaler’s image before frame generation sees it. The US <kbd>\</kbd> key (shown as <kbd>*</kbd> on French AZERTY and <kbd>^</kbd> on German QWERTZ) toggles it in game.</dd></div>
+            <div><dt><code>Enabled</code><span>true</span></dt><dd>Turns on DLSS 5 Neural Rendering, which redraws detail and light in the upscaler’s image before frame generation sees it. In Beta content 2026.10.15, press <kbd>Delete</kbd> (<kbd>Suppr</kbd> on French keyboards) to toggle it in game.</dd></div>
             <div><dt><code>Passes</code><span>profile</span></dt><dd>How many model layers run one after another. 2 is deliberately stronger and costs about twice the model time of 1.</dd></div>
             <div><dt><code>RunBeforeSR</code><span>true</span></dt><dd>Runs Neural Rendering on the render-resolution image just before DLSS upscaling, instead of after it. Cheaper, and the upscaler cleans up its result.</dd></div>
             <div><dt><code>ResidualFG</code><span>profile</span></dt><dd>Runs Neural Rendering every other frame and lets NVIDIA frame generation fill in its changes. Faster, with one extra frame of latency and occasional misaligned effects.</dd></div>
@@ -123,7 +123,7 @@
             <div><dt><code>ReversibleMode</code><span>3</span></dt><dd>How the game’s HDR-range image is mapped for the SDR-trained model and back (3: hybrid mapping, composed).</dd></div>
             <div><dt><code>WhitePointSource</code><span>2</span></dt><dd>Where the model’s white point comes from. 2 measures the scene’s exposure; in XIV it uses the game’s own lighting to keep the result stable.</dd></div>
             <div><dt><code>ScalingDownscaler</code><span>4</span></dt><dd>Lanczos3, used only when the model runs above native resolution.</dd></div>
-            <div><dt><code>ToggleKey</code><span>0xDC</span></dt><dd>The key labeled <kbd>\</kbd> on US keyboards (usually <kbd>*</kbd> on French AZERTY and <kbd>^</kbd> on German QWERTZ) toggles Neural Rendering in game.</dd></div>
+            <div><dt><code>ToggleKey</code><span>0x2E</span></dt><dd>The Delete key (labeled <kbd>Suppr</kbd> on French keyboards) toggles Neural Rendering in Beta content 2026.10.15.</dd></div>
           </dl>
 
           <h3 class="guide-subhead">OptiScaler · upscaling</h3>
@@ -136,13 +136,13 @@
 
           <h3 class="guide-subhead">OptiScaler · frame generation and pacing</h3>
           <dl class="setting-list">
-            <div><dt><code>[FrameGen] Enabled</code><span>true</span></dt><dd>Turns frame generation on. <kbd>End</kbd> (FIN on French keyboards) toggles it in game.</dd></div>
-            <div><dt><code>FGInput</code> · <code>FGOutput</code><span>Upscaler · DLSSG</span></dt><dd>Feeds the upscaler’s frames to NVIDIA DLSS frame generation.</dd></div>
-            <div><dt><code>FramerateLimit</code><span>138</span></dt><dd>Caps total frames per second, generated ones included, through Reflex. 138 sits just under a 144 Hz display’s refresh. Set 0 to remove the cap.</dd></div>
+            <div><dt><code>[FrameGen] Enabled</code><span>mode</span></dt><dd>Turns frame generation on for the selected mode; Off disables it. Press <kbd>End</kbd> (FIN on French keyboards) to toggle frame generation in game.</dd></div>
+            <div><dt><code>FGInput</code> · <code>FGOutput</code><span>GPU/HDR mode</span></dt><dd>The Beta candidate selects a provider for the card and HDR mode: RTX 30 uses FSR 2× in SDR and XeFG 2× as its HDR alternative; RTX 40 uses DLSS frame generation.</dd></div>
+            <div><dt><code>FramerateLimit</code><span>screen-derived</span></dt><dd>Caps total output frames per second, generated ones included, through Reflex. Beta content derives the cap from XIV’s selected display refresh R using floor(R − R²/3600): 138 fps at 144 Hz and 224 fps at 240 Hz. In exclusive fullscreen, change the refresh inside XIV; changing only Windows desktop refresh may leave XIV’s selected rate unchanged.</dd></div>
             <div><dt><code>ForceVsync</code> · <code>SyncInterval</code><span>true · 1</span></dt><dd>Forces V-Sync on, presenting at most once per refresh, for even pacing without tearing.</dd></div>
             <div><dt><code>ForceReflex</code> · <code>LatencyFlexMode</code><span>2 · 2</span></dt><dd>Settings for fakenvapi, OptiScaler’s Reflex stand-in: force its low-latency mode on, since XIV has no Reflex setting of its own, and pace frames with Reflex frame IDs.</dd></div>
-            <div><dt><code>ForceDMFG</code> · <code>FramerateTargetDMFG</code><span>true · 144</span></dt><dd>Dynamic multi frame generation toward 144 FPS. It needs an RTX 50 card and has no effect on RTX 30/40.</dd></div>
-            <div><dt><code>[XeFG]</code><span>4× · borderless</span></dt><dd>Settings for Intel’s frame generation, unused while the output is DLSSG.</dd></div>
+            <div><dt><code>ForceDMFG</code> · <code>FramerateTargetDMFG</code><span>mode · screen-derived</span></dt><dd>Enables Dynamic multi frame generation only when Dynamic is selected; its target follows the same screen-derived cap. The Beta candidate offers Dynamic on RTX 40 as Experimental pending live RTX 4090 QA, and does not offer it on RTX 30. RTX 30 XeFG 3×, 4× and Dynamic MFG unlocks remain deferred pending Intel license clearance.</dd></div>
+            <div><dt><code>[XeFG]</code><span>2× · HDR alternative</span></dt><dd>In the Beta candidate, RTX 30 uses XeFG 2× when Windows HDR is on. Its MFG unlock stays disabled; 3×, 4× and Dynamic XeFG unlocks are deferred pending Intel license clearance.</dd></div>
             <div><dt><code>HudInterpolation</code><span>true</span></dt><dd>Turns on interpolation for OptiScaler’s Companion nameplate layer, an opt-in feature of this XIV build.</dd></div>
           </dl>
 
@@ -186,8 +186,8 @@
             <div><dt>Launch XIV</dt><dd>On <strong>Home</strong>. Starts XIV the way you do: through XIVLauncher if it’s set up for this game folder, through Steam for a Steam copy, or with the Square Enix launcher. The label below the button shows which one it uses. If more than one applies, use the arrow beside <strong>Launch XIV</strong> to choose, or change it in <strong>Settings</strong>. Lucent remembers your choice.</dd></div>
             <div><dt>In-game keys</dt><dd>The <strong>Keys</strong> section: every OptiScaler and ReShade key, read from your game folder each time you look.</dd></div>
             <div><dt>Enabled</dt><dd>Off leaves Lucent’s files in place but inactive: the game runs as if vanilla. Turn it on again any time.</dd></div>
-            <div><dt>Performance profile</dt><dd>Switch between Ultra, Fidelity, Balanced and Performance. Close XIV first; changes apply the next time it starts.</dd></div>
-            <div><dt>Frame generation</dt><dd>On <strong>Home</strong>, choose Off, a supported multiplier, or Dynamic. Off uses the frame cap; a multiplier renders at the floor of the cap divided by that number, and Dynamic aims for the cap. The line below the choices shows the current render rate and display refresh. Close XIV before changing the mode. If the config has values Lucent doesn’t recognize, it shows <strong>Custom</strong> and leaves them in place until you choose a mode.</dd></div>
+            <div><dt>Performance profile</dt><dd>Switch between Ultra, Fidelity, Balanced and Performance. You can change profiles while XIV runs.</dd></div>
+            <div><dt>Frame generation</dt><dd>On <strong>Home</strong>, choose a mode offered for your GPU. Beta content 2026.10.15 offers RTX 30 Off and experimental 2× (FSR in SDR; XeFG in HDR), and RTX 40 Off, 2×–6× and Dynamic. RTX 40 2× is standard; 3×–6× and Dynamic are Experimental pending live RTX 4090 QA. RTX 30 3×, 4× and Dynamic XeFG MFG unlocks are deferred pending Intel license clearance. Off uses the screen-derived frame cap; a multiplier renders at the floor of the cap divided by that number, and Dynamic aims for the cap. The line below the choices shows the current render rate and display refresh. You can change the mode while XIV runs. If the config has values Lucent doesn’t recognize, it shows <strong>Custom</strong> and leaves them in place until you choose a mode.</dd></div>
             <div><dt>Updates</dt><dd>Lucent checks for new content and app versions when it opens, and <strong>Settings → Check now</strong> checks again. Nothing downloads until you click <strong>Update</strong>. <strong>Skip</strong> stops the announcement. <strong>Versions</strong> rolls back to an earlier version.</dd></div>
             <div><dt>Beta channel</dt><dd>On <strong>Scan</strong> before the first deployment when beta content is available, then in <strong>Settings</strong>. Offers beta app and content versions. Leaving Beta changes nothing installed.</dd></div>
             <div><dt>XIVLauncher auto-repair</dt><dd>In <strong>Settings</strong>, if you use XIVLauncher. Lucent checks your setup when the game starts and repairs it after the game closes.</dd></div>
@@ -201,7 +201,7 @@
           <h2 id="trouble-title">Quick fixes</h2>
           <dl class="setting-list is-plain">
             <div><dt>After a game patch</dt><dd>Open Lucent. If the card says files need repair, click <strong>Repair</strong>. Otherwise click <strong>Scan</strong> to check every file.</dd></div>
-            <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press the US <kbd>\</kbd> key (<kbd>*</kbd> on French AZERTY) to compare with Neural Rendering off.</dd></div>
+            <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press <kbd>Delete</kbd> (<kbd>Suppr</kbd> on French keyboards) to compare with Neural Rendering off.</dd></div>
             <div><dt>The look is too strong</dt><dd>Try <strong>Balanced</strong>, choose a lighter preset with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd>, or turn effects off with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F3</kbd>.</dd></div>
             <div><dt>Washed-out colours</dt><dd>With Windows HDR on, turn off RTX HDR and Auto HDR. OptiScaler handles HDR itself.</dd></div>
             <div><dt>Still stuck</dt><dd><strong>Help → Report a bug</strong> copies diagnostics and opens a GitHub issue. Questions go in a <a href="https://github.com/arnaudcouturier/lucent/issues">GitHub issue</a> too.</dd></div>
