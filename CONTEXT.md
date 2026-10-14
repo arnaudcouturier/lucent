@@ -1,6 +1,6 @@
 # Lucent
 
-Lucent is a manager for a player's FFXIV graphics mods. It deploys a tested set of third-party mods into the game folder, grouped as features (DLSS 5 through OptiScaler, and ReShade), and keeps them working across game patches and content updates.
+Lucent is a manager for a player's FFXIV graphics mods. It deploys a tested set of third-party mods into the game folder, grouped as features (DLSS 5 through OptiScaler, and ReShade), and keeps them working across game patches and content updates. Once deployed, the config files are the player's: they tune them in OptiScaler's and ReShade's overlays, not in Lucent.
 
 ## Language
 
@@ -78,36 +78,32 @@ _Avoid_: script, install plan
 One declarative operation in a recipe: copy, rename, set an ini key, or delete. A deployment over an existing setup also carries its presets over: a copy that becomes a user file once the deployment completes.
 _Avoid_: action, command, op
 
-**User change**:
-A config setting whose value on disk differs from what Lucent last wrote. It survives an update unless the new content version changes the same setting or resets it.
-_Avoid_: managed key, override, tweak
+**Config file**:
+A deployed file that OptiScaler or ReShade reads its settings from, such as `OptiScaler.ini` or `ReShade.ini`. Lucent writes it when it deploys the baseline; from then on it belongs to the player. A health check only checks that it exists, and an update touches it only as its config update rule says.
+_Avoid_: managed config, settings file
 
-**Reset key**:
-A config setting that a content version forces back to its shipped value, overriding any user change.
-_Avoid_: forced key, breaking key
+**Config update rule**:
+What a content version does to one config file on update: **keep** (the default: leave it alone), **add missing keys** (write the keys absent on disk with the baseline's value, leaving every other key as the player has it) or **replace** (back it up, then write the baseline from the first-install choices). The changelog announces add missing keys and replace.
+_Avoid_: merge, reset key
 
-**Screen-derived setting**:
-A config setting Lucent computes from the monitor XIV runs on, such as the frame cap or HDR peak brightness, and rewrites whenever it differs. It is never a user change.
-_Avoid_: auto setting, computed key
+**First-install choices**:
+What the player picks on the screen shown before the baseline is deployed: the performance profile, the frame generation mode, the HDR mode, Include ReShade and Add to Start menu. Lucent writes them into the config files once and keeps them only so Reset can offer them again.
+_Avoid_: settings, configurator
 
 **Performance profile**:
-One of Ultra, Fidelity, Balanced or Performance: a named set of config setting values that the user picks. Some of its values depend on the resolution of the screen XIV runs on.
+One of Ultra, Fidelity, Balanced or Performance: a named set of config setting values, picked among the first-install choices and written once. Some of its values depend on the resolution of the screen XIV runs on.
 _Avoid_: preset (that word belongs to ReShade), quality mode
 
-**Custom**:
-The state of a performance profile after a user change to one of its settings.
-_Avoid_: modified, manual
-
 **Frame generation mode**:
-Off, a fixed multiplier (2× to 6×) or Dynamic: the player's choice of how many frames OptiScaler generates, separate from the performance profile.
+Off, a fixed multiplier (2× to 6×) or Dynamic: how many frames OptiScaler generates, picked among the first-install choices, separately from the performance profile.
 _Avoid_: FG preset, MFG level
 
 **Frame cap**:
-The highest frame rate XIV presents, generated frames included: a screen-derived setting just below the refresh rate.
+The highest frame rate XIV presents, generated frames included, just below the refresh rate. Lucent computes it from XIV's screen when it writes the config files, and never again.
 _Avoid_: FPS limit, frame limiter
 
 **HDR mode**:
-Off, HDR or Scene HDR: how OptiScaler presents XIV on an HDR monitor.
+Off, HDR or Scene HDR: how OptiScaler presents XIV on an HDR monitor, picked among the first-install choices.
 _Avoid_: OptiHDR (upstream's name)
 
 **Preset**:
@@ -136,23 +132,27 @@ A copy of every file from before a first deployment, kept under its own path in 
 _Avoid_: backup folder (the journal's backups are elsewhere)
 
 **Health check**:
-A comparison of the game folder against what the deployment should be. The player starts a full one with the main screen's **Scan** button; that label is the only player-facing use of "scan" for it.
+A comparison of the game folder against what the deployment should be: every deployed file by hash, except config files, which only have to exist. The player starts a full one with the main screen's **Scan** button; that label is the only player-facing use of "scan" for it.
 _Avoid_: verify, scan
 
 **Drift**:
-Any difference a health check finds, such as a game patch replacing a deployed file.
+Any difference a health check finds, such as a game patch replacing a deployed file or a missing config file. A config file's contents are never drift.
 _Avoid_: broken, corruption
 
 **Repair**:
-Re-applying the deployment so that no drift remains.
+Putting back the drifted files so that no drift remains. It writes a config file only when it is missing.
 _Avoid_: fix, reinstall
 
+**Reset**:
+Deploying the baseline again as a first install would: the first-install choices are offered again, prefilled, then every file is rewritten, config files included, after backing up the player's ones. The player starts it with **Reset setup…** in Settings.
+_Avoid_: restore (that word belongs to uninstall), reconfigure, restore baseline
+
 **Tier switch**:
-Planning the deployment again for the tier the current GPU matches, started by the user after a graphics card change. The profile stays when the new tier has it; Disabled and user changes stay.
+A Reset for the tier the current GPU matches, started by the user after a graphics card change: the first-install choices are offered with the new tier's options. Disabled stays.
 _Avoid_: re-tier, migrate
 
 **Disabled**:
-The state of a deployment whose files are present but inactive, so the game runs as if vanilla. It persists through repair, update and profile changes.
+The state of a deployment whose files are present but inactive, so the game runs as if vanilla. It persists through repair, update and Reset.
 _Avoid_: vanilla mode, paused, off
 
 **Uninstall**:
