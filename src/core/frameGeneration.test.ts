@@ -73,4 +73,3 @@ describe('frame generation choices', () => {
     expect(frameGenerationDescription('dynamic', 230, 240)).toBe('Aims for 230 fps on your 240 Hz screen')
   })
 })
-

@@ -299,7 +299,10 @@ export function createCore(platform: Platform): Core {
         .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))
           && !keys.has(`${fileKey(s.file)}|${s.section.toLowerCase()}|${s.key.toLowerCase()}`)).map((s) => s.file) ?? []
     }
-    if (request.kind === 'frame-generation') return record.recipe.frameGenerationOptions?.find((option) => option.id === request.mode)?.settings.map((setting) => setting.file) ?? []
+    if (request.kind === 'frame-generation') {
+      const option = record.recipe.frameGenerationOptions?.find((candidate) => candidate.id === request.mode)
+      return option ? [...option.settings, ...(option.hdrSettings ?? [])].map((setting) => setting.file) : []
+    }
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
     if (request.kind === 'update' || request.kind === 'tier') {
       const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
@@ -510,6 +513,7 @@ export function createCore(platform: Platform): Core {
     } catch { /* The last result keeps showing; configs that can't be read are the health check's concern. */ }
   }
   const refreshFrameGeneration = async () => {
+    await refreshScreen()
     const record = state.deployment
     if (state.activity.kind !== 'deployment' || record?.status !== 'complete') {
       if (state.frameGenerationMode !== null) set({ frameGenerationMode: null })
@@ -900,7 +904,7 @@ export function createCore(platform: Platform): Core {
     },
     async selectFrameGenerationMode(mode) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
-      const option = state.deployment.recipe.frameGenerationOptions?.find((candidate) => candidate.id === mode)
+      const option = frameGenerationOptionsForGpu(state.deployment.recipe.frameGenerationOptions ?? [], state.deployment.graphics.name).find((candidate) => candidate.id === mode)
       if (!option || state.frameGenerationMode === mode) return
       const gameFolder = state.deployment.gameFolder
       set({ busy: true, error: null })

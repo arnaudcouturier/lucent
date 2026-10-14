@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createCore, type Activity, type Core } from '../core/core'
 import { crystalState } from '../core/crystal'
 import { createFakePlatform, type Machine } from '../platform/fake'
-import { MACHINES, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, frameGenerationContentHost, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
 import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
@@ -54,6 +54,27 @@ const workflow = (stage: 'review' | 'done' | 'healthy', m = MACHINES.steam, incl
   if (stage !== 'review') await core.deploy()
   if (stage === 'healthy') core.finish()
   return core
+}
+
+const frameGenerationHome = (base: Machine, gpu: string, custom = false) => async () => {
+  const m = machine(base, frameGenerationContentHost(), graphicsCard(gpu))
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  if (!custom) return core
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  const configPath = `${folder.path}\\game\\OptiScaler.ini`
+  const config = await platform.readText(configPath)
+  const updated = config.replace(/(Mode\s*=\s*)(?:off|[2-6]x|dynamic)/i, '$1custom')
+  if (updated === config) throw new Error('Gallery frame-generation setting missing')
+  await platform.writeText(configPath, updated)
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
 }
 const multipleLaunchers = async () => {
   const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
@@ -315,6 +336,10 @@ const STATES: GalleryState[] = [
   { key: 'screen-60-sdr', label: 'Screen · 60 Hz SDR', setup: scanned(MACHINES.screen60Sdr), showScreenFacts: true },
   { key: 'screen-144-hdr', label: 'Screen · 144 Hz HDR', setup: scanned(MACHINES.screen144Hdr), showScreenFacts: true },
   { key: 'screen-240-dual', label: 'Screen · 240 Hz HDR, dual monitors', setup: scanned(MACHINES.screen240Dual), showScreenFacts: true },
+  { key: 'frame-generation-60-rtx30', label: 'Home · Frame generation · 60 Hz · RTX 30', setup: frameGenerationHome(MACHINES.screen60Sdr, 'NVIDIA GeForce RTX 3080') },
+  { key: 'frame-generation-144-rtx40', label: 'Home · Frame generation · 144 Hz · RTX 40', setup: frameGenerationHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4080') },
+  { key: 'frame-generation-240-rtx40', label: 'Home · Frame generation · 240 Hz · RTX 40', setup: frameGenerationHome(MACHINES.screen240Dual, 'NVIDIA GeForce RTX 4090') },
+  { key: 'frame-generation-custom', label: 'Home · Frame generation · Custom', setup: frameGenerationHome(MACHINES.screen144Hdr, 'NVIDIA GeForce RTX 4080', true) },
   { key: 'beta-setup', label: 'Scan · first deployment with Beta content', setup: scanned(machine(MACHINES.beta, manifestHost({ ...BETA_MANIFEST, versions: [BETA_CONTENT] }))) },
   { key: 'no-published-tier', label: 'Scan · no content published for this card', setup: scanned(machine(MACHINES.steam, manifestHost({ ...BETA_MANIFEST, versions: [] }))) },
   { key: 'squareenix', label: 'Scan · found through the Square Enix launcher', setup: scanned(MACHINES.squareenix) },

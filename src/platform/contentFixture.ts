@@ -63,6 +63,28 @@ export const PROFILE_MANIFEST: Manifest = {
     }])),
   }],
 }
+
+const frameGenerationSetting = (mode: string) => ({ file: 'OptiScaler.ini', section: 'FrameGeneration', key: 'Mode', value: mode })
+const rtx30FrameGeneration = ['off', '2x'].map((id) => ({
+  id: id as 'off' | '2x', gpuNamePatterns: ['\\bRTX\\s+30[0-9]{2}\\b'], settings: [frameGenerationSetting(id)],
+}))
+const rtx40FrameGeneration = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'].map((id) => ({
+  id: id as 'off' | '2x' | '3x' | '4x' | '5x' | '6x' | 'dynamic',
+  gpuNamePatterns: ['\\bRTX\\s+40[0-9]{2}\\b'], experimental: ['3x', '4x', '5x', '6x'].includes(id),
+  settings: [frameGenerationSetting(id)],
+}))
+
+/** Illustrative mode variants for the Home gallery; these inert values are never published. */
+export const FRAME_GENERATION_MANIFEST: Manifest = {
+  ...PROFILE_MANIFEST,
+  versions: PROFILE_MANIFEST.versions.map((content) => ({
+    ...content,
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id === 'rtx-30-40'
+      ? { ...tier, frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] }
+      : tier])),
+  })),
+}
+
 export const fixtureUrl = (hash: string) => `https://github.com/arnaudcouturier/lucent/releases/download/content-2026.10.12/${hash}`
 export const OPTISCALER_NEXT_HASH = '67519f2e14ad9d1f4715625d6bcc73a76bb785c816396d530495dee3ad1e7613'
 const PROFILE_CONTENT = PROFILE_MANIFEST.versions[0]

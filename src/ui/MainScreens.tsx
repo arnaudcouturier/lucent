@@ -13,10 +13,14 @@ import { Credits } from './CreditsScreen'
 import { Path } from './Path'
 import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
+import { defaultFrameGenerationMode, frameGenerationDescription, frameGenerationOptionsForGpu } from '../core/frameGeneration'
 import { replacedOriginals } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
+import type { FrameGenerationId } from '../shared/manifest'
 import type { State } from '../core/core'
+import { SegmentedControl } from './SegmentedControl'
+import { observeWindowFocus } from './shell'
 
 export function MainScreen() {
   const { section } = useSection()
@@ -25,12 +29,53 @@ export function MainScreen() {
 }
 
 function HomeScreen() {
+  const [state, core] = useCore()
+  useEffect(() => {
+    void core.refreshFrameGenerationMode()
+    const stopWindowFocus = observeWindowFocus((focused) => {
+      if (focused) void core.refreshFrameGenerationMode()
+    })
+    const onFocus = () => void core.refreshFrameGenerationMode()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      stopWindowFocus()
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [core])
   return <Screen title="Your game" sub="What Lucent manages in your game folder." actions={<LaunchButton />}>
     <StatusCard />
     <FlowError />
     <ProfileSelector />
+    <FrameGenerationSelector state={state} core={core} />
     <EnabledRow />
   </Screen>
+}
+
+function FrameGenerationSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
+  const record = state.deployment
+  if (!record || state.activity.kind !== 'deployment') return null
+  const options = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
+  if (!options.length) return null
+  const labels: Record<FrameGenerationId, string> = { off: 'Off', '2x': '2x', '3x': '3x', '4x': '4x', '5x': '5x', '6x': '6x', dynamic: 'Dynamic' }
+  const mode = state.frameGenerationMode
+  const fallback = defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60)
+  const description = mode
+    ? state.screen ? frameGenerationDescription(mode, state.screen.frameCap, state.screen.refreshHz) : `Currently ${labels[mode]}`
+    : `Custom frame generation settings${state.screen ? ` · ${state.screen.frameCap} fps cap on your ${state.screen.refreshHz} Hz screen` : ''}`
+  return <section className="frame-generation-section card" aria-label="Frame generation">
+    <div className="frame-generation-heading">
+      <div><h2>Frame generation</h2><p>{description}</p></div>
+      {mode === null && <span className="frame-generation-custom">Custom</span>}
+    </div>
+    <SegmentedControl
+      ariaLabel="Frame generation mode"
+      options={options.map((option) => ({ id: option.id, label: labels[option.id], experimental: option.experimental }))}
+      value={mode ?? null}
+      disabled={!gameActionsAvailable(state)}
+      onChange={(id) => void core.selectFrameGenerationMode(id as FrameGenerationId)}
+    />
+    {mode === null && fallback && <p className="frame-generation-note">Select a mode to replace these custom settings.</p>}
+  </section>
 }
 
 /** Starts XIV the way the player does. While XIV runs it says so instead. */

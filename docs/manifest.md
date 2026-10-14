@@ -51,7 +51,8 @@ and tiny inert content from `src/platform/contentFixture.ts`. It never fetches o
 The dev-only gallery includes every tier, an app-update request, invalid/unavailable manifests and
 a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caution badge.
 The gallery also includes `screen-60-sdr`, `screen-144-hdr` and `screen-240-dual`; their toolbar shows the
-resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files.
+resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files. Home has
+inert frame-generation previews for RTX 30/40 at 60, 144 and 240 Hz, plus Custom config state.
 
 ## Content versions
 
@@ -77,7 +78,7 @@ Each version contains:
   `upscaling`, or `null` for a ReShade-only recipe).
 
 A tier recipe may also declare `screenDerivedSettings`, settings Lucent recalculates from the monitor XIV uses.
-Each entry names an owned config, section and key, plus the value computation. Lucent 0.1.x ignores this optional
+Each entry names an owned config, section and key, plus the value computation. Older Lucent releases ignore this optional
 field, so content that depends on it should require an app version that supports it. The first computation is
 `"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz, or
 `"peakNits"`, written as a whole number clamped to 400–4000 with 1100 as the fallback when the monitor does not
@@ -97,6 +98,28 @@ The field accepts only the known computation values, must use unique keys, and e
 Screen-derived settings are authoritative over profile settings with the same key and never make a profile Custom.
 Lucent stores their last-written values with the owned config for update merges, while config health checks remain
 parseability checks so an overlay edit is corrected without being reported as drift.
+
+A tier recipe may also declare `frameGenerationOptions`, a list of modes shown on Home. Each option has an `id` of
+`off`, `2x` through `6x`, or `dynamic`, plus nonempty `settings` targeting an owned config. Optional
+`gpuNamePatterns` are case-insensitive regular expressions; options without patterns apply to any GPU. If both a
+generic and GPU-specific option share an ID, the matching GPU-specific variant is used. `experimental: true` adds
+the yellow Experimental label. `hdrSettings` may override values for the same keys when Windows HDR is on. Lucent
+stores the currently selected mode and appends its settings after the performance profile, so frame-generation keys
+remain separate from profiles. Mode selection is not part of first-run setup: at 120 Hz or above the default is 2x,
+otherwise Off, falling back to the first offered mode. Lucent reads the config values on Home, when the window regains
+focus, and after XIV closes;
+values that match no declared mode appear as Custom and are preserved until the player selects a mode.
+
+```json
+"frameGenerationOptions": [
+  { "id": "off", "settings": [{ "file": "OptiScaler.ini", "section": "FrameGeneration", "key": "Mode", "value": "off" }] },
+  { "id": "2x", "gpuNamePatterns": ["\\bRTX\\s+40[0-9]{2}\\b"], "settings": [{ "file": "OptiScaler.ini", "section": "FrameGeneration", "key": "Mode", "value": "2x" }] }
+]
+```
+
+The field is optional and is ignored by older app releases. Options are filtered by the detected GPU and displayed in
+the fixed Off, 2x–6x, Dynamic order. The Home description uses the resolved frame cap and refresh rate; multiplier
+modes describe `floor(frameCap / multiplier)` as the render rate.
 
 The first deployment chooses the newest content on the player's channel for the scanned tier (Stable
 by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in Settings
