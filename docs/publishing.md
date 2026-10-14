@@ -117,7 +117,7 @@ The V2 field must contain all four profiles and can store a string or `1080p` / 
 app chooses a column from XIV's output height (<1300, <2000 or 2000+); GPU-name regexes optionally
 recommend a profile, with Balanced as the fallback. The old field remains readable for older content,
 and `performanceProfilesV2` is an optional addition that Lucent 0.1.x ignores. An optional `summary`
-is the short Home description and accepts a string or the same resolution columns, so the UI can
+is a short description and accepts a string or the same resolution columns, so the UI can
 describe upscaling without interpreting content keys. Tiers without profiles can omit the profile fields or use an empty list. `knownUserShaders` is optional: it lists shader filenames or relative shader
 paths a preset may reference but the user must supply. Those files are excluded from sources,
 even with `shaders: "all"`, and a recipe cannot copy or rename another file onto their paths.

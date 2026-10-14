@@ -27,13 +27,16 @@ the vanilla game folder's relative file paths and bytes before the first deploym
 the listing outside the game folder. Compare against it after uninstall, accounting separately
 for files the game itself generates. Use two real content versions for the update checks.
 
-- [ ] Deploy from a vanilla game folder.
+- [ ] Deploy from a vanilla game folder, picking a profile on the Profile step; confirm the game
+  picks up its settings.
 - [ ] In Keys, confirm the displayed shortcuts match the deployed configs. In game, use those
   shortcuts to open OptiScaler and ReShade, and confirm Neural Rendering is active.
-- [ ] Switch performance profile on Home; confirm the game picks up the new settings.
-- [ ] In the OptiScaler overlay, save without changing anything and close the game: the profile
-  stays as it was. Change one of the profile's settings, save and close the game: the main
-  screen shows "Custom · based on X". Pick a profile and confirm the Custom row is gone.
+- [ ] On Home, confirm there are no setting controls: only the status card, Launch XIV and
+  Enabled, at 1000×680 and at 880×600.
+- [ ] In the OptiScaler overlay, change a setting, save and close the game. Reopen Lucent and
+  launch XIV from it: `OptiScaler.ini` still holds your value and the deployment is healthy. Change
+  the monitor's refresh rate or Windows HDR and do the same: the frame cap and `PeakNits` in
+  `OptiScaler.ini` stay as they were.
 - [ ] With the game closed, replace a deployed file to simulate a game patch. Reopen Lucent,
   confirm drift, choose Repair, and confirm a healthy deployment and working game.
 - [ ] With XIVLauncher auto-repair on (Settings) and the Lucent window closed, replace a deployed

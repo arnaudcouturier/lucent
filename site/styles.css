@@ -603,12 +603,6 @@ kbd {
   font-size: 0.86em;
 }
 
-.mock-label {
-  margin: 1.45em 0 0.85em;
-  color: var(--ink-2);
-  font-size: 0.85em;
-}
-
 .mock-row {
   display: flex;
   align-items: center;
@@ -619,30 +613,6 @@ kbd {
 .mock-row > div {
   display: grid;
   gap: 0.1em;
-}
-
-.mock-row + .mock-row {
-  box-shadow: inset 0 1px 0 var(--line);
-}
-
-.mock-row.is-selected {
-  background: var(--accent-tint);
-}
-
-.mock-profiles .mock-row:first-child {
-  border-radius: 0.72em 0.72em 0 0;
-}
-
-.mock-radio {
-  width: 1em;
-  height: 1em;
-  flex: none;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 0.12em var(--line-strong);
-}
-
-.is-selected .mock-radio {
-  box-shadow: inset 0 0 0 0.3em var(--accent);
 }
 
 .mock-switch {

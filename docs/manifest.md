@@ -51,8 +51,8 @@ and tiny inert content from `src/platform/contentFixture.ts`. It never fetches o
 The dev-only gallery includes every tier, an app-update request, invalid/unavailable manifests and
 a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caution badge.
 The gallery also includes `screen-60-sdr`, `screen-144-hdr` and `screen-240-dual`; their toolbar shows the
-resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files. Home has
-inert frame-generation previews for RTX 30/40 at 60, 144 and 240 Hz, plus Custom config state.
+resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files. The Profile step has
+`profile-v2-rtx4090` and `profile-v2-rtx4070` previews for the card's recommended profile.
 
 ## Content versions
 
@@ -77,7 +77,9 @@ Each version contains:
   `ownedConfigs`, `shippedPresets`, `generatedFiles`, and `overlay` hint (`neural-rendering`,
   `upscaling`, or `null` for a ReShade-only recipe).
 
-A tier recipe may also declare `screenDerivedSettings`, settings Lucent recalculates from the monitor XIV uses.
+A tier recipe may also declare `screenDerivedSettings`, settings Lucent computes from the monitor XIV uses at the moment it
+writes the config files: a first install, and an update that rewrites them. Nothing recalculates them afterwards; once
+deployed, the config files belong to the player.
 Each entry names an owned config, section and key, plus the value computation. Older Lucent releases ignore this optional
 field, so content that depends on it should require an app version that supports it. The first computation is
 `"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz, or
@@ -95,20 +97,20 @@ three entries:
 ```
 
 The field accepts only the known computation values, must use unique keys, and each target must name an owned config.
-Screen-derived settings are authoritative over profile settings with the same key and never make a profile Custom.
-Lucent stores their last-written values with the owned config for update merges, while config health checks remain
-parseability checks so an overlay edit is corrected without being reported as drift.
+The plan writes screen-derived settings after the profile and frame generation values, so they win over profile settings
+with the same key; without a readable screen, the content's own values stay. Lucent stores their last-written values
+with the owned config for update merges, while config health checks remain parseability checks so a player's edit is
+never reported as drift.
 
-A tier recipe may also declare `frameGenerationOptions`, a list of modes shown on Home. Each option has an `id` of
+A tier recipe may also declare `frameGenerationOptions`, a list of modes the baseline can be deployed with. Each option has an `id` of
 `off`, `2x` through `6x`, or `dynamic`, plus nonempty `settings` targeting an owned config. Optional
 `gpuNamePatterns` are case-insensitive regular expressions; options without patterns apply to any GPU. If both a
 generic and GPU-specific option share an ID, the matching GPU-specific variant is used. `experimental: true` adds
 the yellow Experimental label. `hdrSettings` may override values for keys also declared in `settings` when Windows HDR is on; every override must have a normal-mode value so turning HDR off restores it. Lucent
-stores the currently selected mode and appends its settings after the performance profile, so frame-generation keys
-remain separate from profiles. Mode selection is not part of first-run setup: at 120 Hz or above the default is 2x,
-otherwise Off, falling back to the first offered mode. Lucent reads the config values on Home, when the window regains
-focus, and after XIV closes;
-values that match no declared mode appear as Custom and are preserved until the player selects a mode.
+records the selected mode and appends its settings after the performance profile, so frame-generation keys
+remain separate from profiles. Mode selection is not part of first-run setup yet: at 120 Hz or above the default is 2x,
+otherwise Off, falling back to the first offered mode. There is no control to change it afterwards: an update reads the
+config values to find the mode the player kept, and keeps values that match no declared mode as they are.
 
 ```json
 "frameGenerationOptions": [
@@ -118,15 +120,14 @@ values that match no declared mode appear as Custom and are preserved until the 
 ```
 
 The field is optional and is ignored by older app releases. Options are filtered by the detected GPU and displayed in
-the fixed Off, 2x–6x, Dynamic order. The Home description uses the resolved frame cap and refresh rate; multiplier
+the fixed Off, 2x–6x, Dynamic order. A mode's one-line description uses the resolved frame cap and refresh rate; multiplier
 modes describe `floor(frameCap / multiplier)` as the render rate.
 
-A tier may declare optional `hdrOptions` content data. New deployments select HDR by default; Home shows its mode
-selector only when the current display supports HDR. A declaration contains one option each for `off`, `hdr` and
+A tier may declare optional `hdrOptions` content data. New deployments select HDR by default. A declaration contains one option each for `off`, `hdr` and
 `scene-hdr`; each option owns the complete set of INI values that identifies and applies it. `scene-hdr` may set
-`experimental: true`. Older content without this field has no Home HDR selector. Lucent reads the current INI
-values to identify the selected mode, and an unrecognized combination is Custom. The mode keys are separate from
-performance-profile keys so choosing a mode never makes a profile Custom. Example:
+`experimental: true`. Older content without this field has no HDR settings. An update reads the current INI
+values to find the mode the player kept, and keeps an unrecognized combination as it is. The mode keys are separate from
+performance-profile keys. Example:
 
 ```json
 "hdrOptions": [
@@ -198,7 +199,7 @@ backed up and replaced by the recipe itself. An update plans without signatures 
 `unclaimedPaths` isn't empty, since no Scan has listed those files.
 
 Review counts those files as backed up. Uninstall restores them; the carried-over copies are user
-files from then on, which Repair, profile changes and Uninstall never touch. A failed deployment
+files from then on, which Repair and Uninstall never touch. A failed deployment
 removes them along with everything else.
 
 Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, and per game folder
@@ -249,7 +250,7 @@ The gallery includes `existing-setup`, `review`, `review-existing-setup`, `revie
 
 ## Health check and Repair
 
-A health check runs on open, after a deployment, and before and after a profile change or Repair.
+A health check runs on open, after a deployment, and before and after Repair or any other change to the game folder.
 Every stamped file must be present. An owned config must also be readable as text, and a shipped
 preset only present, so a user change to either is never Drift. Every other file must keep its
 hash. A size and modified time matching the record's stamp stand in for the hash, except right
@@ -260,7 +261,7 @@ the new version.
 
 Repair runs a full health check, then restores each drifted file to what Lucent last wrote:
 deployed files from the cache, downloading only the missing assets of the deployed content
-version, and owned configs as their last-written copy. Like a profile change, it journals each
+version, and owned configs as their last-written copy. It journals each
 write with a verified backup from `changeStart`, so a failure or interruption undoes only the
 repair. Disabled entry files come back under their disabled names. A full health check follows.
 
@@ -286,12 +287,12 @@ Older content may supply `performanceProfiles`: the three legacy IDs `fidelity`,
 `settings`. Lucent keeps reading this field with its original Fidelity default.
 
 New content may supply `performanceProfilesV2`, which takes precedence when both fields are
-present. Omit it or use `[]` for a tier without profiles: Lucent hides the Home selector, and the
+present. Omit it or use `[]` for a tier without profiles: Lucent offers no profile, and the
 first-run step becomes Options when ReShade or Start menu choices remain, or is skipped when there
 are no choices. Otherwise supply all four IDs in this order: `ultra`, `fidelity`, `balanced` and
 `performance`. Each profile has a one-line `label` and `description`, nonempty `settings`, and may
-include `summary`, a short Home description that accepts a string or the same resolution-column map
-as a setting. If omitted, Home uses `description`. Content can therefore describe the resolved
+include `summary`, a short description that accepts a string or the same resolution-column map
+as a setting. If omitted, `description` is used. Content can therefore describe the resolved
 upscaling choice without Lucent inferring meaning from a particular INI key. A profile may also
 include `gpuNamePatterns`, a list of case-insensitive regular expressions matched against the
 graphics card name. The first matching profile is recommended; Balanced is the fallback.
@@ -310,19 +311,16 @@ and is ignored by Lucent 0.1.x.
 Scan → Profile → Review preselects the first matching recommendation. The selected profile is
 applied after the recipe, and settings for an excluded ReShade config are omitted. The saved recipe
 keeps only the content's own steps; the record names the profile and stores the profile data from
-that content version. Picking a profile writes only its keys, saves those values into the
-last-written copy, and keeps unrelated user changes distinct from values Lucent wrote. Enabled
-remains unchanged. When the screen's resolution column changes, Lucent updates a profile setting
-only while the on-disk value still matches Lucent's last-written value; a player edit remains
-Custom across later resolution changes.
+that content version. Its values are written once, with the baseline, and saved into the
+last-written copy; the resolution column comes from XIV's screen at that moment and does not follow a
+later monitor change. Once deployed, the profile is not a control: there is no command to change it, and
+the config files belong to the player.
 
 Config edits preserve BOM, line endings, whitespace, ordering and comment lines; a no-op round
 trip is byte-identical for the UTF-8 configs supported by the Platform port. Neither ReShade nor
 OptiScaler has inline comments, so everything after `=` is the value, `#` and `;` included.
 
-Profile writes have verified backups and durable journal entries. An interrupted profile change
-recovers only that change, retaining the earlier deployment and profile. Lucent refuses a profile
-change while XIV runs. NVIDIA fixtures have illustrative profiles; Radeon and Other fixtures
+NVIDIA fixtures have illustrative profiles; Radeon and Other fixtures
 demonstrate tiers without profiles. Real per-tier settings come from the tested published content.
 
 ## Content updates
