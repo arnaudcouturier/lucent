@@ -39,6 +39,25 @@ After the protected baseline was captured, root ran the coordinated reversible l
 
 This proves the applied Reset, readable backup, Disabled persistence, and re-enable lifecycle. It does not prove uninstall, rollback to a prior content version, or gameplay behavior.
 
+## Repair evidence
+
+The same session replaced one managed file (`reshade-shaders/Shaders/OtisFX/MultiLUT.fx`) with XIV closed. Lucent's health check reported drift in exactly that file, Repair rewrote only it, and the check returned to healthy with 188 files. A harmless comment appended to `OptiScaler.ini` survived the Repair, so Repair keeps tuned configs.
+
+## Uninstall and reinstall evidence (2026-10-14)
+
+With XIV closed, a fresh recursive listing of the game folder was captured outside it before the test: 451 files, SHA-256 for every file up to 200 MB and size plus UTC mtime for the 73 larger ones. Before the listing, the Repair marker was removed so `OptiScaler.ini` matched the protected baseline hash.
+
+**Settings → Uninstall from this game** was confirmed in the published `0.2.0-beta.1` app, and the log reported that Lucent put back the file it had replaced.
+
+- The folder went from 451 to 264 files. Exactly the 187 record-owned additions were removed; no record-owned file remained apart from `nvngx_dlss.dll`.
+- `game/nvngx_dlss.dll` was restored byte-for-byte to its original 53,689,400 bytes, SHA-256 `68c99e387767c23a4205c04746809443619fdc88c65a5b57687350a313211010`.
+- No file was added. No other file changed in hash, or in size and mtime for the large files. The 241 unowned game paths and the other unowned files were untouched.
+- All 50 directories Lucent created were removed (67 to 17 directories). Lucent generated no logs in that deployment (`OptiScaler.log`, `ReShade.log` absent).
+
+Then the first-install flow was run again with Ultra, 2x, HDR Off and ReShade included. The Profile step's defaults picked HDR on this machine, so Off was chosen explicitly to match the record. Review showed 1 backup, 187 added, 0 downloaded. Install finished in 2 s and the health check reported healthy with 188 files. All 188 managed files match the protected baseline hashes, the live file set is again the 451 pre-uninstall paths with no hash difference, and `OptiScaler.ini` and `ReShade.ini` match the baseline hashes.
+
+This proves Uninstall restores the folder exactly and the same setup can be reinstalled from cache. Prior-content rollback and gameplay remain unobserved. The 130 GB of unowned game assets were compared by size and mtime, not rehashed.
+
 ## Protective baseline
 
 A private external baseline was created outside the game directory and is intentionally not committed. It contains:
@@ -57,7 +76,7 @@ The baseline is a safety aid for the upcoming coordinated test. Immediately befo
 2. **Completed 2026-10-14:** Opened Reset, verified the readable destination, prefilled choices, review counts, and current graph; applied once while Disabled; verified the marked config in the 188-file backup, baseline restoration, managed hashes, the unowned-file listing, Disabled persistence, and subsequent Healthy/Enabled state.
 3. Keep uninstall as a separate destructive test. Before applying it, capture the fresh recursive listing. Afterward verify that the backed-up `nvngx_dlss.dll` is restored byte-for-byte, Lucent-owned additions and empty created directories are removed, and every unowned file and user path is unchanged. Preserve the external baseline if the app cleans its normal backup directory.
 4. A maintainer must perform the coordinated game launch and gameplay attestation for the required profile, frame-generation, HDR, ReShade, and launcher choices. The agent will not launch the user’s game or alter the user’s setup for this step.
-5. Stable promotion stays blocked until the applied Reset and uninstall evidence, plus the gameplay attestation, are recorded.
+5. Stable promotion stays blocked until the gameplay attestation is recorded (applied Reset and uninstall evidence are now in this note).
 
 ## Acceptance status
 
@@ -69,6 +88,7 @@ The baseline is a safety aid for the upcoming coordinated test. Immediately befo
 | Reset UI preflight and cancel path | proved | native settled UI observation; no Apply |
 | Applied Reset and backup restoration | proved | coordinated run restored the baseline and preserved the marked config in the readable 188-file backup |
 | Disabled persistence and re-enable | proved | `winmm.dll.disabled` remained in place through Reset, then native Enable restored the active entry |
-| Uninstall and preservation of user files | unchecked | requires coordinated destructive action |
+| Repair of a drifted managed file | proved | one-file drift detected and repaired; tuned config comment preserved |
+| Uninstall and preservation of user files | proved | 187 additions removed, original `nvngx_dlss.dll` restored, no unowned file changed; reinstalled and healthy |
 | Fresh gameplay attestation for this lifecycle run | unchecked | requires maintainer/game launch |
-| Stable promotion | unchecked | blocked by the three items above |
+| Stable promotion | unchecked | blocked by the gameplay attestation |
