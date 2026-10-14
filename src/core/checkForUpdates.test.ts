@@ -66,7 +66,7 @@ it('names both when the app and the content have new versions', async () => {
 it('says so when everything is up to date', async () => {
   const { core } = await opened()
   await core.checkForUpdates()
-  expect(core.getState()).toMatchObject({ error: null, notice: `You’re up to date: Lucent 0.1.0, content ${STABLE.id}.` })
+  expect(core.getState()).toMatchObject({ error: null, notice: `You’re up to date: Lucent ${__APP_VERSION__}, content ${STABLE.id}.` })
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
 })
 

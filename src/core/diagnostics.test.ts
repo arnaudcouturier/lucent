@@ -26,7 +26,7 @@ it('copies the player’s versions, tier, GPU driver, Windows and health check w
   const { platform, core } = await deployed()
   await core.copyDiagnostics()
   expect(platform.clipboard).toEqual(expect.stringContaining([
-    'App version: 0.1.0',
+    `App version: ${__APP_VERSION__}`,
     'Content version: 2026.10.12',
     'Channel: Stable',
   ].join('\n')))

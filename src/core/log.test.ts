@@ -29,7 +29,7 @@ describe('the activity log', () => {
     const { platform, core } = await deployed()
     await core.readLog(LUCENT_LOG)
     const lines = await logged(platform)
-    expect(lines[0]).toBe('[info] Lucent 0.1.0 started')
+    expect(lines[0]).toBe(`[info] Lucent ${__APP_VERSION__} started`)
     expect(lines).toEqual(expect.arrayContaining([
       `[info] Game folder: ${ROOT}, game 2026.09.30.0000.0000`,
       '[info] Graphics card: NVIDIA GeForce RTX 4090, RTX 30/40 tier',
@@ -180,7 +180,7 @@ describe('the Logs section', () => {
     const { platform, core } = await deployed()
     const [, optiScaler, reShade] = logSources(core.getState().deployment)
     const lucent = await core.readLog(LUCENT_LOG)
-    expect(lucent![0]).toMatchObject({ level: 'info', text: 'Lucent 0.1.0 started' })
+    expect(lucent![0]).toMatchObject({ level: 'info', text: `Lucent ${__APP_VERSION__} started` })
     expect(lucent![0].date).toMatch(/^\d{4}-\d\d-\d\d$/)
     expect(lucent![0].time).toMatch(/^\d\d:\d\d:\d\d$/)
     expect(await core.readLog(optiScaler)).toBeNull()
@@ -199,7 +199,8 @@ describe('the Logs section', () => {
     expect(await core.copyLog(optiScaler)).toBe(false)
     expect(platform.clipboard).toBeNull()
     expect(await core.copyLog(LUCENT_LOG)).toBe(true)
-    expect(platform.clipboard).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[info\] Lucent 0\.1\.0 started\n/)
+    expect(platform.clipboard).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[info\] Lucent \S+ started\n/)
+    expect(platform.clipboard).toContain(`Lucent ${__APP_VERSION__} started\n`)
   })
 
   it('reads each tool’s own level, and shows a line it can’t parse as it is', () => {
