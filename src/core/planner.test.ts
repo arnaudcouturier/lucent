@@ -42,6 +42,13 @@ it('writes the screen-derived settings last, from the screen it is given, and on
     .toEqual([{ kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1100' }])
   expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], false, scan, null, true, { screen }))).toEqual([])
   expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan))).toEqual([])
+
+  // An update carries the value Lucent wrote for a key, and computes only the keys it has no value for.
+  const kept = [{ file: 'reshade.ini', section: 'framerate', key: 'limit', value: '120.000000' }]
+  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan, null, true, { screen, screenSettingsKept: kept }))).toEqual([
+    { kind: 'ini_set', file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: '120.000000' },
+    { kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1000' },
+  ])
 })
 
 it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profile settings', () => {

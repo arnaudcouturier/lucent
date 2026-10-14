@@ -832,7 +832,13 @@ export async function updateDeployment(
   const hdrSelection: Pick<PlanSelection, 'hdrMode' | 'hdrActive'> = currentHdr && targetRecipe.hdrOptions?.length
     && (currentHdr.mode === null || targetRecipe.hdrOptions.some((option) => option.id === currentHdr.mode))
     ? { hdrMode: currentHdr.mode, hdrActive: currentHdr.active } : {}
-  const selection: PlanSelection = { gpuName, outputHeight: screen?.height, frameGenerationOptions: options, frameGenerationMode, hdrOn: screen?.hdrOn ?? false, hdrSettingsOverride, screen, ...hdrSelection }
+  // An update never moves a screen-derived value Lucent wrote before; only a key the content adds is computed from the screen.
+  const screenSettingsKept = (targetRecipe.screenDerivedSettings ?? []).flatMap((setting) => {
+    const written = Object.entries(record.ownedConfigs).find(([path]) => fileKey(path) === fileKey(setting.file))
+    const value = written ? readIni(written[1]).get(setting.section, setting.key) : undefined
+    return value === undefined ? [] : [{ file: setting.file, section: setting.section, key: setting.key, value }]
+  })
+  const selection: PlanSelection = { gpuName, outputHeight: screen?.height, frameGenerationOptions: options, frameGenerationMode, hdrOn: screen?.hdrOn ?? false, hdrSettingsOverride, screen, screenSettingsKept, ...hdrSelection }
   const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, selection)
   if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)

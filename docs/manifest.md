@@ -78,8 +78,8 @@ Each version contains:
   `upscaling`, or `null` for a ReShade-only recipe).
 
 A tier recipe may also declare `screenDerivedSettings`, settings Lucent computes from the monitor XIV uses at the moment it
-writes the config files: a first install, and an update that rewrites them. Nothing recalculates them afterwards; once
-deployed, the config files belong to the player.
+writes the config files for the first time. Nothing recalculates them afterwards: an update carries forward the value Lucent
+wrote and computes only a key the new content adds, because once deployed the config files belong to the player.
 Each entry names an owned config, section and key, plus the value computation. Older Lucent releases ignore this optional
 field, so content that depends on it should require an app version that supports it. The first computation is
 `"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz, or

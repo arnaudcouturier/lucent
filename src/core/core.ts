@@ -91,7 +91,7 @@ export interface State {
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
   graphics: GraphicsState
-  /** XIV's resolved monitor and frame cap, read at Scan and before a deployment or update writes its configs; nothing else uses it. */
+  /** XIV's resolved monitor and frame cap, read at Scan and before a deployment or update writes its configs. */
   screen: ResolvedScreen | null
   manifest: ManifestState
   xivLauncher: XivLauncherState
@@ -271,7 +271,7 @@ export function createCore(platform: Platform): Core {
   }
   const profileNote = (profiles: PerformanceProfile[] | undefined, id: ProfileId | null | undefined) => id ? `, ${profiles?.find((p) => p.id === id)?.label ?? id} profile` : ''
   /** What a deployment or an update plans its config values from: the card's frame generation options, and XIV's screen. */
-  const frameGenerationSelection = (content: ContentVersion, tier: Tier, mode?: FrameGenerationId | null): PlanSelection => {
+  const planSelection = (content: ContentVersion, tier: Tier, mode?: FrameGenerationId | null): PlanSelection => {
     const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : state.deployment?.graphics.name ?? ''
     const options = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], gpuName)
     return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions: options, frameGenerationMode: mode === undefined
@@ -299,7 +299,7 @@ export function createCore(platform: Platform): Core {
       const scan = await scanDeployment(platform, record.gameFolder, target.content, record, [])
       const targetRecipe = target.content.tiers[target.tier.id]
       const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, state.graphics.status === 'found' ? state.graphics.adapter.name : '')
-      const selection = frameGenerationSelection(target.content, target.tier, record.frameGenerationMode)
+      const selection = planSelection(target.content, target.tier, record.frameGenerationMode)
       selection.outputHeight = state.screen?.height
       return [...planDeployment(target.content, target.tier, record.includeReShade, scan, profile, record.enabled, selection).steps.flatMap(stepWritePaths),
         ...(selection.frameGenerationOptions ?? []).flatMap((option) => option.settings.map((setting) => setting.file))]
@@ -353,7 +353,7 @@ export function createCore(platform: Platform): Core {
     const { gameFolder, files } = scanned
     try {
       const plan = planDeployment(content, tier, state.includeReShade, { files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true,
-        { ...frameGenerationSelection(content, tier), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
+        { ...planSelection(content, tier), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
       const changes = folderChanges(plan, await readableBackupPath(platform, gameFolder, await backupFolderName(platform, gameFolder)))
       if (scanned?.gameFolder === gameFolder) set({ folderChanges: changes })
     } catch { set({ folderChanges: null }) }
@@ -466,7 +466,7 @@ export function createCore(platform: Platform): Core {
     const targetRecipe = content.tiers[tier.id]
     const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, state.graphics.status === 'found' ? state.graphics.adapter.name : '')
     const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled,
-      { ...frameGenerationSelection(content, tier, record.frameGenerationMode ?? null), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
+      { ...planSelection(content, tier, record.frameGenerationMode ?? null), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
     return { version: content.id, changelog: content.changelog, downloadSize: plan.downloadSize }
   }
   /** The health check right after a deployment, shown once the player leaves Done. */
@@ -971,7 +971,7 @@ export function createCore(platform: Platform): Core {
         prepareProfiles(content)
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Choose the game folder before continuing.')
         if (!scanned || scanned.gameFolder !== state.gameFolder.path) throw new UnreviewedFilesError([])
-        const selection = frameGenerationSelection(content, state.graphics.tier)
+        const selection = planSelection(content, state.graphics.tier)
         const acknowledged = resumeReviewedPaths ?? planDeployment(content, state.graphics.tier, includeReShade,
           { files: scanned.files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true, selection).filesToBackup
         const scan = await scanDeployment(platform, state.gameFolder.path, content, null, signatures())
@@ -1003,7 +1003,7 @@ export function createCore(platform: Platform): Core {
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
         await refreshScreen()
-        const selection = frameGenerationSelection(content, state.graphics.tier, state.plan.frameGenerationMode)
+        const selection = planSelection(content, state.graphics.tier, state.plan.frameGenerationMode)
         // As the player, before any admin prompt, so the shortcut and the entry are theirs.
         if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
         if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile, reviewedPaths: acknowledged })) {

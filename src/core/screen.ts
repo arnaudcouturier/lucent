@@ -79,8 +79,11 @@ export function resolvedPeakNits(peakNits: number | null): number {
   return Math.min(4000, Math.max(400, Math.round(measured)))
 }
 
+/** What the recipe's screen-derived settings are computed from. */
+export type ScreenValues = Pick<ResolvedScreen, 'frameCap' | 'peakNits'>
+
 /** The value a screen-derived setting takes on this screen, as the config file writes it. */
-export function screenDerivedValue(setting: ScreenDerivedSetting, screen: Pick<ResolvedScreen, 'frameCap' | 'peakNits'>): string {
+export function screenDerivedValue(setting: ScreenDerivedSetting, screen: ScreenValues): string {
   if (setting.value === 'frameCap') return screen.frameCap.toFixed(6)
   if (setting.value === 'peakNits') return String(resolvedPeakNits(screen.peakNits))
   throw new Error(`Unknown screen-derived setting: ${setting.value}`)

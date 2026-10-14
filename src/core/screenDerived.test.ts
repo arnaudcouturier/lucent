@@ -204,9 +204,10 @@ describe('screen-derived settings', () => {
       m.remoteText![MANIFEST_URL] = JSON.stringify(manifest)
     }
 
-    it('writes every declared cap for the screen the update runs on', async () => {
+    it('keeps the caps Lucent wrote even when the screen has changed, whatever the player tuned', async () => {
       const { m, platform, core } = await deploy()
       await publishUpdate(m)
+      await platform.writeText(CONFIG, (await platform.readText(CONFIG)).replace('FramerateLimit=224.000000', 'FramerateLimit=88.000000'))
       await setRefresh(platform, 240, 144)
       await core.checkForUpdates()
       expect(core.getState().activity).toMatchObject({ kind: 'deployment', update: { version: '2026.11.02' } })
@@ -214,9 +215,25 @@ describe('screen-derived settings', () => {
       expect(core.getState().error).toBeNull()
       expect(core.getState().deployment?.contentVersion).toBe('2026.11.02')
       const config = await platform.readText(CONFIG)
-      expect(config).toContain('FramerateLimit=138.000000')
-      expect(config).toContain('FramerateTargetDMFG=138.000000')
-      expect(config).toContain('DynamicTargetFPS=138.000000')
+      expect(config).toContain('FramerateLimit=88.000000')
+      expect(config).toContain('FramerateTargetDMFG=224.000000')
+      expect(config).toContain('DynamicTargetFPS=224.000000')
+    })
+
+    it('computes a cap the update adds from the screen it runs on', async () => {
+      const { m, platform, core } = await deploy()
+      const manifest = JSON.parse(m.remoteText![MANIFEST_URL]) as typeof PROFILE_MANIFEST
+      const added = { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimitBackup', value: 'frameCap' as const }
+      manifest.versions.push({ ...structuredClone(manifest.versions[0]), id: '2026.11.02', changelog: ['A new cap.'] })
+      manifest.versions[1].tiers['rtx-30-40'].screenDerivedSettings = [...FRAME_CAPS, added]
+      m.remoteText![MANIFEST_URL] = JSON.stringify(manifest)
+      await setRefresh(platform, 240, 144)
+      await core.checkForUpdates()
+      await core.update()
+      expect(core.getState().error).toBeNull()
+      const config = await platform.readText(CONFIG)
+      expect(config).toContain('FramerateLimitBackup=138.000000')
+      expect(config).toContain('FramerateLimit=224.000000')
     })
 
     it('keeps a cap the player tuned when the screen has not changed', async () => {
