@@ -58,7 +58,7 @@
             <li><span class="step-number" aria-hidden="true">2</span><div><h3>Scan.</h3><p>Lucent finds your game folder (XIVLauncher, Steam, the Square Enix launcher or the default location; choose it yourself if needed), your graphics card and its tier. If only beta content is available, turn on <strong>Beta channel</strong> here. If another ReShade, GShade, OptiScaler or GPosingway is there, Scan lists every file Lucent will back up and replace, and the presets it keeps. <strong>Show files</strong> opens the full list.</p></div></li>
             <li><span class="step-number" aria-hidden="true">3</span><div><h3>Choose a profile.</h3><p>Pick Fidelity, Balanced or Performance (see <a href="#profiles">performance profiles</a>), whether to include ReShade, and whether to add Lucent to the Start menu. You can change the profile any time later.</p></div></li>
             <li><span class="step-number" aria-hidden="true">4</span><div><h3>Review, then Install.</h3><p>Install downloads every file and checks it against its hash, copies the files it replaces to your Backups folder, applies each change through a journal it can undo, then checks every deployed file. If anything fails, your game folder goes back exactly as it was.</p></div></li>
-            <li><span class="step-number" aria-hidden="true">5</span><div><h3>Play.</h3><p>Start XIV as usual. No ReShade preset is active until you pick one: press <kbd>Shift</kbd>+<kbd>F2</kbd> in game.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">5</span><div><h3>Play.</h3><p>Start XIV as usual. No ReShade preset is active until you pick one: press <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd> in game.</p></div></li>
           </ol>
           <p class="guide-note">Your original files are copied to <code>%LOCALAPPDATA%\Lucent\Backups\&lt;game folder name&gt;\game</code> under their own paths. Lucent also keeps its own hash-checked backups, which is what Uninstall uses.</p>
         </section>
@@ -70,20 +70,20 @@
           <p class="guide-text">These are the keys Lucent ships. If you change one in game, the <strong>Keys</strong> section of Lucent shows your keys as they are now, and what Lucent had set.</p>
           <div class="key-table" role="table" aria-label="OptiScaler keys">
             <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">OptiScaler</span></div></div>
-            <div role="row"><span role="cell"><kbd>Insert</kbd></span><span role="cell">Open or close the OptiScaler menu: Neural Rendering, upscaling, frame generation and every setting below.</span></div>
-            <div role="row"><span role="cell"><kbd>\</kbd></span><span role="cell">Neural Rendering on or off, with a small “On / Off” notice. The Keys section shows the binding your installed content ships; some content leaves it unbound.</span></div>
-            <div role="row"><span role="cell"><kbd>End</kbd></span><span role="cell">Frame generation on or off.</span></div>
-            <div role="row"><span role="cell"><kbd>Page Up</kbd></span><span role="cell">Show or hide OptiScaler’s FPS overlay.</span></div>
-            <div role="row"><span role="cell"><kbd>Page Down</kbd></span><span role="cell">Cycle the FPS overlay through its simple and detailed styles.</span></div>
+            <div role="row"><span role="cell"><kbd>Insert</kbd> / <kbd>INS</kbd></span><span role="cell">Open or close the OptiScaler menu: Neural Rendering, upscaling, frame generation and every setting below.</span></div>
+            <div role="row"><span role="cell">US <kbd>\</kbd> key (<kbd>*</kbd> on French AZERTY; <kbd>^</kbd> on German QWERTZ)</span><span role="cell">Neural Rendering on or off, with a small “On / Off” notice. The Keys section shows the binding your installed content ships; some content leaves it unbound.</span></div>
+            <div role="row"><span role="cell"><kbd>End</kbd> / <kbd>FIN</kbd></span><span role="cell">Frame generation on or off.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Up</kbd> / <kbd>PG.PREC</kbd></span><span role="cell">Show or hide OptiScaler’s FPS overlay.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Down</kbd> / <kbd>PG.SUIV</kbd></span><span role="cell">Cycle the FPS overlay through its simple and detailed styles.</span></div>
           </div>
           <div class="key-table" role="table" aria-label="ReShade keys">
             <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">ReShade</span></div></div>
-            <div role="row"><span role="cell"><kbd>Shift</kbd>+<kbd>F2</kbd></span><span role="cell">Open or close the ReShade menu, where you choose a preset.</span></div>
-            <div role="row"><span role="cell"><kbd>Shift</kbd>+<kbd>F3</kbd></span><span role="cell">All ReShade effects on or off, to compare with and without.</span></div>
-            <div role="row"><span role="cell"><kbd>Print Screen</kbd></span><span role="cell">Screenshot with effects, saved as PNG in the game’s <code>game</code> folder.</span></div>
+            <div role="row"><span role="cell"><kbd>Shift</kbd> / <kbd>MAJ</kbd>+<kbd>F2</kbd></span><span role="cell">Open or close the ReShade menu, where you choose a preset.</span></div>
+            <div role="row"><span role="cell"><kbd>Shift</kbd> / <kbd>MAJ</kbd>+<kbd>F3</kbd></span><span role="cell">All ReShade effects on or off, to compare with and without.</span></div>
+            <div role="row"><span role="cell"><kbd>Print Screen</kbd> (Impr. écran on many French keyboards)</span><span role="cell">Screenshot with effects, saved as PNG in the game’s <code>game</code> folder.</span></div>
           </div>
           <h3 class="guide-subhead">Changing a key</h3>
-          <p class="guide-text"><strong>OptiScaler:</strong> open its menu, then <strong>Keybinds</strong>. Click an action and press the new key; <kbd>Esc</kbd> cancels and <kbd>Backspace</kbd> unbinds. OptiScaler takes single keys, not combinations. <strong>ReShade:</strong> open its menu, then <strong>Settings</strong>, and set <strong>Overlay key</strong> or <strong>Effect toggle key</strong>. Lucent keeps your keys through content updates, unless an update changes that same key.</p>
+          <p class="guide-text"><strong>OptiScaler:</strong> open its menu, then <strong>Keybinds</strong>. Click an action and press the new key; <kbd>Esc</kbd> (ÉCHAP on French keyboards) cancels and <kbd>Backspace</kbd> (RET.ARR on French keyboards) unbinds. OptiScaler takes single keys, not combinations. <strong>ReShade:</strong> open its menu, then <strong>Settings</strong>, and set <strong>Overlay key</strong> or <strong>Effect toggle key</strong>. Lucent keeps your keys through content updates, unless an update changes that same key.</p>
         </section>
 
         <!-- 03 · Settings explained -->
@@ -103,7 +103,7 @@
 
           <h3 class="guide-subhead">OptiScaler · Neural Rendering <code>[DlssNr]</code></h3>
           <dl class="setting-list">
-            <div><dt><code>Enabled</code><span>true</span></dt><dd>Turns on DLSS 5 Neural Rendering, which redraws detail and light in the upscaler’s image before frame generation sees it. <kbd>\</kbd> toggles it in game.</dd></div>
+            <div><dt><code>Enabled</code><span>true</span></dt><dd>Turns on DLSS 5 Neural Rendering, which redraws detail and light in the upscaler’s image before frame generation sees it. The US <kbd>\</kbd> key (shown as <kbd>*</kbd> on French AZERTY and <kbd>^</kbd> on German QWERTZ) toggles it in game.</dd></div>
             <div><dt><code>Passes</code><span>profile</span></dt><dd>How many model layers run one after another. 2 is deliberately stronger and costs about twice the model time of 1.</dd></div>
             <div><dt><code>RunBeforeSR</code><span>true</span></dt><dd>Runs Neural Rendering on the render-resolution image just before DLSS upscaling, instead of after it. Cheaper, and the upscaler cleans up its result.</dd></div>
             <div><dt><code>ResidualFG</code><span>profile</span></dt><dd>Runs Neural Rendering every other frame and lets NVIDIA frame generation fill in its changes. Faster, with one extra frame of latency and occasional misaligned effects.</dd></div>
@@ -122,7 +122,7 @@
             <div><dt><code>ReversibleMode</code><span>3</span></dt><dd>How the game’s HDR-range image is mapped for the SDR-trained model and back (3: hybrid mapping, composed).</dd></div>
             <div><dt><code>WhitePointSource</code><span>2</span></dt><dd>Where the model’s white point comes from. 2 measures the scene’s exposure; in XIV it uses the game’s own lighting to keep the result stable.</dd></div>
             <div><dt><code>ScalingDownscaler</code><span>4</span></dt><dd>Lanczos3, used only when the model runs above native resolution.</dd></div>
-            <div><dt><code>ToggleKey</code><span>0xDC</span></dt><dd>The <kbd>\</kbd> key toggles Neural Rendering in game.</dd></div>
+            <div><dt><code>ToggleKey</code><span>0xDC</span></dt><dd>The key labeled <kbd>\</kbd> on US keyboards (usually <kbd>*</kbd> on French AZERTY and <kbd>^</kbd> on German QWERTZ) toggles Neural Rendering in game.</dd></div>
           </dl>
 
           <h3 class="guide-subhead">OptiScaler · upscaling</h3>
@@ -135,7 +135,7 @@
 
           <h3 class="guide-subhead">OptiScaler · frame generation and pacing</h3>
           <dl class="setting-list">
-            <div><dt><code>[FrameGen] Enabled</code><span>true</span></dt><dd>Turns frame generation on. <kbd>End</kbd> toggles it in game.</dd></div>
+            <div><dt><code>[FrameGen] Enabled</code><span>true</span></dt><dd>Turns frame generation on. <kbd>End</kbd> (FIN on French keyboards) toggles it in game.</dd></div>
             <div><dt><code>FGInput</code> · <code>FGOutput</code><span>Upscaler · DLSSG</span></dt><dd>Feeds the upscaler’s frames to NVIDIA DLSS frame generation.</dd></div>
             <div><dt><code>FramerateLimit</code><span>138</span></dt><dd>Caps total frames per second, generated ones included, through Reflex. 138 sits just under a 144 Hz display’s refresh. Set 0 to remove the cap.</dd></div>
             <div><dt><code>ForceVsync</code> · <code>SyncInterval</code><span>true · 1</span></dt><dd>Forces V-Sync on, presenting at most once per refresh, for even pacing without tearing.</dd></div>
@@ -162,7 +162,7 @@
             <div><dt><code>PreprocessorDefinitions</code><span>depth</span></dt><dd>Tells depth-aware shaders how XIV stores depth: reversed, not upside down, far plane 1000.</dd></div>
             <div><dt><code>DepthCopyBeforeClears</code><span>2</span></dt><dd>Copies the depth buffer before XIV clears it, so depth effects see the right scene.</dd></div>
             <div><dt><code>InputProcessing</code><span>2</span></dt><dd>The game gets no keyboard or mouse input while the ReShade menu is open.</dd></div>
-            <div><dt><code>ForceShortcutModifiers</code><span>1</span></dt><dd>Shortcuts need exactly their modifiers: <kbd>Shift</kbd>+<kbd>F2</kbd>, not <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F2</kbd>.</dd></div>
+            <div><dt><code>ForceShortcutModifiers</code><span>1</span></dt><dd>Shortcuts need exactly their modifiers: <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd>, not <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F2</kbd>.</dd></div>
             <div><dt><code>TutorialProgress</code><span>4</span></dt><dd>Skips ReShade’s first-run tutorial.</dd></div>
             <div><dt><code>ShowFPS</code><span>2</span></dt><dd>ReShade’s frame counter shows only while its menu is open.</dd></div>
             <div><dt><code>FontSize</code><span>13</span></dt><dd>ReShade’s default size, which it scales to your resolution (2× at 4K). <kbd>Ctrl</kbd> + mouse wheel resizes it in the menu.</dd></div>
@@ -199,8 +199,8 @@
           <h2 id="trouble-title">Quick fixes</h2>
           <dl class="setting-list is-plain">
             <div><dt>After a game patch</dt><dd>Open Lucent. If the card says files need repair, click <strong>Repair</strong>. Otherwise click <strong>Scan</strong> to check every file.</dd></div>
-            <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press <kbd>\</kbd> to compare with Neural Rendering off.</dd></div>
-            <div><dt>The look is too strong</dt><dd>Try <strong>Balanced</strong>, choose a lighter preset with <kbd>Shift</kbd>+<kbd>F2</kbd>, or turn effects off with <kbd>Shift</kbd>+<kbd>F3</kbd>.</dd></div>
+            <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press the US <kbd>\</kbd> key (<kbd>*</kbd> on French AZERTY) to compare with Neural Rendering off.</dd></div>
+            <div><dt>The look is too strong</dt><dd>Try <strong>Balanced</strong>, choose a lighter preset with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F2</kbd>, or turn effects off with <kbd>Shift</kbd> (MAJ on French keyboards)+<kbd>F3</kbd>.</dd></div>
             <div><dt>Washed-out colours</dt><dd>With Windows HDR on, turn off RTX HDR and Auto HDR. OptiScaler handles HDR itself.</dd></div>
             <div><dt>Still stuck</dt><dd><strong>Help → Report a bug</strong> copies diagnostics and opens a GitHub issue. Questions go in a <a href="https://github.com/arnaudcouturier/lucent/issues">GitHub issue</a> too.</dd></div>
           </dl>

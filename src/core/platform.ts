@@ -60,6 +60,8 @@ export interface Platform {
   /** Reads only the final lines of a potentially large log, without its terminal newline. */
   readTextTail(path: string, maxLines: number): Promise<string>
   getWindowsVersion(): Promise<string>
+  /** Names virtual keys on the foreground window's keyboard layout; missing keys have no entry. */
+  getKeyNames(virtualKeys: number[]): Promise<Record<number, string>>
   copyText(text: string): Promise<void>
   openUrl(url: string): Promise<void>
   stat(path: string): Promise<FileStat>

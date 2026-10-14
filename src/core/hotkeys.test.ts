@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { deploymentHotkeys, keyName, liveKeyBindings, type KeyBinding } from './hotkeys'
+import { deploymentHotkeys, deploymentKeyCodes, keyName, liveKeyBindings, type KeyBinding } from './hotkeys'
 import type { DeploymentRecord } from './deployment'
+import { createFakePlatform } from '../platform/fake'
 
 // Excerpts in the shape of the shipped content's configs.
 const OPTISCALER = `[FrameGen]
@@ -71,6 +72,24 @@ describe('The Keys screen reads the game folder’s configs as they are now', ()
   })
 
   it('names keys as a US keyboard labels them', () => {
-    expect([0x2d, 0xdc, 0x23, 0x71, 0x41, 0x37, 0x63, 0x21].map(keyName)).toEqual(['Insert', '\\', 'End', 'F2', 'A', '7', 'Num 3', 'Page Up'])
+    expect([0x2d, 0xdc, 0x23, 0x71, 0x41, 0x37, 0x63, 0x21].map((code) => keyName(code))).toEqual(['Insert', '\\', 'End', 'F2', 'A', '7', 'Num 3', 'Page Up'])
+  })
+})
+
+describe('Keyboard layout names', () => {
+  it('keeps the US fallback when the fake platform has no Windows names', async () => {
+    const fake = createFakePlatform()
+    const names = await fake.getKeyNames(deploymentKeyCodes(SHIPPED))
+    expect(names).toEqual({})
+    expect(shown(deploymentHotkeys(SHIPPED, names))[1]).toBe(`OptiScaler Neural Rendering on or off: ${String.fromCharCode(0x5c)}`)
+    expect(keyName(0xdc, names)).toBe(String.fromCharCode(0x5c))
+  })
+
+  it('uses Windows names for keys and ReShade modifiers on the active layout', () => {
+    const names = { 0x2d: 'Inser', 0xdc: '*', 0x23: 'Fin', 0x10: 'Maj', 0x71: 'F2', 0x72: 'F3' }
+    expect(shown(deploymentHotkeys(SHIPPED, names))).toEqual([
+      'OptiScaler Menu: Inser', 'OptiScaler Neural Rendering on or off: *', 'OptiScaler Frame generation on or off: Fin',
+      'ReShade Menu: Maj+F2', 'ReShade Effects on or off: Maj+F3',
+    ])
   })
 })

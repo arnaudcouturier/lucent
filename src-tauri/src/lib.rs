@@ -46,6 +46,11 @@ async fn platform_windows_version() -> Result<String, PlatformError> {
 }
 
 #[tauri::command]
+async fn platform_key_names(virtual_keys: Vec<u32>) -> std::collections::HashMap<u32, String> {
+    platform::key_names(&virtual_keys)
+}
+
+#[tauri::command]
 async fn platform_copy_text(
     window: tauri::WebviewWindow,
     text: String,
@@ -347,6 +352,7 @@ pub fn run() {
             platform_env_folder,
             platform_gpu_adapters,
             platform_windows_version,
+            platform_key_names,
             platform_copy_text,
             platform_open_url,
             platform_fetch_text,

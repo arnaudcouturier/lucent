@@ -20,7 +20,7 @@ import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } 
 import { detectCustomProfile, type CustomProfile } from './customProfile'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
 import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
-import { deploymentHotkeys, liveKeyBindings, type KeyBinding } from './hotkeys'
+import { deploymentHotkeys, deploymentKeyCodes, liveKeyBindings, liveKeyCodes, type KeyBinding } from './hotkeys'
 import { chosenLauncher, LAUNCH_LABELS, launchOptions, STEAM_GAME_ID, type LaunchKind, type LaunchOption } from './launch'
 import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
@@ -460,7 +460,10 @@ export function createCore(platform: Platform): Core {
     const read = async (name: string) => {
       try { return await platform.readText(await platform.resolveGamePath(root, name)) } catch { return null }
     }
-    const keybinds = liveKeyBindings(record, { optiScaler: await read('OptiScaler.ini'), reShade: await read('ReShade.ini') })
+    const onDisk = { optiScaler: await read('OptiScaler.ini'), reShade: await read('ReShade.ini') }
+    let names: Record<number, string> = {}
+    try { names = await platform.getKeyNames(liveKeyCodes(record, onDisk)) } catch { /* The US labels remain available if Windows lookup fails. */ }
+    const keybinds = liveKeyBindings(record, onDisk, names)
     if (JSON.stringify(keybinds) !== JSON.stringify(state.keybinds)) set({ keybinds })
   }
   /** After a command, whether it succeeded or was undone, checks the deployment as it now stands on disk. */
@@ -991,7 +994,9 @@ export function createCore(platform: Platform): Core {
           loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version)
         installed = record
         log.write('success', `Install finished in ${elapsed(since)}`)
-        const hotkeys = deploymentHotkeys(record)
+        let names: Record<number, string> = {}
+        try { names = await platform.getKeyNames(deploymentKeyCodes(record)) } catch { /* The US labels remain available if Windows lookup fails. */ }
+        const hotkeys = deploymentHotkeys(record, names)
         deployedDrift = await checkHealth(platform, record, state.gameFolder.version)
         noteHealth(record, deployedDrift)
         set({ deployment: record, activity: { kind: 'done' }, hotkeys })

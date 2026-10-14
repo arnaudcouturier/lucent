@@ -143,6 +143,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     get exited() { return exited },
     get removedOnExit() { return removedOnExit },
     async getWindowsVersion() { await gate; return machine.windowsVersion ?? 'Windows 11 24H2 (build 26100.2033)' },
+    async getKeyNames() { return {} },
     async copyText(text) { await gate; clipboard = text },
     async openUrl(url) { await gate; openedUrls.push(url) },
     async readTextTail(path, maxLines) {

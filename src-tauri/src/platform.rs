@@ -3,6 +3,7 @@
 //! into the port's error kinds (see `src/core/platform.ts`).
 
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -19,8 +20,14 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::System::Memory::{
     GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    ActivateKeyboardLayout, GetKeyNameTextW, GetKeyboardLayout, MapVirtualKeyExW,
+    ACTIVATE_KEYBOARD_LAYOUT_FLAGS, HKL, MAPVK_VK_TO_VSC_EX,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId, SW_SHOWNORMAL,
+};
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 use winreg::RegKey;
 
@@ -318,6 +325,101 @@ pub fn windows_version() -> Result<String> {
     };
 
     Ok(format!("{family} {display_version} (build {build}.{ubr})"))
+}
+
+/// Builds the lParam consumed by GetKeyNameTextW from a virtual key and MapVirtualKeyEx scan code.
+fn key_name_lparam(virtual_key: u32, scan_code: u32) -> i32 {
+    let scan = (scan_code & 0xff) << 16;
+    // MapVirtualKeyEx sometimes returns the keypad scan code for extended virtual keys such as
+    // VK_DELETE. GetKeyNameText still needs bit 24 to distinguish the main Delete key from Num Del.
+    let extended_key =
+        matches!(virtual_key, 0x21..=0x28 | 0x2c..=0x2f | 0x5b..=0x5d | 0x90..=0x92 | 0xa3 | 0xa5);
+    let extended = if scan_code & 0xff00 == 0xe000 || extended_key {
+        1 << 24
+    } else {
+        0
+    };
+    const DO_NOT_CARE_LEFT_RIGHT: u32 = 1 << 25;
+    (scan | extended | DO_NOT_CARE_LEFT_RIGHT) as i32
+}
+
+/// The keyboard layout belongs to the foreground window's thread, not the Tauri command worker.
+fn foreground_keyboard_layout() -> Option<HKL> {
+    // SAFETY: these calls only read the foreground window and its thread's input locale.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_invalid() {
+            return None;
+        }
+        let thread_id = GetWindowThreadProcessId(window, None);
+        if thread_id == 0 {
+            return None;
+        }
+        let layout = GetKeyboardLayout(thread_id);
+        (!layout.is_invalid()).then_some(layout)
+    }
+}
+
+/// GetKeyNameTextW reads the calling thread's active layout, so switch this worker thread only.
+struct KeyboardLayoutGuard(HKL);
+
+impl KeyboardLayoutGuard {
+    fn activate(layout: HKL) -> Option<Self> {
+        // SAFETY: the previous layout is restored when the guard drops. Flags are zero, so
+        // ActivateKeyboardLayout changes only this worker thread and sends no process-wide change.
+        unsafe {
+            let previous = GetKeyboardLayout(0);
+            ActivateKeyboardLayout(layout, ACTIVATE_KEYBOARD_LAYOUT_FLAGS(0))
+                .ok()
+                .map(|_| Self(previous))
+        }
+    }
+}
+
+impl Drop for KeyboardLayoutGuard {
+    fn drop(&mut self) {
+        // SAFETY: `previous` was returned by GetKeyboardLayout on this same thread.
+        unsafe {
+            let _ = ActivateKeyboardLayout(self.0, ACTIVATE_KEYBOARD_LAYOUT_FLAGS(0));
+        }
+    }
+}
+
+/// Names virtual keys with the foreground window's keyboard layout. Unknown keys have no entry.
+fn key_names_for_layout(virtual_keys: &[u32], layout: HKL) -> HashMap<u32, String> {
+    let Some(_layout_guard) = KeyboardLayoutGuard::activate(layout) else {
+        return HashMap::new();
+    };
+    virtual_keys
+        .iter()
+        .copied()
+        .filter(|key| *key <= 0xff)
+        .filter_map(|key| {
+            // SAFETY: MapVirtualKeyExW and GetKeyNameTextW receive a valid layout and an owned buffer.
+            let name = unsafe {
+                let scan_code = MapVirtualKeyExW(key, MAPVK_VK_TO_VSC_EX, Some(layout));
+                if scan_code == 0 {
+                    return None;
+                }
+                let mut buffer = [0u16; 128];
+                let length = GetKeyNameTextW(key_name_lparam(key, scan_code), &mut buffer);
+                if length <= 0 {
+                    return None;
+                }
+                String::from_utf16_lossy(&buffer[..length as usize])
+                    .trim()
+                    .to_owned()
+            };
+            (!name.is_empty() && !name.chars().any(char::is_control)).then_some((key, name))
+        })
+        .collect()
+}
+
+/// Names virtual keys with the foreground window's keyboard layout. Unknown keys have no entry.
+pub fn key_names(virtual_keys: &[u32]) -> HashMap<u32, String> {
+    foreground_keyboard_layout()
+        .map(|layout| key_names_for_layout(virtual_keys, layout))
+        .unwrap_or_default()
 }
 
 /// Copies Unicode text using the app's actual top-level window as the clipboard owner.
@@ -968,6 +1070,93 @@ pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayoutList;
+
+    #[test]
+    fn key_name_lparam_marks_extended_scan_codes() {
+        for (virtual_key, scan_code) in [
+            (0x2d, 0x0052), // Insert
+            (0x2e, 0x0053), // Delete
+            (0x24, 0x0047), // Home
+            (0x21, 0x0049), // Page Up
+            (0x22, 0x0051), // Page Down
+            (0x23, 0x004f), // End
+            (0x25, 0x004b), // Left
+            (0x26, 0x0048), // Up
+            (0x27, 0x004d), // Right
+            (0x28, 0x0050), // Down
+            (0x2c, 0xe037), // Print Screen
+        ] {
+            let lparam = key_name_lparam(virtual_key, scan_code);
+            assert_eq!(((lparam as u32) >> 16) & 0xff, scan_code & 0xff);
+            assert_eq!(
+                ((lparam as u32) >> 24) & 1,
+                1,
+                "virtual key {virtual_key:#04x}"
+            );
+            assert_eq!(((lparam as u32) >> 25) & 1, 1);
+        }
+
+        let regular = key_name_lparam(0x41, 0x001e);
+        assert_eq!(((regular as u32) >> 16) & 0xff, 0x1e);
+        assert_eq!(((regular as u32) >> 24) & 1, 0);
+        assert_eq!(((regular as u32) >> 25) & 1, 1);
+    }
+
+    #[test]
+    fn keyboard_layout_guard_restores_the_worker_thread_layout() {
+        // The scope only changes this Rust test thread; it does not activate a layout for the process.
+        let original = unsafe { GetKeyboardLayout(0) };
+        let count = unsafe { GetKeyboardLayoutList(None) };
+        if count <= 0 {
+            return;
+        }
+        let mut layouts = vec![original; count as usize];
+        let copied = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) };
+        let target = layouts
+            .into_iter()
+            .take(copied.max(0) as usize)
+            .find(|layout| *layout != original)
+            .unwrap_or(original);
+
+        let guard = KeyboardLayoutGuard::activate(target)
+            .expect("the loaded layout should activate on this thread");
+        assert_eq!(unsafe { GetKeyboardLayout(0) }, target);
+        drop(guard);
+        assert_eq!(unsafe { GetKeyboardLayout(0) }, original);
+    }
+
+    #[test]
+    fn key_names_follow_the_requested_layout_when_the_worker_uses_another_layout() {
+        let count = unsafe { GetKeyboardLayoutList(None) };
+        if count <= 0 {
+            return;
+        }
+        let mut layouts = vec![unsafe { GetKeyboardLayout(0) }; count as usize];
+        let copied = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) };
+        let layouts = layouts.into_iter().take(copied.max(0) as usize);
+        let mut us = None;
+        let mut french = None;
+        for layout in layouts {
+            match (layout.0 as usize) & 0xffff {
+                0x0409 => us = Some(layout),
+                0x040c => french = Some(layout),
+                _ => {}
+            }
+        }
+        let (Some(us), Some(french)) = (us, french) else {
+            // CI machines do not necessarily have both layouts installed.
+            return;
+        };
+
+        let original = unsafe { GetKeyboardLayout(0) };
+        let us_names = key_names_for_layout(&[0x2e, 0xdc], us);
+        let french_names = key_names_for_layout(&[0x2e, 0xdc], french);
+        assert_eq!(unsafe { GetKeyboardLayout(0) }, original);
+        assert!(us_names.get(&0x2e).is_some_and(|name| !name.is_empty()));
+        assert!(french_names.get(&0x2e).is_some_and(|name| !name.is_empty()));
+        assert_ne!(us_names.get(&0xdc), french_names.get(&0xdc));
+    }
 
     #[test]
     fn writable_folder_probe_leaves_no_files() {

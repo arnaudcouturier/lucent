@@ -23,6 +23,7 @@ export function createTauriPlatform(): Platform {
     readText: (path) => call<string>('platform_read_text', { path }),
     readTextTail: (path, maxLines) => call<string>('platform_read_text_tail', { path, maxLines }),
     getWindowsVersion: () => call<string>('platform_windows_version', {}),
+    getKeyNames: (virtualKeys) => virtualKeys.length ? call<Record<number, string>>('platform_key_names', { virtualKeys }) : Promise.resolve({}),
     copyText: (text) => call('platform_copy_text', { text }),
     openUrl: (url) => call('platform_open_url', { url }),
     stat: (path) => call<FileStat>('platform_stat', { path }),

@@ -231,6 +231,30 @@ it('reads the in-game keys from the game folder, so a key changed in game shows 
   expect(menu()).toMatchObject({ keys: ['Shift', 'F2'], shipped: ['Home'] })
 })
 
+it('uses the platform keyboard names on both the Done and Keys screens', async () => {
+  const platform = createFakePlatform(machine(deploymentMachine(), graphicsCard('AMD Radeon RX 7900 XTX', 0x1002)))
+  const lookups: number[][] = []
+  platform.getKeyNames = async (codes) => {
+    lookups.push(codes)
+    return { 0x2d: 'Inser', 0x24: 'Accueil', 0x10: 'Maj', 0x71: 'F2' }
+  }
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  expect(core.getState().hotkeys.map((binding) => binding.keys?.join('+'))).toEqual(['Inser', 'Accueil'])
+  expect(lookups[0]).toContain(0x2d)
+  expect(lookups[0]).toContain(0x24)
+
+  core.finish()
+  await core.refreshKeybinds()
+  expect(core.getState().keybinds?.find((binding) => binding.tool === 'ReShade' && binding.action === 'Menu')?.keys).toEqual(['Accueil'])
+
+  await platform.writeText(`${ROOT}\\game\\ReShade.ini`, '[GENERAL]\nPresetPath=\n[INPUT]\nKeyOverlay=113,0,1,0\n')
+  await core.refreshKeybinds()
+  expect(core.getState().keybinds?.find((binding) => binding.tool === 'ReShade' && binding.action === 'Menu')).toMatchObject({ keys: ['Maj', 'F2'], shipped: ['Accueil'] })
+})
+
 it('refuses to touch the game folder while XIV runs', async () => {
   const platform = createFakePlatform(machine(deploymentMachine(), { gameRunning: true }))
   const core = createCore(platform)
