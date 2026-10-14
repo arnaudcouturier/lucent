@@ -21,9 +21,11 @@ export interface DeploymentScan {
 export const PRESET_FOLDER = 'reshade-presets'
 /** A carry copies an existing setup's preset into Lucent's preset folder, where it stays as a user file. */
 export type PlanStep = Step | { kind: 'carry'; from: string; to: string } | { kind: 'write'; path: string; text: string }
+  /** Copies an exact, hash-verified journal backup back into the game folder (used by rollback). */
+  | { kind: 'restore'; hash: string; to: string }
 /** The paths a step mutates; copying a carried-over preset only reads its source. */
 export const stepWritePaths = (step: PlanStep): string[] => step.kind === 'rename' ? [step.from, step.to]
-  : step.kind === 'copy' || step.kind === 'carry' ? [step.to] : [step.kind === 'ini_set' ? step.file : step.path]
+  : step.kind === 'copy' || step.kind === 'carry' || step.kind === 'restore' ? [step.to] : [step.kind === 'ini_set' ? step.file : step.path]
 export interface Plan {
   contentVersion: string
   tier: string
@@ -157,6 +159,9 @@ export function planDeployment(
       if (!includedConfig(step.file)) throw new Error(`INI setting must target an owned config: ${step.file}`)
       modify(step.file)
       present.set(fileKey(step.file), null)
+    } else if (step.kind === 'restore') {
+      modify(step.to)
+      present.set(fileKey(step.to), step.hash)
     } else {
       modify(step.path)
       present.delete(fileKey(step.path))

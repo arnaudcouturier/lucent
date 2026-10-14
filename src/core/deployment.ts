@@ -186,6 +186,14 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   for (const entry of value.journal) {
     if (!entry || !entry.before || !entry.after || (entry.undone !== undefined && typeof entry.undone !== 'boolean')
       || (!!entry.step === !!entry.registry)) throw new Error('The deployment journal is damaged.')
+    if (entry.step && typeof entry.step === 'object' && entry.step.kind === 'restore') {
+      if (typeof entry.step.hash !== 'string' || !/^[a-f0-9]{64}$/.test(entry.step.hash)
+        || typeof entry.step.to !== 'string') throw new Error('The deployment restore journal is damaged.')
+      assertGamePath(entry.step.to)
+      if (!(entry.step.to in entry.before) || entry.after[entry.step.to] !== entry.step.hash) {
+        throw new Error('The deployment restore journal is damaged.')
+      }
+    }
     if (entry.registry && (entry.registry.kind !== 'user-gpu-preferences'
       || typeof entry.registry.userSid !== 'string' || !/^S-1-(?:\d+-){1,14}\d+$/.test(entry.registry.userSid)
       || typeof entry.registry.name !== 'string' || fileKey(normalizePath(entry.registry.name)) !== fileKey(normalizePath(joinPath(value.gameFolder, 'game', 'ffxiv_dx11.exe')))
@@ -619,8 +627,8 @@ async function recordCreatedDirectories(platform: Platform, record: DeploymentRe
   candidates.forEach((directory, i) => { if (!stats[i]) record.createdDirectories!.push(directory) })
 }
 
-type FileStep = Extract<PlanStep, { kind: 'copy' | 'delete' }>
-const fileStepPath = (step: FileStep) => step.kind === 'copy' ? step.to : step.path
+type FileStep = Extract<PlanStep, { kind: 'copy' | 'delete' | 'restore' }>
+const fileStepPath = (step: FileStep) => step.kind === 'copy' || step.kind === 'restore' ? step.to : step.path
 
 /**
  * Applies copies and deletions of different paths together: every file they replace or remove is hashed and backed up,
@@ -654,17 +662,26 @@ async function applyFileSteps({ platform, record, save, owned, firstDeployment }
       if (verified[i] !== hash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relatives[before.indexOf(hash)]}`)
     })
   }
+  const restoreHashes = [...new Set(batch.flatMap((step) => step.kind === 'restore' ? [step.hash] : []))]
+  if (restoreHashes.length) {
+    const verified = await platform.hashMany(restoreHashes.map((hash) => joinPath(backups, hash)))
+    restoreHashes.forEach((hash, i) => {
+      if (verified[i] !== hash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${relatives[batch.findIndex((step) => step.kind === 'restore' && step.hash === hash)]}`)
+    })
+  }
   batch.forEach((step, i) => {
     const entryBefore: JournalEntry['before'] = Object.create(null)
     entryBefore[relatives[i]] = before[i]
-    record.journal.push({ step, before: entryBefore, after: { [relatives[i]]: step.kind === 'copy' ? step.file : null } })
+    record.journal.push({ step, before: entryBefore, after: { [relatives[i]]: step.kind === 'copy' ? step.file : step.kind === 'restore' ? step.hash : null } })
   })
   await save()
   await requireGameStopped(platform)
   // Resolve again after the durable journal write, immediately before the files change.
   const destinations = await platform.resolveGamePaths(root, relatives)
   await platform.removeMany(destinations.filter((_, i) => batch[i].kind === 'delete'))
-  await platform.copyMany(batch.flatMap((step, i) => step.kind === 'copy' ? [{ from: joinPath(cache, step.file), to: destinations[i], replace: before[i] !== null }] : []), parentPath(gameFolder))
+  await platform.copyMany(batch.flatMap((step, i) => step.kind === 'copy'
+    ? [{ from: joinPath(cache, step.file), to: destinations[i], replace: before[i] !== null }]
+    : step.kind === 'restore' ? [{ from: joinPath(backups, step.hash), to: destinations[i], replace: before[i] !== null }] : []), parentPath(gameFolder))
   for (const relative of relatives) owned.add(fileKey(relative))
 }
 
@@ -691,7 +708,7 @@ async function applySteps(execution: Execution, steps: PlanStep[]) {
     // other step reads what came before it (a rename, a config edit, a carried preset) and runs alone.
     const batch: FileStep[] = []
     const paths = new Set<string>()
-    for (let step = steps[i]; (step?.kind === 'copy' || step?.kind === 'delete') && !paths.has(fileKey(fileStepPath(step))) && batch.length < FILE_BATCH; step = steps[i + batch.length]) {
+    for (let step = steps[i]; (step?.kind === 'copy' || step?.kind === 'delete' || step?.kind === 'restore') && !paths.has(fileKey(fileStepPath(step))) && batch.length < FILE_BATCH; step = steps[i + batch.length]) {
       paths.add(fileKey(fileStepPath(step)))
       batch.push(step)
     }
@@ -731,7 +748,8 @@ async function applyStep({ platform, record, save, owned, firstDeployment }: Exe
     : step.kind === 'carry' ? { [step.to]: await platform.hashFile(await platform.resolveGamePath(root, step.from)) }
     : step.kind === 'rename' ? { [step.from]: null, [step.to]: before[step.from] }
     : step.kind === 'ini_set' ? { [step.file]: await hashText(configText!) }
-    : step.kind === 'write' ? { [step.path]: await hashText(step.text) } : { [step.path]: null }
+    : step.kind === 'write' ? { [step.path]: await hashText(step.text) }
+      : step.kind === 'restore' ? { [step.to]: step.hash } : { [step.path]: null }
   if (step.kind === 'rename' && !before[step.from]) throw new Error(`Rename source is missing: ${step.from}`)
   record.journal.push({ step, before, after })
   await save()
@@ -739,6 +757,7 @@ async function applyStep({ platform, record, save, owned, firstDeployment }: Exe
   // Resolve again after the durable journal write, immediately before the mutation.
   if (step.kind === 'carry') await platform.copyFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), false, parentPath(gameFolder))
   else if (step.kind === 'copy') await platform.copyFile(joinPath(cache, step.file), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
+  else if (step.kind === 'restore') await platform.copyFile(joinPath(backups, step.hash), await platform.resolveGamePath(root, step.to), before[step.to] !== null, parentPath(gameFolder))
   else if (step.kind === 'rename') await platform.renameFile(await platform.resolveGamePath(root, step.from), await platform.resolveGamePath(root, step.to), before[step.to] !== null)
   else if (step.kind === 'ini_set') await platform.writeText(await platform.resolveGamePath(root, step.file), configText!, parentPath(gameFolder))
   else if (step.kind === 'write') await platform.writeText(await platform.resolveGamePath(root, step.path), step.text, parentPath(gameFolder))
@@ -783,7 +802,7 @@ function myEditsPath(presetPath: string, taken: Set<string>): string {
 
 /** The game-folder path a step writes, or null for steps that only remove a file or carry one over. */
 function writtenPath(step: PlanStep): string | null {
-  return step.kind === 'copy' || step.kind === 'rename' ? step.to : step.kind === 'ini_set' ? step.file : step.kind === 'write' ? step.path : null
+  return step.kind === 'copy' || step.kind === 'rename' || step.kind === 'restore' ? step.to : step.kind === 'ini_set' ? step.file : step.kind === 'write' ? step.path : null
 }
 
 /**
@@ -881,9 +900,9 @@ export async function updateDeployment(
             if (stampedPath) untouchedConfigs.push(stampedPath)
           } else {
             const backupPath = joinPath(paths.backups, backupHash)
-            const backupText = await platform.readText(backupPath)
-            if (await hashText(backupText) !== backupHash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${config.path}`, backupPath)
-            steps.splice(first, 0, { kind: 'write', path: config.path, text: backupText })
+            // Keep the backup as bytes. readText strips a UTF-8 BOM and cannot represent every config byte faithfully.
+            if ((await maybeStat(platform, backupPath))?.kind !== 'file') throw new PlatformError('not-found', `Backup missing: ${config.path}`, backupPath)
+            steps.splice(first, 0, { kind: 'restore', hash: backupHash, to: config.path })
             expectedFiles = [...expectedFiles, { path: config.path, sha256: backupHash }]
           }
           notes.push(`${config.path}: restored from the previous version's journal`)

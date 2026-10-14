@@ -163,6 +163,28 @@ it('rollback restores a tuned config from the journal when the newer version rep
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(TUNED)
 })
 
+it('rollback restores config bytes exactly when the journaled file has a UTF-8 BOM', async () => {
+  const { platform, m } = await deployed()
+  const tuned = '\uFEFF; tuned bytes\n[GENERAL]\nPresetPath=reshade-presets/Mine.ini\n'
+  await platform.writeText(`${GAME}\\ReShade.ini`, tuned)
+  await nextWithReShadeBaseline(m, NEW_BASELINE, 'replace')
+  const core = await reopen(platform)
+  await core.update()
+  const paths = await dataPaths(platform, ROOT)
+  const target = `${GAME}\\ReShade.ini`
+  let restoredFromBackup = false
+  const copyFile = platform.copyFile.bind(platform)
+  platform.copyFile = async (from, to, replace, stagingDirectory) => {
+    if (from.toLowerCase().startsWith(`${paths.backups.toLowerCase()}\\`) && to.toLowerCase() === target.toLowerCase()) restoredFromBackup = true
+    return copyFile(from, to, replace, stagingDirectory)
+  }
+  await core.applyVersion('2026.10.12')
+  platform.copyFile = copyFile
+  expect(core.getState().error).toBeNull()
+  expect(restoredFromBackup).toBe(true)
+  expect(await platform.readText(target)).toBe(tuned)
+})
+
 it('does not overwrite a locked config during an update', async () => {
   const { platform, m } = await deployed()
   const config = `${GAME}\\ReShade.ini`
