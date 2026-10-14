@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { assertGamePath, parseManifest, validateManifest, type Component, type ContentFile, type ContentVersion, type IniSetting, type Manifest, type Step, type TierRecipe } from '../src/shared/manifest'
 import { fileKey, planDeployment } from '../src/core/planner'
 import { runCommand } from './command'
+import { activeEffects, unusedShaderFiles } from './shader-usage'
 
 type ContentSource = ({ folder: string; archive?: never } | { archive: string; folder?: never }) & {
   component: string; to?: string; subdirectory?: string; when?: 'reshade'
@@ -15,6 +16,11 @@ interface PublishTier extends Omit<TierRecipe, 'recipe'> {
   sources: ContentSource[]
   /** Copy file identifiers are paths in the combined source folders, rather than hashes. */
   recipe?: Step[]
+  /**
+   * `used` (the default) ships only the shaders the presets turn on, with their includes and textures; `all` ships
+   * every shader and texture in the sources. Ignored with an explicit `recipe`.
+   */
+  shaders?: 'used' | 'all'
 }
 export interface PublishInput extends Omit<ContentVersion, 'files' | 'tiers'> {
   knownUserShaders?: string[]
@@ -48,12 +54,21 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     if (new Set(input.components.map((c) => c.name)).size !== input.components.length) throw new Error('Component names must be unique.')
     if (manifest.versions.some((v) => v.id === input.id)) throw new Error(`Content version ${input.id} already exists.`)
     const release = `content-${input.id}`
+    const knownUserShaders = new Set((input.knownUserShaders ?? []).map((path) => { assertGamePath(path); return shaderKey(path) }))
+    const userShader = (path: string) => knownUserShaders.has(shaderKey(path)) || knownUserShaders.has(fileKey(path).split('/').at(-1)!)
     const staged = new Map<string, StagedFile>()
     const copyComponents = new Map<string, Map<number, Component>>()
     const shaders = new Map<string, string>()
     const tiers: Record<string, TierRecipe> = Object.create(null)
     const published = new Map(manifest.versions.flatMap((v) => v.files.map((f) => [f.sha256, f] as const)))
     for (const [tierId, tier] of Object.entries(input.tiers)) {
+      for (const step of tier.recipe ?? []) {
+        const paths = step.kind === 'copy' ? [step.to] : step.kind === 'rename' ? [step.from, step.to]
+          : step.kind === 'delete' ? [step.path] : [step.file]
+        for (const path of paths) {
+          if (userShader(path)) throw new Error(`Recipe must not touch user-supplied shader: ${path}`)
+        }
+      }
       const files = new Map<string, { path: string; hash: string; component: Component; when?: 'reshade' }>()
       for (const source of tier.sources) {
         const component = input.components.find((c) => c.name === source.component)
@@ -62,6 +77,8 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         for (const relative of await folderFiles(root)) {
           const path = source.to ? `${source.to}/${relative}` : relative
           assertGamePath(path)
+          // A tested folder may contain the player's paid effects; declaring them never publishes their bytes.
+          if (userShader(path)) continue
           assertOptiScalerSource(path, component)
           const file = await stageFile(join(root, relative), scratch, release)
           if (file.size === 0) throw new Error(`Source file ${path} is empty; GitHub release assets must be at least 1 byte, so an empty file cannot be published. Give the file content or remove it from the source folder.`)
@@ -69,6 +86,10 @@ export async function publishContent(inputPath: string, options: PublishOptions)
           staged.set(file.sha256, file)
           files.set(fileKey(path), { path, hash: file.sha256, component, when: source.when })
         }
+      }
+      if (!tier.recipe && tier.shaders !== 'all') {
+        const unused = await unusedShaderFiles([...files.values()].map((f) => ({ path: f.path, read: () => readFile(staged.get(f.hash)!.stagedPath, 'utf8') })))
+        for (const path of unused) files.delete(fileKey(path))
       }
       const components = new Map<number, Component>()
       copyComponents.set(tierId, components)
@@ -86,12 +107,17 @@ export async function publishContent(inputPath: string, options: PublishOptions)
       })
       tiers[tierId] = { recipe, entryFiles: tier.entryFiles, ownedConfigs: tier.ownedConfigs, shippedPresets: tier.shippedPresets, generatedFiles: tier.generatedFiles, overlay: tier.overlay, performanceProfiles: tier.performanceProfiles, resetKeys: tier.resetKeys }
     }
-    const files: ContentFile[] = [...staged.values()].sort((a, b) => a.sha256.localeCompare(b.sha256)).map(({ sha256, size }) => {
+    // Only what a recipe copies is published; a source file no tier deploys is never uploaded.
+    const copied = new Set(Object.values(tiers).flatMap((t) => t.recipe.flatMap((step) => step.kind === 'copy' ? [step.file] : [])))
+    const files: ContentFile[] = [...staged.values()].filter((f) => copied.has(f.sha256)).sort((a, b) => a.sha256.localeCompare(b.sha256)).map(({ sha256, size }) => {
       const old = published.get(sha256)
       if (old && old.size !== size) throw new Error(`Published size differs for ${sha256}.`)
       return { sha256, size, release: old?.release ?? release }
     })
-    const content: ContentVersion = { id: input.id, channel: input.channel, minAppVersion: input.minAppVersion, changelog: input.changelog, components: input.components, files, tiers }
+    const content: ContentVersion = {
+      id: input.id, channel: input.channel, minAppVersion: input.minAppVersion, changelog: input.changelog,
+      knownBrokenGameVersions: input.knownBrokenGameVersions, components: input.components, files, tiers,
+    }
     const next = validateManifest({ ...manifest, versions: [...manifest.versions, content] })
     for (const tier of next.tiers) {
       if (!content.tiers[tier.id]) continue
@@ -121,7 +147,10 @@ export async function publishContent(inputPath: string, options: PublishOptions)
             deployed.get(fileKey(setting.file))!.settings.push(setting)
           }
         }
-        const available = new Set((input.knownUserShaders ?? []).map((path) => { assertGamePath(path); return shaderKey(path) }))
+        for (const file of plan.expectedFiles) {
+          if (userShader(file.path)) throw new Error(`Recipe must not write user-supplied shader: ${file.path}`)
+        }
+        const available = new Set(knownUserShaders)
         for (const f of plan.expectedFiles.filter((f) => /\.fx$/i.test(f.path))) {
           available.add(shaderKey(f.path))
           available.add(fileKey(f.path).split('/').at(-1)!)
@@ -144,7 +173,8 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     // manifest already records which release holds each file.
     const MAX_ASSETS_PER_RELEASE = 1000
     const spanReleases = (uploads: ContentFile[]) => {
-      const groups = new Map<string, ContentFile[]>()
+      // Even a recipe-only version needs its own immutable date and release notes.
+      const groups = new Map<string, ContentFile[]>([[release, []]])
       uploads.forEach((file, index) => {
         const tag = index < MAX_ASSETS_PER_RELEASE ? release : `${release}-${Math.floor(index / MAX_ASSETS_PER_RELEASE) + 1}`
         file.release = tag
@@ -284,39 +314,10 @@ function shaderKey(path: string) {
   return index < 0 ? key : key.slice(index + '/shaders/'.length)
 }
 
+/** The effects a preset turns on, after the INI edits the content applies to it. */
 function presetShaders(text: string, settings: IniSetting[]): string[] {
-  const sections = new Map<string, Map<string, string[]>>()
-  let section = ''
-  const values = (name: string) => {
-    const key = name.trim().toLowerCase()
-    if (!sections.has(key)) sections.set(key, new Map())
-    return sections.get(key)!
-  }
-  for (const raw of text.split(/\r\n|\r|\n/)) {
-    const line = raw.trim()
-    if (!line || /^[;#/]/.test(line)) continue
-    const heading = /^\[([^\]]+)\]/.exec(line)
-    if (heading) { section = heading[1]; values(section); continue }
-    const assignment = /^([^=]+)=(.*)$/.exec(line)
-    if (assignment) {
-      const fields = values(section)
-      const key = assignment[1].trim().toLowerCase()
-      fields.set(key, [...fields.get(key) ?? [], presetValue(assignment[2])])
-    }
-  }
-  for (const setting of settings) values(setting.section).set(setting.key.trim().toLowerCase(), [presetValue(setting.value)])
-  const shaders = new Set<string>()
-  for (const [name, fields] of sections) {
-    if (/\.fx$/i.test(name)) shaders.add(name.split('@').at(-1)!)
-    for (const value of [...fields.get('techniques') ?? [], ...fields.get('techniquesorting') ?? []]) {
-      // ReShade escapes commas inside names as ",,".
-      for (const technique of value.split(/(?<!,),(?!,)/).map((v) => v.replace(/,,/g, ','))) {
-        const reference = /@(.+\.fx)\s*$/i.exec(technique)
-        if (reference) shaders.add(reference[1])
-      }
-    }
-  }
-  return [...shaders]
+  const edits = settings.filter((s) => s.key.trim().toLowerCase() === 'techniques').map((s) => `Techniques=${presetValue(s.value)}`)
+  return activeEffects(edits.length ? edits.join('\n') : text)
 }
 
 function presetValue(value: string): string {

@@ -62,6 +62,29 @@ it('refuses a preset reference to a shader not shipped or declared user-supplied
   await expect(publishContent(resolve('scripts/fixtures/publish/missing-shader/publish.json'), { manifestPath, dryRun: true })).rejects.toThrow(/shader.*Paid\.fx/i)
 })
 
+it.each(['used', 'all'] as const)('never ships declared user-supplied effects from a tested source, including with shaders=%s', async (shaders) => {
+  const manifestPath = await manifestFile()
+  const input = await inputFile(manifestPath, (value) => {
+    value.knownUserShaders = [...value.knownUserShaders ?? [], 'Example.fx']
+    value.tiers.other.shaders = shaders
+  })
+  const result = await publishContent(input, { manifestPath, dryRun: true })
+  const content = parseManifest(result.manifestText).versions[0]
+  expect(result.uploads).toHaveLength(3)
+  expect(content.tiers.other.recipe.some((step) => step.kind === 'copy' && /Example\.fx$/i.test(step.to))).toBe(false)
+})
+
+it.each([
+  { kind: 'copy', file: 'dxgi.dll', to: 'reshade-shaders/Shaders/Paid.fx' },
+  { kind: 'rename', from: 'dxgi.dll', to: 'reshade-shaders/Shaders/Paid.fx' },
+  { kind: 'delete', path: 'reshade-shaders/Shaders/Paid.fx' },
+  { kind: 'ini_set', file: 'reshade-shaders/Shaders/Paid.fx', section: 'GENERAL', key: 'Value', value: '1' },
+] as const)('refuses a recipe step that touches a declared user-supplied shader: $kind', async (step) => {
+  const manifestPath = await manifestFile()
+  const input = await inputFile(manifestPath, (value) => { value.tiers.other.recipe = [step] })
+  await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/must not touch user-supplied shader.*Paid\.fx/)
+})
+
 it('refuses a recipe that escapes the game folder', async () => {
   const manifestPath = await manifestFile()
   await expect(publishContent(resolve('scripts/fixtures/publish/path-escape/publish.json'), { manifestPath, dryRun: true })).rejects.toThrow(/unsafe game-folder path/i)
@@ -153,6 +176,42 @@ it('reuses assets from any published content release, including one absent from 
   const result = await publishContent(fixture, { manifestPath, host: remote.host })
   expect(result.uploads).toHaveLength(3)
   expect(parseManifest(result.manifestText).versions[0].files).toContainEqual({ sha256: '5570478b4db90c4450004ec383ca2f2861b75de9be30863982d5065dc6d0b54f', size: 22, release: 'content-2026.10.01' })
+})
+
+it('creates an immutable dated release for a recipe-only version whose assets are all reused', async () => {
+  const manifestPath = await manifestFile()
+  const remote = releaseHost()
+  await publishContent(fixture, { manifestPath, host: remote.host })
+  const input = await inputFile(manifestPath, (value) => {
+    value.id = '2026.10.13'
+    value.changelog = ['Updated recipe using the existing tested files.']
+    value.tiers.other.recipe = [
+      { kind: 'copy', file: 'dxgi.dll', to: 'dxgi.dll' },
+      { kind: 'copy', file: 'ReShade.ini', to: 'ReShade.ini' },
+      { kind: 'copy', file: 'reshade-presets/Example.ini', to: 'reshade-presets/Example.ini' },
+      { kind: 'copy', file: 'reshade-shaders/Shaders/Example.fx', to: 'reshade-shaders/Shaders/Example.fx' },
+      { kind: 'ini_set', file: 'ReShade.ini', section: 'GENERAL', key: 'PerformanceMode', value: '1' },
+    ]
+  })
+  const result = await publishContent(input, { manifestPath, host: remote.host })
+  expect(result.uploads).toEqual([])
+  expect(remote.releases).toMatchObject([
+    { tag: 'content-2026.10.12', draft: false },
+    { tag: 'content-2026.10.13', draft: false, files: [] },
+  ])
+  expect(parseManifest(result.manifestText).versions[1].files.every((file) => file.release === 'content-2026.10.12')).toBe(true)
+  // A checkout without the new manifest entry still cannot republish that immutable date.
+  await expect(publishContent(input, { manifestPath: await manifestFile(), host: remote.host })).rejects.toThrow(/already exists/i)
+})
+
+it('preserves known-broken game versions in the candidate and published manifests', async () => {
+  const manifestPath = await manifestFile()
+  const knownBrokenGameVersions = ['2026.10.20.0000.0000']
+  const input = await inputFile(manifestPath, (value) => { value.knownBrokenGameVersions = knownBrokenGameVersions })
+  const preview = await publishContent(input, { manifestPath, dryRun: true })
+  expect(parseManifest(preview.manifestText).versions[0].knownBrokenGameVersions).toEqual(knownBrokenGameVersions)
+  await publishContent(input, { manifestPath, host: releaseHost().host })
+  expect(parseManifest(await readFile(manifestPath, 'utf8')).versions[0].knownBrokenGameVersions).toEqual(knownBrokenGameVersions)
 })
 
 it('leaves the manifest unchanged when an upload fails and keeps the release unpublished', async () => {
@@ -293,7 +352,8 @@ it('keeps the selected source component when identical file bytes are shared acr
     other.ownedConfigs = []; other.shippedPresets = []; other.resetKeys = []
     input.tiers.radeon = { ...structuredClone(other), sources: [{ folder: resolve('scripts/fixtures/publish/valid/files'), component: 'ReShade fixture' }], recipe: [{ kind: 'copy', file: 'dxgi.dll', to: 'dxgi.dll' }], entryFiles: [{ path: 'dxgi.dll' }] }
   })
-  expect((await publishContent(input, { manifestPath, dryRun: true })).uploads).toHaveLength(4)
+  // Both tiers copy the same dxgi.dll; source files no recipe copies are never uploaded.
+  expect((await publishContent(input, { manifestPath, dryRun: true })).uploads).toHaveLength(1)
 })
 
 it.each([' ; comment', ' # comment'])('refuses missing preset shaders even with an inline suffix: %s', async (suffix) => {

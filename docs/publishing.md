@@ -22,6 +22,8 @@ Dry run hashes and validates the same inputs and prints the candidate manifest a
 upload list. It makes **no GitHub calls** and leaves the manifest unchanged. Its reuse decisions
 come from the local manifest. Live publication also discovers files in published content
 releases absent from that manifest, so it can upload fewer files than the offline preview.
+Every content version receives its own dated release, even when a recipe or pruning change
+reuses every file from earlier releases and needs no new uploads.
 Temporary staging and archive extraction folders are removed in either mode.
 
 ## Input
@@ -87,6 +89,16 @@ in source order. An identical shader at the same Windows path is allowed; differ
 the same shader path are rejected, including across tiers. Other overlapping paths use the
 last source's bytes, allowing tested component replacements. Every source file is hashed.
 
+**Only the shaders the presets use ship.** A shader pack holds far more effects than the presets
+turn on, and ReShade never loads the rest. So by default the script keeps an effect only when a
+shipped preset turns it on (`Techniques=Name@File.fx` in `reshade-presets`), then every `.fxh` it includes, from any shader folder, and the
+textures named in those files or in a preset's preprocessor definitions. A licence or readme in a shader
+folder stays while that folder still ships something. `TechniqueSorting` and `[File.fx]` value sections don't count: they list effects a
+preset only remembers. For 2026.10.14 that is 67 files under `reshade-shaders` instead of 1,024: 20 effects, 28 includes,
+17 textures and the pack's licence and readme.
+Set `"shaders": "all"` on a tier to ship every shader and texture in its sources. With an explicit
+`recipe` nothing is pruned. Only files a recipe copies are uploaded.
+
 For explicit ordering or renames/deletions, provide `recipe` using the shared step kinds.
 For a copy, `file` is the source's game-folder path rather than a SHA-256; the script replaces
 it with its hash. Copy steps inherit a source's `when` unless explicitly set. For example:
@@ -99,12 +111,14 @@ it with its hash. Copy steps inherit a source's `when` unless explicitly set. Fo
 ]
 ```
 
-`performanceProfiles` and `resetKeys` are stored and validated by the shared manifest schema.
+`knownBrokenGameVersions`, `performanceProfiles` and `resetKeys` are stored and validated by the shared manifest schema.
 Profiles use string values for INI settings. Tiers without profiles can omit that field or use
 an empty list. `knownUserShaders` is optional: it lists shader filenames or relative shader
-paths a preset may reference but the user must supply. It does not cause those files to be
-copied or uploaded. Preset validation checks both technique lists and shader sections against
-the files actually deployed by each tier, with and without optional ReShade.
+paths a preset may reference but the user must supply. Those files are excluded from sources,
+even with `shaders: "all"`, and a recipe cannot copy or rename another file onto their paths.
+Preset validation checks the effects each preset turns on (its `Techniques`,
+after any profile edit) against the files actually deployed by each tier, with and without
+optional ReShade.
 
 OptiScaler source folders, OptiScaler-named files and `winmm.dll` need a GPL-3.0 component whose
 `source` links to its exact GitHub source tag (`/tree/<tag>` or `/releases/tag/<tag>`).

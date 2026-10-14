@@ -1,7 +1,7 @@
 # Manifest schema and dev content
 
 `manifest.json` is fetched from `main` in `arnaudcouturier/lucent` on GitHub. The app and the
-future publish tool share `src/shared/manifest.ts`: `parseManifest` validates JSON text and
+publish tool share `src/shared/manifest.ts`: `parseManifest` validates JSON text and
 `validateManifest` validates an object before publishing. The module has no UI or Platform dependency.
 
 Schema version **2** contains `schemaVersion`, `tiers`, `versions` and `existingSetups`. The app still reads v1 tier-only
@@ -53,8 +53,9 @@ a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caut
 
 ## Content versions
 
-The committed manifest keeps `versions: []` until the maintainer publishes tested assets. The real
-app explains that no content is published; fixture content is restricted to the fake Platform.
+The committed manifest lists published content versions and their tested assets. If its `versions`
+list is empty, the real app explains that no content is published; fixture content is restricted to
+the fake Platform.
 
 Each version contains:
 
@@ -74,7 +75,7 @@ Each version contains:
   `upscaling`, or `null` for a ReShade-only recipe).
 
 The first deployment chooses the newest content on the player's channel for the scanned tier (Stable
-by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in the ⋯ menu
+by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in Settings
 is a player setting, stored with the skipped versions.
 
 Steps support `copy` (`file` hash and `to` path), `rename` (`from`, `to`), `ini_set`
@@ -142,6 +143,12 @@ GPU, tier, content version, ReShade choice, Enabled, performance profile, the re
 path lists and profiles, each journal entry,
 last-written config text, and every deployed file's SHA-256, size and modification time.
 
+Recovery and operations that change shared data hold an exclusive process lease on
+`operation.lock` in this data folder, including health checks that update a journal. Another Lucent
+window or XIVLauncher headless run reports the active operation and asks to retry after it finishes;
+an idle window holds no lease. Windows releases it after an exit or crash. An elevated relaunch uses the
+original player's data folder so both processes coordinate on the same file.
+
 All assets are verified before the game folder changes, so an offline, missing, truncated or
 wrong-hash download leaves it untouched. The journal is saved atomically before each step,
 including that step's before and intended after hashes. Game-folder writes also use atomic
@@ -191,7 +198,7 @@ repair. Disabled entry files come back under their disabled names. A full health
 
 ## Uninstall
 
-Uninstall, from the ⋯ menu after a confirmation, undoes a complete deployment from its journal and
+Uninstall, from Settings after a confirmation, undoes a complete deployment from its journal and
 removes the tier's `generatedFiles` that were absent before the deployment, leaving the folder
 vanilla, then returns to the first-run Scan with the same game folder.
 It marks the record unfinished and `uninstalling` before the first change, so an interrupted
@@ -207,7 +214,8 @@ says to remove them in XIVLauncher's settings. No XIVLauncher, or no Lucent add-
 ## Performance profiles
 
 Each content tier may supply `performanceProfiles`. Omit it or use `[]` for a tier without
-profiles: Lucent hides the Profile step and the main-screen selector. Otherwise supply all three
+profiles: Lucent hides the Home selector, and the first-run step becomes Options when ReShade or
+Start menu choices remain, or is skipped when there are no choices. Otherwise supply all three
 IDs, `fidelity`, `balanced` and `performance`, each with a one-line `label` and tier-specific
 `description`, and nonempty `settings`. Each setting is `{ "file": "OptiScaler.ini", "section": "DlssNr",
 "key": "Passes", "value": "2" }`; its file must be declared in `ownedConfigs`. Values are
@@ -229,8 +237,7 @@ OptiScaler has inline comments, so everything after `=` is the value, `#` and `;
 Profile writes have verified backups and durable journal entries. An interrupted profile change
 recovers only that change, retaining the earlier deployment and profile. Lucent refuses a profile
 change while XIV runs. NVIDIA fixtures have illustrative profiles; Radeon and Other fixtures
-demonstrate tiers without profiles. Real per-tier settings remain deferred until tested content is
-published.
+demonstrate tiers without profiles. Real per-tier settings come from the tested published content.
 
 ## Content updates
 
@@ -260,7 +267,7 @@ appeared since the deployment and is in the way blocks the update, which asks th
 
 ## Versions, rollback and cache retention
 
-Versions… in the ⋯ menu lists the current version, the two retained versions, skipped versions,
+The Versions section lists the current version, the two retained versions, skipped versions,
 and every other version on the channel. Leaving Beta changes nothing that's deployed: a beta
 version stays current and keeps its place in the list, and only a Stable version newer than it is
 announced. A version requiring a newer app or lacking a recipe for
@@ -274,7 +281,7 @@ Applying a newer version clears the pin. No version is applied automatically.
 
 The journal retains recipe, tier and asset snapshots for the current content and the two most
 recently applied other versions. Those snapshots allow rollback without a live manifest or a
-download when their assets are cached. Versions… checks cached assets by size only, so opening
+download when their assets are cached. Versions checks cached assets by size only, so opening
 Lucent never re-hashes the cache; missing or wrong-size assets are shown as needing a download.
 Applying a version hash-checks every asset before use and re-downloads a damaged one. Older journals acquire a snapshot of their current version when it is
 still in the manifest. A completed version change durably records its pin and pending skip; if
