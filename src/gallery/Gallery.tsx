@@ -33,6 +33,8 @@ interface GalleryState {
   label: string
   setup: () => Promise<Core>
   preview?: { activity: Activity; description: string }
+  /** The toolbar shows the resolved display facts for the screen gallery states. */
+  showScreenFacts?: boolean
   /** The window Settings → Apps opens, instead of the main one. */
   uninstallWindow?: boolean
   /** Shows the Settings screen directly for update-card review. */
@@ -310,6 +312,9 @@ const STATES: GalleryState[] = [
   },
   { key: 'xivlauncher', label: 'Scan · found through XIVLauncher', setup: scanned(MACHINES.xivlauncher) },
   { key: 'steam', label: 'Scan · found in a Steam library', setup: scanned(MACHINES.steam) },
+  { key: 'screen-60-sdr', label: 'Screen · 60 Hz SDR', setup: scanned(MACHINES.screen60Sdr), showScreenFacts: true },
+  { key: 'screen-144-hdr', label: 'Screen · 144 Hz HDR', setup: scanned(MACHINES.screen144Hdr), showScreenFacts: true },
+  { key: 'screen-240-dual', label: 'Screen · 240 Hz HDR, dual monitors', setup: scanned(MACHINES.screen240Dual), showScreenFacts: true },
   { key: 'beta-setup', label: 'Scan · first deployment with Beta content', setup: scanned(machine(MACHINES.beta, manifestHost({ ...BETA_MANIFEST, versions: [BETA_CONTENT] }))) },
   { key: 'no-published-tier', label: 'Scan · no content published for this card', setup: scanned(machine(MACHINES.steam, manifestHost({ ...BETA_MANIFEST, versions: [] }))) },
   { key: 'squareenix', label: 'Scan · found through the Square Enix launcher', setup: scanned(MACHINES.squareenix) },
@@ -439,6 +444,7 @@ export function Gallery() {
   const [progress, setProgress] = useState(0.5)
   const performanceRef = useRef<HTMLOutputElement>(null)
   const state = STATES[index]
+  const screenFacts = core?.getState().screen
   const previewCore = useMemo(() => {
     if (!core || !state.preview) return core
     const activity = state.preview.activity.kind === 'deploying' ? { kind: 'deploying' as const, progress } : state.preview.activity
@@ -506,6 +512,9 @@ export function Gallery() {
             </option>
           ))}
         </select>
+        {state.showScreenFacts && screenFacts && <output className="gallery-screen" aria-label="Resolved screen facts">
+          {`${screenFacts.deviceName} · ${screenFacts.width}×${screenFacts.height} · ${screenFacts.refreshHz} Hz · ${screenFacts.frameCap} fps · HDR ${screenFacts.hdrOn ? 'on' : screenFacts.hdrSupported ? 'supported, off' : 'unsupported'}`}
+        </output>}
         <span>← →</span>
         <label className="gallery-still">
           <input type="checkbox" checked={new URLSearchParams(location.search).has('crystal-still')} onChange={(event) => {

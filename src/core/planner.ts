@@ -115,6 +115,7 @@ export function planDeployment(content: ContentVersion, tier: Tier, includeReSha
   const paths = (items: TierRecipe['entryFiles']) => items.filter(included).map((p) => ({ ...p }))
   const filteredRecipe = { ...recipe, recipe: recipeSteps, entryFiles: paths(recipe.entryFiles), ownedConfigs: paths(recipe.ownedConfigs), shippedPresets: paths(recipe.shippedPresets), generatedFiles: paths(recipe.generatedFiles),
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
+    ...(recipe.screenDerivedSettings ? { screenDerivedSettings: recipe.screenDerivedSettings.filter((s) => includedConfig(s.file)) } : {}),
   }
   const entryPaths = filteredRecipe.entryFiles.map((p) => enabled ? p.path : disabledName(p.path))
   for (const path of [...entryPaths, ...filteredRecipe.ownedConfigs.map((p) => p.path), ...filteredRecipe.shippedPresets.map((p) => p.path)]) {

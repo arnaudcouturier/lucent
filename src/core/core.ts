@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { applyScreenDerivedSettings, assertReviewedTakeovers, backupFolderName, replacedOriginals, changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, scanDeployment, screenDerivedWriteTargets, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, fileKey, folderChanges, keptProfile, planDeployment, stepWritePaths, type FolderChanges, type Plan } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -25,6 +25,7 @@ import { chosenLauncher, LAUNCH_LABELS, launchOptions, STEAM_GAME_ID, type Launc
 import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount } from './format'
+import { readResolvedScreen, type ResolvedScreen } from './screen'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -87,6 +88,8 @@ export interface State {
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
   graphics: GraphicsState
+  /** XIV's resolved monitor and current frame-cap calculation. */
+  screen: ResolvedScreen | null
   manifest: ManifestState
   xivLauncher: XivLauncherState
   plan: Plan | null
@@ -232,7 +235,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -349,6 +352,33 @@ export function createCore(platform: Platform): Core {
       set({ launchOptions: options, launcher: chosenLauncher(options, launcherPreference) })
     } catch { set({ launchOptions: [], launcher: null }) }
   }
+  const refreshScreen = async (): Promise<ResolvedScreen | null> => {
+    try {
+      const screen = await readResolvedScreen(platform)
+      set({ screen })
+      return screen
+    } catch {
+      // A monitor enumeration failure should not prevent the rest of Scan from opening.
+      set({ screen: null })
+      return null
+    }
+  }
+  const syncScreenSettings = async (gameFolder: string): Promise<{ record: DeploymentRecord | null; deferred: boolean }> => {
+    const screen = await refreshScreen()
+    if (!screen) return { record: null, deferred: false }
+    const record = await readDeployment(platform, gameFolder)
+    if (record?.status !== 'complete') return { record: null, deferred: false }
+    if (await platform.isGameRunning()) { set({ gameRunning: true }); return { record: null, deferred: true } }
+    const targets = await screenDerivedWriteTargets(platform, gameFolder, screen)
+    if (targets.length && !await prepareWrite({ kind: 'repair', gameFolder }, targets)) return { record: null, deferred: true }
+    const applied = await applyScreenDerivedSettings(platform, gameFolder, screen)
+    set({ deployment: applied.record })
+    if (applied.changes.length) {
+      const previousValue = applied.changes[0].previousValue ?? 'unset'
+      log.write('info', `Frame cap: ${screen.frameCap} fps for a ${screen.refreshHz} Hz screen, was ${previousValue}`)
+    }
+    return { record: applied.record, deferred: false }
+  }
   const restoreDeployment = async (folder: GameFolder) => {
     await refreshLaunch(folder)
     let record = await readDeployment(platform, folder.path)
@@ -381,6 +411,12 @@ export function createCore(platform: Platform): Core {
       noteHealth(record, drift)
       if (update) log.write('info', `Content ${update.version} is available`)
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift, update) })
+      try { await syncScreenSettings(folder.path) }
+      catch (error) {
+        const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
+        set({ error: `Couldn’t update screen-derived settings. ${message(error)}`, recoveryRequired,
+          ...(recoveryRequired ? { deployment: null, activity: { kind: 'scan' as const } } : {}) })
+      }
       await refreshCustomProfile()
       await refreshKeybinds()
       await pruneCache(record)
@@ -600,6 +636,7 @@ export function createCore(platform: Platform): Core {
       set({ deployment: record, profiles: record.recipe.performanceProfiles ?? [], selectedProfile: record.profile ?? null, includeReShade: record.includeReShade })
       try { await finishSelection(record) }
       catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
+      await syncScreenSettings(record.gameFolder)
       await pruneCache(record)
     } catch (error) {
       set(error instanceof DeploymentError
@@ -727,6 +764,7 @@ export function createCore(platform: Platform): Core {
         await openLog(!!context)
         await core.refreshGameRunning()
         if (!await recover()) return
+        await refreshScreen()
         // Recovery precedes all startup work, including cleanup of the last app update.
         await cleanupOldExe(platform)
         await checkSelfInstall()
@@ -818,6 +856,7 @@ export function createCore(platform: Platform): Core {
         await refreshHealth(state.deployment)
         const deployment = await changePerformanceProfile(platform, state.deployment.gameFolder, profile)
         set({ deployment, selectedProfile: profile })
+        await syncScreenSettings(deployment.gameFolder)
         log.write('info', `Performance profile: ${state.profiles.find((p) => p.id === profile)?.label ?? profile}`)
       } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
       finally {
@@ -859,6 +898,8 @@ export function createCore(platform: Platform): Core {
           set({ deployment: record })
           log.write('success', 'Repair finished')
         }
+        record = (await syncScreenSettings(record.gameFolder)).record ?? record
+        set({ deployment: record })
       } catch (error) {
         set(error instanceof DeploymentError
           ? { error: error.message, recoveryRequired: error.recoveryRequired }
@@ -993,14 +1034,21 @@ export function createCore(platform: Platform): Core {
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source, acknowledged,
           loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version)
         installed = record
+        let completedRecord = record
+        try { completedRecord = (await syncScreenSettings(record.gameFolder)).record ?? record }
+        catch (error) {
+          if (error instanceof DeploymentError && error.recoveryRequired) throw error
+          set({ notice: `The install finished, but Lucent couldn’t update the screen-derived settings. ${message(error)}` })
+        }
+        installed = completedRecord
         log.write('success', `Install finished in ${elapsed(since)}`)
         let names: Record<number, string> = {}
-        try { names = await platform.getKeyNames(deploymentKeyCodes(record)) } catch { /* The US labels remain available if Windows lookup fails. */ }
-        const hotkeys = deploymentHotkeys(record, names)
-        deployedDrift = await checkHealth(platform, record, state.gameFolder.version)
-        noteHealth(record, deployedDrift)
-        set({ deployment: record, activity: { kind: 'done' }, hotkeys })
-        await pruneCache(record)
+        try { names = await platform.getKeyNames(deploymentKeyCodes(completedRecord)) } catch { /* The US labels remain available if Windows lookup fails. */ }
+        const hotkeys = deploymentHotkeys(completedRecord, names)
+        deployedDrift = await checkHealth(platform, completedRecord, state.gameFolder.version)
+        noteHealth(completedRecord, deployedDrift)
+        set({ deployment: completedRecord, activity: { kind: 'done' }, hotkeys })
+        await pruneCache(completedRecord)
         await refreshVersions()
       } catch (error) {
         const recoveryRequired = state.recoveryRequired || (error instanceof DeploymentError && error.recoveryRequired)
@@ -1039,6 +1087,24 @@ export function createCore(platform: Platform): Core {
         const gameRunning = await platform.isGameRunning()
         set({ gameRunning })
         if (gameRunning) { set({ launching: false }); return }
+        if (state.recoveryRequired) throw new Error('Finish recovery before launching XIV.')
+        if (!await recover()) { set({ launching: false }); return }
+        const current = await readDeployment(platform, folder.path)
+        if (current && current.status !== 'complete') throw new Error('Finish recovery before launching XIV.')
+        if (current) set({ deployment: current })
+        try {
+          const sync = await syncScreenSettings(folder.path)
+          if (sync.deferred) { set({ launching: false }); return }
+        }
+        catch (error) {
+          const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
+          set({ recoveryRequired, error: `Couldn’t update screen-derived settings. ${message(error)}` })
+          throw error
+        }
+        if (state.recoveryRequired) throw new Error('Finish recovery before launching XIV.')
+        const runningBeforeStart = await platform.isGameRunning()
+        set({ gameRunning: runningBeforeStart })
+        if (runningBeforeStart) { set({ launching: false }); return }
         log.write('info', `Launching XIV with ${option.kind === 'official' ? 'the ' : ''}${LAUNCH_LABELS[option.kind]}`)
         if (option.kind === 'steam') await platform.openSteamGame(STEAM_GAME_ID)
         else await platform.startProgram(option.path!)

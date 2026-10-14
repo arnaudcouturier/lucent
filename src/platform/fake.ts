@@ -1,7 +1,7 @@
 // In-memory fake of the Platform port, with Windows semantics:
 // paths are case-insensitive and accept either slash, and a folder exists when a file lives under it.
 // Used by the core's tests, the state gallery and the app running in a browser.
-import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type HeadlessMode, type LocalContent, type Platform, type RegistryHive } from '../core/platform'
+import { PlatformError, type EnvFolder, type FileStat, type GpuAdapter, type HeadlessMode, type LocalContent, type MonitorInfo, type Platform, type RegistryHive } from '../core/platform'
 import { assertGamePath } from '../shared/manifest'
 
 /** A machine to fake: its files, registry and well-known folders. */
@@ -12,6 +12,7 @@ export interface Machine {
   registry?: Record<string, Record<string, string>>
   env?: Partial<Record<EnvFolder, string>>
   gpus?: GpuAdapter[]
+  monitors?: MonitorInfo[]
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
   gameRunning?: boolean
@@ -34,6 +35,7 @@ export interface Machine {
 }
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
+  Documents: 'C:\\Users\\Player\\Documents',
   AppData: 'C:\\Users\\Player\\AppData\\Roaming',
   LocalAppData: 'C:\\Users\\Player\\AppData\\Local',
   ProgramFiles: 'C:\\Program Files',
@@ -310,6 +312,10 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     async getGpuAdapters() {
       await gate
       return (machine.gpus ?? []).map((gpu) => ({ ...gpu }))
+    },
+    async getMonitors() {
+      await gate
+      return structuredClone(machine.monitors ?? [])
     },
     async fetchText(url) {
       await gate

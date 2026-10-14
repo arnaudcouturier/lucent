@@ -26,6 +26,8 @@ export async function detectCustomProfile(platform: Platform, record: Deployment
   const configs = new Map<string, ReturnType<typeof readIni> | null>()
   const changed: ChangedSetting[] = []
   for (const { file, section, key, value } of profile.settings) {
+    if (record.recipe.screenDerivedSettings?.some((setting) => fileKey(setting.file) === fileKey(file)
+      && setting.section.toLowerCase() === section.toLowerCase() && setting.key.toLowerCase() === key.toLowerCase())) continue
     const config = Object.keys(record.ownedConfigs).find((p) => fileKey(p) === fileKey(file))
     if (!config) continue
     if (!configs.has(config)) configs.set(config, await platform.readText(await platform.resolveGamePath(root, config)).then(readIni, () => null))

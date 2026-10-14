@@ -1,4 +1,4 @@
-import { assertGamePath, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type ProfileId, type Tier } from '../shared/manifest'
+import { assertGamePath, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, keptProfile, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanStep } from './planner'
@@ -8,6 +8,7 @@ import { mergeIni, readIni } from './ini'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
+import type { ResolvedScreen } from './screen'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -1066,6 +1067,149 @@ export async function changePerformanceProfile(platform: Platform, gameFolder: s
     }
     throw error
   }
+}
+
+export interface ScreenDerivedChange {
+  file: string
+  section: string
+  key: string
+  previousValue: string | undefined
+  value: string
+}
+
+interface DerivedConfigPlan {
+  file: string
+  stamped: string
+  beforeHash: string
+  afterText: string
+  afterHash: string
+  changes: ScreenDerivedChange[]
+}
+
+/** Finds owned config files whose declared screen-derived values need a write. */
+export async function screenDerivedWriteTargets(platform: Platform, gameFolder: string, screen: ResolvedScreen): Promise<string[]> {
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') return []
+  return (await screenDerivedPlan(platform, record, screen)).filter((plan) => plan.beforeHash !== plan.afterHash).map((plan) => plan.file)
+}
+
+/** Applies the recipe's screen-derived values with the same durable journal and recovery path as other config writes. */
+export async function applyScreenDerivedSettings(
+  platform: Platform, gameFolder: string, screen: ResolvedScreen,
+): Promise<{ record: DeploymentRecord; changes: ScreenDerivedChange[] }> {
+  platform = await guardGameWrites(platform, gameFolder)
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('Recover the deployment before updating its screen-derived settings.')
+  const plans = await screenDerivedPlan(platform, record, screen)
+  const writes = plans.filter((plan) => plan.beforeHash !== plan.afterHash)
+  const changed = structuredClone(record)
+  const root = joinPath(gameFolder, 'game')
+  for (const plan of plans) changed.ownedConfigs[plan.file] = updateDerivedBaseline(changed.ownedConfigs[plan.file], record.recipe.screenDerivedSettings ?? [], plan.file, screen)
+  const changes = plans.flatMap((plan) => plan.changes)
+  if (!writes.length) {
+    if (JSON.stringify(changed.ownedConfigs) !== JSON.stringify(record.ownedConfigs)) {
+      for (const plan of plans) if (plan.beforeHash === await hashText(changed.ownedConfigs[plan.file])) {
+        changed.files[plan.stamped] = { ...await platform.stat(await platform.resolveGamePath(root, plan.file)), sha256: plan.beforeHash }
+      }
+      await platform.writeText((await dataPaths(platform, gameFolder)).record, JSON.stringify(changed, null, 2))
+    }
+    return { record: changed, changes: [] }
+  }
+
+  const paths = await dataPaths(platform, gameFolder)
+  record.status = 'applying'
+  record.changeStart = record.journal.length
+  const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await save()
+  try {
+    for (const plan of writes) {
+      const currentTarget = await platform.resolveGamePath(root, plan.file)
+      if (await platform.hashFile(currentTarget) !== plan.beforeHash) throw new Error(`The config changed while Lucent was reading it: ${plan.file}. Try again.`)
+      const backup = joinPath(paths.backups, plan.beforeHash)
+      if (await maybeStat(platform, backup)) {
+        if (await platform.hashFile(backup) !== plan.beforeHash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${plan.file}`)
+      } else {
+        await platform.copyFile(currentTarget, backup, false)
+        if (await platform.hashFile(backup) !== plan.beforeHash) throw new PlatformError('hash-mismatch', `Backup hash mismatch: ${plan.file}`)
+      }
+      record.journal.push({
+        step: { kind: 'write', path: plan.file, text: plan.afterText },
+        before: { [plan.file]: plan.beforeHash }, after: { [plan.file]: plan.afterHash },
+      })
+      await save()
+      await requireGameStopped(platform)
+      if (await platform.hashFile(await platform.resolveGamePath(root, plan.file)) !== plan.beforeHash) throw new Error(`The config changed during the screen settings update: ${plan.file}. Try again.`)
+      await platform.writeText(await platform.resolveGamePath(root, plan.file), plan.afterText, parentPath(gameFolder))
+      if (await platform.hashFile(await platform.resolveGamePath(root, plan.file)) !== plan.afterHash) throw new PlatformError('hash-mismatch', `Screen-derived config hash mismatch: ${plan.file}`)
+      if (plan.afterHash === await hashText(changed.ownedConfigs[plan.file])) {
+        changed.files[plan.stamped] = { ...await platform.stat(await platform.resolveGamePath(root, plan.file)), sha256: plan.afterHash }
+      }
+    }
+    changed.journal = record.journal
+    await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
+    return { record: changed, changes }
+  } catch (error) {
+    try { await undoDeployment(platform, record) } catch (recoveryError) {
+      throw new DeploymentError(error, true, recoveryError)
+    }
+    throw new DeploymentError(error, false)
+  }
+}
+
+async function screenDerivedPlan(platform: Platform, record: DeploymentRecord, screen: ResolvedScreen): Promise<DerivedConfigPlan[]> {
+  const settings = record.recipe.screenDerivedSettings ?? []
+  if (!settings.length) return []
+  const root = joinPath(record.gameFolder, 'game')
+  const byFile = new Map<string, { file: string; stamped: string; text: string; ini: ReturnType<typeof readIni>; changes: ScreenDerivedChange[] }>()
+  for (const setting of settings) {
+    const file = ownedConfig(record, setting)
+    const stamped = Object.keys(record.files).find((path) => fileKey(path) === fileKey(file))
+    if (!stamped) throw new Error(`Screen-derived setting config is missing from the deployment: ${setting.file}`)
+    const key = fileKey(file)
+    let group = byFile.get(key)
+    if (!group) {
+      const target = await platform.resolveGamePath(root, file)
+      const text = await platform.readText(target)
+      if (text.includes('\0')) throw new Error(`The config cannot be read as an INI file: ${file}`)
+      group = { file, stamped, text, ini: readIni(text), changes: [] }
+      byFile.set(key, group)
+    }
+    const value = derivedValue(setting, screen)
+    const previousValue = group.ini.get(setting.section, setting.key)
+    if (previousValue !== value) {
+      group.ini.set(setting.section, setting.key, value)
+      group.changes.push({ file, section: setting.section, key: setting.key, previousValue, value })
+    }
+  }
+  const plans: DerivedConfigPlan[] = []
+  for (const group of byFile.values()) {
+    const target = await platform.resolveGamePath(root, group.file)
+    const beforeHash = await platform.hashFile(target)
+    if (beforeHash !== await hashText(group.text)) throw new Error(`The config changed while Lucent was reading it: ${group.file}. Try again.`)
+    const afterText = group.ini.toString()
+    plans.push({ file: group.file, stamped: group.stamped, beforeHash, afterText, afterHash: await hashText(afterText), changes: group.changes })
+  }
+  return plans
+}
+
+function ownedConfig(record: DeploymentRecord, setting: ScreenDerivedSetting): string {
+  assertGamePath(setting.file)
+  if (setting.value !== 'frameCap') throw new Error(`Unknown screen-derived setting: ${setting.value}`)
+  const file = Object.keys(record.ownedConfigs).find((path) => fileKey(path) === fileKey(setting.file))
+  if (!file || typeof record.ownedConfigs[file] !== 'string') throw new Error(`Screen-derived setting must target an owned config: ${setting.file}`)
+  return file
+}
+
+function derivedValue(setting: ScreenDerivedSetting, screen: ResolvedScreen): string {
+  if (setting.value === 'frameCap') return screen.frameCap.toFixed(6)
+  throw new Error(`Unknown screen-derived setting: ${setting.value}`)
+}
+
+function updateDerivedBaseline(text: string, settings: ScreenDerivedSetting[], file: string, screen: ResolvedScreen): string {
+  if (typeof text !== 'string') throw new Error(`Screen-derived baseline is missing: ${file}`)
+  const ini = readIni(text)
+  for (const setting of settings) if (fileKey(setting.file) === fileKey(file)) ini.set(setting.section, setting.key, derivedValue(setting, screen))
+  return ini.toString()
 }
 
 /**

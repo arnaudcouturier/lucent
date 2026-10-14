@@ -48,6 +48,7 @@ export interface Component { name: string; upstream: string; licence: string; so
 export interface ConditionalPath { path: string; when?: 'reshade' }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
+export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' }
 /** Also the order of the radio rows. */
 export const PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
 export type ProfileId = typeof PROFILE_IDS[number]
@@ -72,6 +73,8 @@ export interface TierRecipe {
   generatedFiles: ConditionalPath[]
   overlay: 'neural-rendering' | 'upscaling' | null
   performanceProfiles?: PerformanceProfile[]
+  /** Settings computed from XIV's current monitor; unknown to Lucent 0.1.x. */
+  screenDerivedSettings?: ScreenDerivedSetting[]
   resetKeys?: IniKey[]
 }
 export interface ContentVersion {
@@ -245,6 +248,11 @@ function iniSetting(s: Record<string, unknown>): IniSetting {
   if (typeof s.value !== 'string' || /[\r\n\0]/.test(s.value)) invalid('INI values must be single-line strings.')
   return { ...iniKey(s), value: s.value }
 }
+function screenDerivedSetting(value: unknown): ScreenDerivedSetting {
+  const setting = object(value, 'Screen-derived setting')
+  if (setting.value !== 'frameCap') invalid('Unknown screen-derived value.')
+  return { ...iniKey(setting), value: 'frameCap' }
+}
 function singleLine(value: unknown, field: string): string {
   if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
   return value as string
@@ -305,6 +313,11 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       if (profiles.length && profiles.length !== PROFILE_IDS.length) invalid('A tier must offer Fidelity, Balanced and Performance together.')
       recipes[id].performanceProfiles = profiles.sort((a, b) => PROFILE_IDS.indexOf(a.id) - PROFILE_IDS.indexOf(b.id))
     }
+    if (r.screenDerivedSettings !== undefined) {
+      const settings = array(r.screenDerivedSettings, 'Screen-derived settings').map(screenDerivedSetting)
+      unique(settings.map((s) => JSON.stringify([pathKey(s.file), s.section.toLowerCase(), s.key.toLowerCase()])), 'Screen-derived keys')
+      recipes[id].screenDerivedSettings = settings
+    }
     if (r.resetKeys !== undefined) recipes[id].resetKeys = array(r.resetKeys, 'Reset keys').map(iniKey)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
     const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
@@ -313,6 +326,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       if (s.kind === 'ini_set' && ownedConfig(s.file).when !== s.when) invalid('INI steps must use their owned config condition.')
     }
     for (const s of (recipes[id].performanceProfiles ?? []).flatMap((p) => p.settings)) ownedConfig(s.file)
+    for (const s of (recipes[id].screenDerivedSettings ?? [])) ownedConfig(s.file)
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
     : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))

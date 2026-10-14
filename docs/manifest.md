@@ -50,6 +50,8 @@ Browser dev mode uses fake machines and a fake release host, with the committed 
 and tiny inert content from `src/platform/contentFixture.ts`. It never fetches or deploys real DLLs.
 The dev-only gallery includes every tier, an app-update request, invalid/unavailable manifests and
 a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caution badge.
+The gallery also includes `screen-60-sdr`, `screen-144-hdr` and `screen-240-dual`; their toolbar shows the
+resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files.
 
 ## Content versions
 
@@ -73,6 +75,26 @@ Each version contains:
 - `tiers`: an object keyed by tier id. Each entry defines its ordered `recipe`, `entryFiles`,
   `ownedConfigs`, `shippedPresets`, `generatedFiles`, and `overlay` hint (`neural-rendering`,
   `upscaling`, or `null` for a ReShade-only recipe).
+
+A tier recipe may also declare `screenDerivedSettings`, settings Lucent recalculates from the monitor XIV uses.
+Each entry names an owned config, section and key, plus the value computation. Lucent 0.1.x ignores this optional
+field, so content that depends on it should require an app version that supports it. The first computation is
+`"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz. For example,
+the frame cap declaration may target the OptiScaler limit, DLSS frame-generation target and XeFG target using
+three entries:
+
+```json
+"screenDerivedSettings": [
+  { "file": "OptiScaler.ini", "section": "Framerate", "key": "FramerateLimit", "value": "frameCap" },
+  { "file": "OptiScaler.ini", "section": "DLSSG", "key": "FramerateTargetDMFG", "value": "frameCap" },
+  { "file": "OptiScaler.ini", "section": "XeFG", "key": "DynamicTargetFPS", "value": "frameCap" }
+]
+```
+
+The field accepts only the known computation values, must use unique keys, and each target must name an owned config.
+Screen-derived settings are authoritative over profile settings with the same key and never make a profile Custom.
+Lucent stores their last-written values with the owned config for update merges, while config health checks remain
+parseability checks so an overlay edit is corrected without being reported as drift.
 
 The first deployment chooses the newest content on the player's channel for the scanned tier (Stable
 by default, Stable and Beta on Beta) and checks `minAppVersion`. The Beta channel switch in Settings

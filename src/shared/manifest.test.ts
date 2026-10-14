@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import manifest from '../../manifest.json'
-import { ManifestError, parseManifest } from './manifest'
+import { ManifestError, parseManifest, type Manifest } from './manifest'
+
+const screenDerivedManifest = (screenDerivedSettings: unknown): unknown => {
+  const hash = 'a'.repeat(64)
+  const tiers = Object.fromEntries(manifest.tiers.map((tier) => [tier.id, {
+    recipe: [{ kind: 'copy', file: hash, to: 'winmm.dll' }],
+    entryFiles: [{ path: 'winmm.dll' }], ownedConfigs: [{ path: 'OptiScaler.ini' }],
+    shippedPresets: [], generatedFiles: [], overlay: null, screenDerivedSettings,
+  }]))
+  return {
+    ...manifest,
+    versions: [{
+      id: '2026.10.13', channel: 'stable', minAppVersion: '0.1.0', changelog: ['Screen-derived settings.'],
+      components: [{ name: 'Test', upstream: 'Test', licence: 'MIT', source: 'https://example.com' }],
+      files: [{ sha256: hash, size: 0, release: 'content-2026.10.13' }], tiers,
+    }],
+  }
+}
 
 describe('The shared manifest schema', () => {
   it('reads the published tier definitions', () => {
@@ -19,6 +36,27 @@ describe('The shared manifest schema', () => {
 
     expect(parsed.existingSetups.map((s) => s.id)).toEqual(['gshade', 'gposingway', 'reshade', 'optiscaler', 'dlss-swap'])
     expect(parsed.existingSetups.find((s) => s.id === 'reshade')).toMatchObject({ files: expect.arrayContaining(['dxgi.dll', 'ReShade.ini']) })
+  })
+
+  it('reads an arbitrary INI target for the frame-cap screen-derived value', () => {
+    const input = screenDerivedManifest([{ file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' }])
+    const parsed: Manifest = parseManifest(JSON.stringify(input))
+
+    expect(parsed.versions[0].tiers['rtx-30-40'].screenDerivedSettings).toEqual([
+      { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' },
+    ])
+  })
+
+  it.each([
+    ['unknown derived value', [{ file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'monitorSize' }]],
+    ['unowned config', [{ file: 'Other.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' }]],
+    ['unsafe target key', [{ file: 'OptiScaler.ini', section: 'Framerate', key: 'Limit\nInjected', value: 'frameCap' }]],
+    ['duplicate target', [
+      { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' },
+      { file: 'OptiScaler.ini', section: 'framerate', key: 'frameratelimit', value: 'frameCap' },
+    ]],
+  ])('rejects a screen-derived setting with %s', (_, settings) => {
+    expect(() => parseManifest(JSON.stringify(screenDerivedManifest(settings)))).toThrow(ManifestError)
   })
 
   it('reads a manifest written before existing-setup signatures as having none', () => {

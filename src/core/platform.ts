@@ -36,7 +36,7 @@ export interface CopyItem { from: string; to: string; replace: boolean }
 export type RegistryHive = 'HKCU' | 'HKLM'
 
 /** Well-known folders, as Windows resolves them for the current user. */
-export type EnvFolder = 'AppData' | 'LocalAppData' | 'ProgramFiles' | 'ProgramFilesX86'
+export type EnvFolder = 'Documents' | 'AppData' | 'LocalAppData' | 'ProgramFiles' | 'ProgramFilesX86'
 
 export interface GpuAdapter {
   name: string
@@ -46,6 +46,19 @@ export interface GpuAdapter {
   software: boolean
   /** Windows driver version; absent if the adapter cannot report it. */
   driverVersion?: string | null
+}
+
+/** A desktop-attached display as Windows currently reports it. */
+export interface MonitorInfo {
+  deviceName: string
+  bounds: { left: number; top: number; right: number; bottom: number }
+  primary: boolean
+  refreshHz: number
+  width: number
+  height: number
+  hdrSupported: boolean
+  hdrOn: boolean
+  peakNits: number | null
 }
 
 /** Available only in dev builds; local release files live under filesDirectory. */
@@ -71,6 +84,7 @@ export interface Platform {
   /** Asks the player to pick a folder. Resolves to null if they cancel. */
   pickFolder(options: { title: string }): Promise<string | null>
   getGpuAdapters(): Promise<GpuAdapter[]>
+  getMonitors(): Promise<MonitorInfo[]>
   /** Fetches UTF-8 text; HTTP errors are port failures, never document contents. */
   fetchText(url: string): Promise<string>
   getDevContent(): Promise<LocalContent | null>

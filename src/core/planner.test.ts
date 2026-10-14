@@ -11,6 +11,16 @@ it('plans the final file count and downloads once per hash, including optional R
   expect(planDeployment(TEST_CONTENT, TEST_MANIFEST.tiers[1], false, scan).counts).toEqual({ added: 1, backedUp: 0, downloads: 0 })
 })
 
+it('keeps screen-derived settings only for configs included in the selected plan', () => {
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
+    ...TEST_CONTENT.tiers['rtx-30-40'],
+    screenDerivedSettings: [{ file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: 'frameCap' as const }],
+  } } }
+  const scan = { files: [], ownedFiles: [], cachedFiles: [] }
+  expect(planDeployment(content, TEST_MANIFEST.tiers[1], false, scan).recipe.screenDerivedSettings).toEqual([])
+  expect(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan).recipe.screenDerivedSettings).toEqual(content.tiers['rtx-30-40'].screenDerivedSettings)
+})
+
 it('counts originals once across rename, overwrite and delete, while protecting unowned files', () => {
   const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
     ...TEST_CONTENT.tiers['rtx-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [

@@ -1,6 +1,7 @@
 // Machine layouts for the fake Platform: game folders and the launchers that point at them.
 // Shared by the core's tests, the state gallery and the app running in a browser.
 import { DEFAULT_ENV, FAKE_EXE_PATH, type Machine } from './fake'
+import type { MonitorInfo } from '../core/platform'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
 import { appBetaReleaseHost } from './appUpdateFixture'
@@ -13,13 +14,14 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], readOnlyFiles: [], elevated: false, elevationCancelled: false, elevationResumePath: null, processes: [], headlessMode: null, operationLocks: new Set<string>() }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], monitors: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], readOnlyFiles: [], elevated: false, elevationCancelled: false, elevationResumePath: null, processes: [], headlessMode: null, operationLocks: new Set<string>() }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
     for (const [key, values] of Object.entries(p.registry ?? {})) out.registry[key] = { ...out.registry[key], ...values }
     Object.assign(out.env, p.env)
     if (p.gpus) out.gpus = p.gpus
+    if (p.monitors) out.monitors = p.monitors
     Object.assign(out.remoteText, p.remoteText)
     if (p.devContent !== undefined) out.devContent = p.devContent
     if (p.gameRunning !== undefined) out.gameRunning = p.gameRunning
@@ -153,6 +155,31 @@ export function squareEnixLauncher(installLocation: string): Machine {
   return { registry: { [`HKLM\\${SQUARE_ENIX_UNINSTALL_KEY}`]: { InstallLocation: installLocation, DisplayName: 'FINAL FANTASY XIV ONLINE' } } }
 }
 
+function screenGallery(refreshHz: number, hdrOn: boolean, dual = false): Machine {
+  const primaryWidth = dual ? 1920 : refreshHz === 60 ? 1920 : refreshHz === 144 ? 2560 : 3840
+  const primaryHeight = dual ? 1080 : refreshHz === 60 ? 1080 : refreshHz === 144 ? 1440 : 2160
+  const first: MonitorInfo = {
+    deviceName: '\\\\.\\DISPLAY1', bounds: { left: 0, top: 0, right: primaryWidth, bottom: primaryHeight },
+    primary: true, refreshHz: dual ? 60 : refreshHz, width: primaryWidth, height: primaryHeight,
+    hdrSupported: !dual && hdrOn, hdrOn: !dual && hdrOn, peakNits: !dual && hdrOn ? 1000 : null,
+  }
+  const second: MonitorInfo = {
+    deviceName: '\\\\.\\DISPLAY2', bounds: { left: 1920, top: 0, right: 5760, bottom: 2160 },
+    primary: false, refreshHz, width: 3840, height: 2160, hdrSupported: true, hdrOn, peakNits: 1000,
+  }
+  const selected = dual ? second : first
+  const displayConfig = [
+    '<Display Settings>', `MainAdapter ${dual ? 'NVIDIA GeForce RTX 4090 (\\\\.\\DISPLAY2)' : ''}`,
+    `ScreenLeft ${dual ? 100 : 20}`, 'ScreenTop 20', 'ScreenMode 1', `FullScreenWidth ${selected.width}`,
+    `FullScreenHeight ${selected.height}`, `Refreshrate ${refreshHz}`,
+  ].join('\r\n')
+  const root = steamGameFolder('D:\\SteamLibrary')
+  return machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(root), {
+    monitors: dual ? [first, second] : [first],
+    files: { [`${DEFAULT_ENV.Documents}\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg`]: displayConfig },
+  })
+}
+
 /** Named machines for the browser and the state gallery. */
 export const MACHINES = {
   steam: machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary'))),
@@ -160,6 +187,10 @@ export const MACHINES = {
   squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
   existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
+  /** Browser gallery: representative 60/144/240 Hz panels, SDR/HDR, and a two-display layout. */
+  screen60Sdr: screenGallery(60, false),
+  screen144Hdr: screenGallery(144, true),
+  screen240Dual: screenGallery(240, true, true),
   /** Beta content and an app pre-release are published; turn on Beta channel in Settings to be offered them. */
   beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>

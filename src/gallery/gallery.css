@@ -36,6 +36,12 @@
   min-width: 260px;
   font-variant-numeric: tabular-nums;
 }
+.gallery-screen {
+  max-width: min(580px, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .gallery-still {
   display: flex;
   align-items: center;
