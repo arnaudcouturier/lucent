@@ -383,13 +383,15 @@ kbd {
 .hero {
   position: relative;
   padding: 96px 0 104px;
-  overflow: hidden;
+  /* Clip sideways only: the glows fade out below the hero instead of being cut off at its edge. */
+  overflow-x: clip;
 }
 
 .hero::before,
 .hero::after {
   content: '';
   position: absolute;
+  z-index: -1;
   pointer-events: none;
 }
 
