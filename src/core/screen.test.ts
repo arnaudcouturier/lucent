@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { frameCapForRefresh, parseXivDisplaySettings, resolveScreen, type ScreenMonitor } from './screen'
-import { readResolvedScreen } from './screen'
+import { frameCapForRefresh, parseXivDisplaySettings, readResolvedScreen, resolveScreen, type ScreenMonitor } from './screen'
 import { createFakePlatform } from '../platform/fake'
 import { MACHINES } from '../platform/fixtures'
 
