@@ -44,29 +44,29 @@
       <main id="main" tabindex="-1" class="doc-body">
         <header class="doc-head">
           <p class="kicker">Lucent guide</p>
-          <h1>Keys, settings and how-to.</h1>
-          <p class="lead">How to set Lucent up, the keys you’ll use in game, and what every setting it ships does. Settings below are the RTX 30/40 content, the tier with published content today; Lucent’s <strong>In-game keys</strong> always shows the keys in your own game folder.</p>
+          <h1>Keys, settings and how-to</h1>
+          <p class="lead">Setup, in-game keys, and what each setting does. The settings below are the RTX 30/40 content, the only tier published so far. Lucent’s <strong>Keys</strong> screen shows the keys in your own game folder.</p>
         </header>
 
 
         <!-- 01 · How to use it -->
         <section class="doc-section" id="start" aria-labelledby="start-title">
           <p class="kicker">01 · How to use it</p>
-          <h2 id="start-title">From download to playing.</h2>
+          <h2 id="start-title">Setup</h2>
           <ol class="launch-steps">
-            <li><span class="step-number" aria-hidden="true">1</span><div><h3>Open Lucent.</h3><p>It’s a single portable <code>Lucent.exe</code>. Windows may pause the first launch; <a href="./index.html#smartscreen">here’s what to expect</a>. Close XIV first: Lucent never changes the game folder while the game runs.</p></div></li>
-            <li><span class="step-number" aria-hidden="true">2</span><div><h3>Scan.</h3><p>Lucent finds your game folder (XIVLauncher, Steam, the Square Enix launcher or the default location; choose it yourself if needed), your graphics card and its tier. If only beta content is available, explicitly enable <strong>Beta channel</strong> here to try it. If another ReShade, GShade, OptiScaler or GPosingway is there, Scan lists every file Lucent will back up and replace, and the presets it keeps. <strong>Show files</strong> opens the full list.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">1</span><div><h3>Open Lucent.</h3><p>It’s a single portable <code>Lucent.exe</code>. Windows warns on first launch; <a href="./index.html#smartscreen">here’s what to expect</a>. Close XIV first: Lucent never changes the game folder while the game runs.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">2</span><div><h3>Scan.</h3><p>Lucent finds your game folder (XIVLauncher, Steam, the Square Enix launcher or the default location; choose it yourself if needed), your graphics card and its tier. If only beta content is available, turn on <strong>Beta channel</strong> here. If another ReShade, GShade, OptiScaler or GPosingway is there, Scan lists every file Lucent will back up and replace, and the presets it keeps. <strong>Show files</strong> opens the full list.</p></div></li>
             <li><span class="step-number" aria-hidden="true">3</span><div><h3>Choose a profile.</h3><p>Pick Fidelity, Balanced or Performance (see <a href="#profiles">performance profiles</a>), whether to include ReShade, and whether to add Lucent to the Start menu. You can change the profile any time later.</p></div></li>
             <li><span class="step-number" aria-hidden="true">4</span><div><h3>Review, then Install.</h3><p>Install downloads every file and checks it against its hash, copies the files it replaces to your Backups folder, applies each change through a journal it can undo, then checks every deployed file. If anything fails, your game folder goes back exactly as it was.</p></div></li>
             <li><span class="step-number" aria-hidden="true">5</span><div><h3>Play.</h3><p>Start XIV as usual. No ReShade preset is active until you pick one: press <kbd>Shift</kbd>+<kbd>F2</kbd> in game.</p></div></li>
           </ol>
-          <p class="guide-note">Your original files are copied to <code>%LOCALAPPDATA%\Lucent\Backups\&lt;game folder name&gt;\game</code> under their own paths, so you can always find them. Lucent also keeps its own hash-checked backups, which is what Uninstall uses.</p>
+          <p class="guide-note">Your original files are copied to <code>%LOCALAPPDATA%\Lucent\Backups\&lt;game folder name&gt;\game</code> under their own paths. Lucent also keeps its own hash-checked backups, which is what Uninstall uses.</p>
         </section>
 
         <!-- 02 · Keybinds -->
         <section class="doc-section" id="keys" aria-labelledby="keys-title">
           <p class="kicker">02 · Keybinds</p>
-          <h2 id="keys-title">The keys you’ll use in game.</h2>
+          <h2 id="keys-title">In-game keys</h2>
           <p class="guide-text">These are the keys Lucent ships. If you change one in game, the <strong>Keys</strong> section of Lucent shows your keys as they are now, and what Lucent had set.</p>
           <div class="key-table" role="table" aria-label="OptiScaler keys">
             <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">OptiScaler</span></div></div>
@@ -89,7 +89,7 @@
         <!-- 03 · Settings explained -->
         <section class="doc-section" id="settings" aria-labelledby="settings-title">
           <p class="kicker">03 · Settings explained</p>
-          <h2 id="settings-title">What Lucent sets, and why.</h2>
+          <h2 id="settings-title">What Lucent sets, and why</h2>
           <p class="guide-text">Lucent writes three config files in the game’s <code>game</code> folder: <code>OptiScaler.ini</code>, <code>ReShade.ini</code> and <code>ReshadeEffectShaderToggler.ini</code>. You can change any setting in the OptiScaler or ReShade menu. When content updates, Lucent keeps your change unless the new content changes the same setting; a few settings, marked <span class="reset-tag">reset</span>, always return to Lucent’s value.</p>
 
           <h3 class="guide-subhead" id="profiles">Performance profiles</h3>
@@ -177,13 +177,13 @@
         <!-- 04 · Everyday use -->
         <section class="doc-section" id="everyday" aria-labelledby="everyday-title">
           <p class="kicker">04 · Everyday use</p>
-          <h2 id="everyday-title">After setup.</h2>
+          <h2 id="everyday-title">After setup</h2>
           <dl class="setting-list is-plain">
-            <div><dt>Status card</dt><dd>One line on how your setup is: <strong>Healthy</strong>, <strong>Disabled</strong>, files that need repair, or an update. It shows the one action that matters.</dd></div>
-            <div><dt>Scan</dt><dd>Checks every deployed file against its hash, right now. Use it after you’ve changed something, or if the game looks off. If a file is missing or changed, the card offers <strong>Repair</strong>. It’s on the Healthy card and under <strong>Settings → Game folder</strong>, and it works while XIV runs.</dd></div>
+            <div><dt>Status card</dt><dd>The state of your setup: <strong>Healthy</strong>, <strong>Disabled</strong>, files that need repair, or an update, with the action it needs.</dd></div>
+            <div><dt>Scan</dt><dd>Checks every deployed file against its hash. Use it after you’ve changed something, or if the game looks off. If a file is missing or changed, the card offers <strong>Repair</strong>. It’s on the Healthy card and under <strong>Settings → Game folder</strong>, and it works while XIV runs.</dd></div>
             <div><dt>Repair</dt><dd>Puts back exactly what Lucent deployed, from its cache, downloading only what’s missing. Your own config changes and presets stay. Game patches that replace a file are the usual cause.</dd></div>
             <div><dt>Launch XIV</dt><dd>On <strong>Home</strong>. Starts XIV the way you do: through XIVLauncher if it’s set up for this game folder, through Steam for a Steam copy, or with the Square Enix launcher. The label below the button shows which one it uses. If more than one applies, use the arrow beside <strong>Launch XIV</strong> to choose, or change it in <strong>Settings</strong>. Lucent remembers your choice.</dd></div>
-            <div><dt>In-game keys</dt><dd>The <strong>Keys</strong> section: every OptiScaler and ReShade key, read from your game folder each time you look, so a key you changed and forgot is never lost.</dd></div>
+            <div><dt>In-game keys</dt><dd>The <strong>Keys</strong> section: every OptiScaler and ReShade key, read from your game folder each time you look.</dd></div>
             <div><dt>Enabled</dt><dd>Off leaves Lucent’s files in place but inactive: the game runs as if vanilla. Turn it on again any time.</dd></div>
             <div><dt>Performance profile</dt><dd>Switch between Fidelity, Balanced and Performance. Close XIV first; changes apply the next time it starts.</dd></div>
             <div><dt>Updates</dt><dd>Lucent tells you about new content and app versions; nothing downloads until you click <strong>Update</strong>. <strong>Skip</strong> stops the announcement. <strong>Versions</strong> rolls back to an earlier version.</dd></div>
@@ -196,7 +196,7 @@
         <!-- 05 · Troubleshooting -->
         <section class="doc-section" id="trouble" aria-labelledby="trouble-title">
           <p class="kicker">05 · When something looks wrong</p>
-          <h2 id="trouble-title">Quick fixes.</h2>
+          <h2 id="trouble-title">Quick fixes</h2>
           <dl class="setting-list is-plain">
             <div><dt>After a game patch</dt><dd>Open Lucent. If the card says files need repair, click <strong>Repair</strong>. Otherwise click <strong>Scan</strong> to check every file.</dd></div>
             <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press <kbd>\</kbd> to compare with Neural Rendering off.</dd></div>
@@ -211,7 +211,7 @@
 
     <footer class="footer">
       <div class="container footer-inner">
-        <span>Lucent · An independent project for XIV.</span>
+        <span>Lucent · An unofficial tool for XIV.</span>
         <nav aria-label="Footer">
           <a href="./index.html">Home</a>
           <a href="./files.html">Files</a>

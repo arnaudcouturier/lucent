@@ -107,7 +107,7 @@ building. It publishes only the portable `Lucent.exe`.
   serves the previous Stable exe. Before the first Stable release there is no Latest link.
 - [ ] After the first Stable release, check that
   `https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe` and the
-  README's latest-release badge resolve, then remove the README's "The app is in final review"
+  README's latest-release badge resolve, then remove the README's "The first release isn't out yet"
   note.
 - [ ] Submit the **published exe** to
   [Microsoft Security Intelligence](https://www.microsoft.com/en-us/wdsi/filesubmission)

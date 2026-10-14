@@ -8,54 +8,89 @@
   <a href="https://arnaudcouturier.github.io/lucent/"><img src="https://img.shields.io/badge/website-download-f47521" alt="Download site"></a>
 </p>
 
-Lucent is a portable Windows app that installs a tested DLSS 5 Neural Rendering + ReShade setup into your XIV game folder — and keeps it working after game patches. No 264 MB archives to unpack, no Discord attachment hunting, no config files to edit by hand.
+<p align="center">
+  <a href="https://arnaudcouturier.github.io/lucent/"><b>Website</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://arnaudcouturier.github.io/lucent/guide.html"><b>Guide</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://arnaudcouturier.github.io/lucent/files.html"><b>Files</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/arnaudcouturier/lucent/releases"><b>Releases</b></a>
+</p>
+
+<br>
+
+Lucent is a portable Windows app that installs a tested DLSS 5 Neural Rendering and ReShade setup into your XIV game folder, and repairs it after game patches. Every file it replaces is backed up, and Uninstall puts them back.
 
 ## Download
 
-**[⬇ Download Lucent.exe](https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe)** — Windows 10 22H2 / 11, x64, single portable exe.
+**[Lucent.exe](https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe)** &nbsp;·&nbsp; Windows 10 22H2 or 11 &nbsp;·&nbsp; x64
 
-The app is in final review; the download becomes available with the first Stable app release. Developers can run the current app from source below.
+> [!NOTE]
+> The first release isn't out yet. Until it is, [run from source](#development).
 
-The [download site](https://arnaudcouturier.github.io/lucent/) explains the Windows SmartScreen warning before you meet it. Lucent is open source, sends no telemetry, and never asks for an antivirus exclusion.
+Lucent.exe isn't code-signed, so Windows warns on first launch. The site shows [what to expect](https://arnaudcouturier.github.io/lucent/#smartscreen) and how to verify the file.
 
-## How it works
+## Features
 
-1. **Scan** — Lucent finds your game folder, graphics card and launcher, and lists every file it will back up and replace (an existing GShade, ReShade or OptiScaler, for instance) and the folder where it keeps a copy.
-2. **Your choices** — pick Fidelity, Balanced or Performance, whether to include ReShade, and whether to add Lucent to the Start menu.
-3. **Review** — check the backup and file counts, download size and your choices before anything changes.
-4. **Done** — Lucent deploys, then teaches you the in-game keys, read from the configs it deployed. The [guide](https://arnaudcouturier.github.io/lucent/guide.html) explains every key and setting.
+| | |
+|:--|:--|
+| **Finds your game** | Game folder, launcher and graphics card. Works with XIVLauncher, Steam and the Square Enix launcher. |
+| **Backs up first** | Scan lists every file it will replace, such as an existing GShade, ReShade or OptiScaler. Each one is backed up. |
+| **Repairs after patches** | Every deployed file is checked against its hash. If a patch replaced one, Repair puts it back. |
+| **Three profiles** | Fidelity, Balanced or Performance. Switch any time. |
+| **Updates when you want** | New versions are offered, not forced. Versions rolls back. |
+| **Clean uninstall** | Restores what it replaced and removes what it added. Your own presets and shaders stay. |
+| **No telemetry** | Open source. [Every file it installs](https://arnaudcouturier.github.io/lucent/files.html) is listed with its SHA-256. |
 
-After that it stays quiet: a health check runs on every open, Repair fixes patch drift in one click, updates are offered (never forced), and Uninstall restores every file Lucent replaced from its backups and removes what it added. Your own presets and shaders are kept; where a first deployment must write the same path as one of your files, Scan lists it and it is backed up first.
+## Supported cards
 
-Home holds Launch XIV, the status card, performance profile and Enabled switch. The label below Launch names the selected launcher; when several apply, its arrow lets you choose, and Lucent remembers. Keys shows your current in-game shortcuts, Versions manages updates and rollback, Logs shows everything Lucent has done and what OptiScaler and ReShade report, Settings holds the game folder and launcher preferences, and Help holds diagnostics, the guide and credits.
+| Card | Setup | Content |
+|:--|:--|:--|
+| RTX 50 | DLSS 5 Neural Rendering + ReShade | Not yet |
+| RTX 30 / 40 | DLSS 5 through the compatibility runtime + ReShade | **Beta** |
+| RTX 20 | DLSS 5 through the compatibility runtime + ReShade | Not yet |
+| Radeon | FSR upscaling and frame generation + ReShade | Not yet |
+| Any other | ReShade and presets | Not yet |
 
-## Graphics tiers
-
-The current manifest publishes content for RTX 30/40 on the Beta channel. Enable **Beta channel** on Scan for a first deployment, or in Settings afterward. The other tiers await tested content. A tier's status describes how proven its setup is; the content channel determines which versions are offered. The [site's graphics card list](https://arnaudcouturier.github.io/lucent/#cards) reads availability directly from the manifest.
-
-| Tier | Tier status | Content | Availability |
-|---|---|---|---|
-| RTX 50 | Community-verified | DLSS 5 Neural Rendering | Not published |
-| RTX 30/40 | Stable | DLSS 5 via the compatibility runtime | Beta |
-| RTX 20 | Experimental | DLSS 5 via the compatibility runtime | Not published |
-| Radeon | Experimental | FSR upscaling + ReShade | Not published |
-| Other | Stable | ReShade and presets | Not published |
+To use Beta content, turn on **Beta channel** on the Scan screen. The [site](https://arnaudcouturier.github.io/lucent/#cards) reads this list from the manifest, so it is always current.
 
 ## Credits
 
-Lucent deploys other people's excellent work, each credited in the app, on the site, and with its licence file next to its files: SirenBrink and the OptiScaler authors, ShortFuse / RenoDX, crosire (ReShade), Marty McFly (iMMERSE), qUINT, Wafflezs (Alive NEXT), and ipsusu (ipsuShade). Lucent itself is not affiliated with Square Enix; FINAL FANTASY XIV is a trademark of Square Enix Holdings Co., Ltd.
+Lucent installs other people's work. Each component ships with its licence.
 
-## For developers
+| | |
+|:--|:--|
+| OptiScaler forks | [SirenBrink](https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV), [y4my4my4m](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG), [Dagherbou](https://github.com/Dagherbou/OptiScaler_DLSSNR) |
+| Compatibility runtime | ShortFuse / [RenoDX](https://github.com/clshortfuse/renodx) |
+| ReShade | [crosire](https://reshade.me/) |
+| iMMERSE and qUINT | [Marty McFly](https://github.com/martymcmodding/iMMERSE) |
+| SweetFX | [CeeJay.dk and contributors](https://github.com/CeeJayDK/SweetFX) |
+| Alive presets | [Wafflezs](https://www.nexusmods.com/finalfantasy14/mods/156) |
+| ipsuShade | [ipsusu](https://github.com/ipsusu/ipsuShade) |
+
+## Development
 
 ```sh
 npm ci
-npm run dev        # UI in a browser on a fake machine · npm run tauri dev for the real app
-npm test           # TypeScript suite      ·  npm run test:rust for the Rust primitives
+npm run dev          # UI in a browser, on a fake machine
+npm run tauri dev    # the real app
+npm test             # TypeScript tests
+npm run test:rust    # Rust tests
 npm run typecheck
 ```
 
-The domain core in `src/core/` is framework-free and reaches the machine only through the Platform port; the Tauri 2 shell in `src-tauri/` provides the real primitives. Start with [CONTEXT.md](CONTEXT.md) for the glossary, [docs/decisions.md](docs/decisions.md) for why things are the way they are, [docs/publishing.md](docs/publishing.md) to publish a content version, and [docs/release-checklist.md](docs/release-checklist.md) to cut an app release.
+`src/core/` is framework-free and reaches the machine only through the Platform port. `src-tauri/` is the Tauri 2 shell that implements it.
+
+| | |
+|:--|:--|
+| [CONTEXT.md](CONTEXT.md) | Glossary |
+| [docs/decisions.md](docs/decisions.md) | Design decisions |
+| [docs/publishing.md](docs/publishing.md) | Publishing a content version |
+| [docs/release-checklist.md](docs/release-checklist.md) | Cutting an app release |
 
 ## Licence
 
-Lucent is [MIT](LICENSE). The components it deploys keep their own licences, shipped alongside their files.
+[MIT](LICENSE). The components Lucent installs keep their own licences.
+
+Not affiliated with Square Enix. FINAL FANTASY XIV is a trademark of Square Enix Holdings Co., Ltd.
