@@ -77,11 +77,6 @@ export function readIni(text: string) {
       }
       insert(end, `${key}=${value}`)
     },
-    /** Removes every occurrence of a key, keeping the section heading and its other lines. */
-    remove(section: string, key: string) {
-      const found = new Set(matches(section, key).map(({ line }) => line))
-      for (let i = lines.length - 1; i >= 0; i--) if (found.has(lines[i])) lines.splice(i, 1)
-    },
     toString: () => bom + lines.map((line) => line.text + line.ending).join(''),
   }
 }

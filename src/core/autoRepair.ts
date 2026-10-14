@@ -2,7 +2,7 @@
 // The check runs when the game launches; the repair runs once it closes and its files are no longer locked.
 import type { HeadlessMode, Platform } from './platform'
 import { checkHealth } from './health'
-import { failureReason, migrateDeployment, readDeployment, repairDeployment } from './deployment'
+import { failureReason, migrateDeployment, migrationNote, readDeployment, repairDeployment } from './deployment'
 import { checkPickedFolder } from './gameFolder'
 import { loadManifest } from './manifest'
 import { joinPath } from './paths'
@@ -70,7 +70,7 @@ async function launchedDeployment(platform: Platform) {
   if (migrated) {
     record = migrated
     const log = openActivityLog(platform)
-    log.write('info', 'Migrated the deployment record: Lucent no longer tracks the config files, which stay as they are.')
+    log.write('info', migrationNote(migrated))
     await log.flushed()
   }
   return folder && record?.status === 'complete' ? { folder, record } : null

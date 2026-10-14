@@ -12,7 +12,7 @@ import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 import { storedSelection } from './choices'
-import { selectProfileForUpdate } from './profileValues'
+import { profilesForRecipe, selectProfileForUpdate } from './profileValues'
 import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
 
 export interface FileStamp extends FileStat { sha256: string }
@@ -1050,6 +1050,12 @@ function storedBaselinePlan(record: DeploymentRecord, content: ContentVersion | 
   const tier: Tier = snapshot?.tier ?? { id: record.tier, label: record.tier, status: 'stable', gpuMatch: 'any', neuralRendering: false, requiresReShade: record.includeReShade }
   const profile = selectProfileForUpdate(record.recipe, record.recipe, record.profile ?? null, record.graphics.name)
   return planDeployment(stored, tier, record.includeReShade, { files: [], ownedFiles: [], cachedFiles: [] }, profile, record.enabled, storedSelection(record, record.recipe, record.graphics.name, screen))
+}
+
+/** The activity-log line for a migrated record: what went, and the first-install choices Reset will offer. */
+export function migrationNote(record: DeploymentRecord): string {
+  const profile = record.profile ? `${profilesForRecipe(record.recipe).find((p) => p.id === record.profile)?.label ?? record.profile} profile, ` : ''
+  return `Migrated the deployment record: Lucent no longer tracks the config files, which stay as they are. Stored choices for Reset: ${profile}frame generation ${record.frameGenerationMode ?? 'not offered'}, HDR ${record.hdrMode ?? 'not offered'}`
 }
 
 /**

@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, migrationNote, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -419,7 +419,7 @@ export function createCore(platform: Platform): Core {
     const migrated = await migrateDeployment(platform, folder.path)
     if (migrated) {
       record = migrated
-      log.write('info', `Migrated the deployment record: Lucent no longer tracks the config files, which stay as they are. Stored choices for Reset: ${migrated.profile ? `${profilesForRecipe(migrated.recipe).find((p) => p.id === migrated.profile)?.label ?? migrated.profile} profile, ` : ''}frame generation ${migrated.frameGenerationMode ?? 'not offered'}, HDR ${migrated.hdrMode ?? 'not offered'}`)
+      log.write('info', migrationNote(migrated))
     }
     const files = record?.status === 'complete' ? [] : await platform.listFiles(joinPath(folder.path, 'game'))
     scanned = record?.status === 'complete' ? null : { gameFolder: folder.path, files }
