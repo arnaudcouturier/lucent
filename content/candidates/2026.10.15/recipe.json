@@ -24,9 +24,9 @@
   ],
   "changelog": [
     "Neural Rendering now toggles with Delete; Page Up and Page Down remain XIV zoom keys, and End toggles frame generation.",
-    "Frame generation choices now include tested RTX 40 multipliers, an experimental RTX 40 Dynamic mode pending 4090 verification, and experimental RTX 30 2× FSR frame generation.",
-    "The frame cap, Dynamic targets and HDR peak brightness follow the active display.",
-    "Choose Off, HDR or experimental Scene HDR on supported displays; RTX 30 uses XeFG 2× while Windows HDR is on.",
+    "Frame generation choices now include tested RTX 40 multipliers, an experimental RTX 40 Dynamic mode, and experimental RTX 30 2× FSR frame generation.",
+    "Fresh deployment, Reset and baseline rewrites compute the frame cap, Dynamic targets and HDR peak brightness from the active display.",
+    "Choose Off, HDR or experimental Scene HDR on supported displays; the selected HDR mode chooses the RTX 30 provider, with a Windows HDR activation warning when the display is not enabled.",
     "Four resolution-aware Neural Rendering profiles now cover Ultra, Fidelity, Balanced and Performance.",
     "RTX 30 multi-frame-generation unlocks are deferred pending Intel XeSS license clearance."
   ],
@@ -163,7 +163,7 @@
       "provider": "dlssg",
       "gpuPatterns": ["RTX\\s?40[0-9]{2}"],
       "multipliers": ["2x", "3x", "4x", "5x", "6x", "dynamic"],
-      "dynamicExperimentalPendingQa": true,
+      "dynamicExperimental": true,
       "adaUnlockMultipliers": ["3x", "4x", "5x", "6x"]
     }
   }

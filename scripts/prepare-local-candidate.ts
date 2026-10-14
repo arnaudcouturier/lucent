@@ -36,7 +36,7 @@ interface CandidateRecipe {
     }
     rtx40: {
       provider: 'dlssg'; gpuPatterns: string[]; multipliers: string[]
-      dynamicExperimentalPendingQa: boolean; adaUnlockMultipliers: string[]
+      dynamicExperimental: boolean; adaUnlockMultipliers: string[]
     }
   }
 }
@@ -202,7 +202,7 @@ function buildFrameGenerationOptions(spec: CandidateRecipe['frameGeneration']): 
     options.push({
       id: id as FrameGenerationOption['id'],
       gpuNamePatterns: spec.rtx40.gpuPatterns,
-      ...(id === '2x' || !dynamic ? { experimental: id === '2x' ? false : true } : { experimental: spec.rtx40.dynamicExperimentalPendingQa }),
+      ...(id === '2x' || !dynamic ? { experimental: id === '2x' ? false : true } : { experimental: spec.rtx40.dynamicExperimental }),
       settings: frameModeSettings(spec.rtx40.provider, count, unlock, false, dynamic),
     })
   }

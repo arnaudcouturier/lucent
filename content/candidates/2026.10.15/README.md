@@ -29,11 +29,11 @@ These rules are copied into `publish.json` by the candidate helper and validated
 | GPU | SDR choice | Windows HDR choice | Status |
 | --- | --- | --- | --- |
 | RTX 30 | Off or 2× FSR frame generation | 2× XeFG | Experimental; XeFG MFG unlock stays false |
-| RTX 40 | Off, 2×–6× DLSSG, Dynamic | DLSSG remains selected | 2× standard; 3×–6× and Dynamic Experimental pending 4090 QA |
+| RTX 40 | Off, 2×–6× DLSSG, Dynamic | DLSSG remains selected | 2× standard; 3×–6× and Dynamic Experimental by design; complete 4090 matrix manually tested and attested |
 
-RTX 30 has no 3×, 4× or Dynamic choice in this candidate. Those XeFG unlock modes remain deferred pending Intel license clearance. The RTX 30 2× HDR override is explicitly `FGOutput=xefg`, `UnlockMFG=false`, `InterpolationCount=1`, `MaxInterpolatedFrames=1` and `DynamicMFG=false`; switching Windows HDR off restores FSRFG 2× and the same disabled XeFG settings.
+RTX 30 has no 3×, 4× or Dynamic choice in this candidate. Those XeFG unlock modes remain deferred pending Intel license clearance. The selected HDR mode controls the RTX 30 2× provider at install or Reset: the HDR choice uses `FGOutput=xefg`, `UnlockMFG=false`, `InterpolationCount=1`, `MaxInterpolatedFrames=1` and `DynamicMFG=false`; the SDR choice uses FSRFG 2×. Windows HDR activation remains a separate display warning and does not silently change the selected provider.
 
-The candidate's Off/HDR/Scene HDR options write only their owned `[HDR] FfxivHDR` and `[HDR] Mode` keys; Off writes `FfxivHDR=false` and leaves Mode unspecified. HDR remains the default on a Windows HDR display. Scene HDR is Experimental. Peak nits, frame cap and both Dynamic frame-generation targets are monitor-derived rather than fixed values. The copied base INI leaves frame-generation and HDR option keys out so defaults and live changes use the same manifest transaction.
+The candidate's Off/HDR/Scene HDR options write only their owned `[HDR] FfxivHDR` and `[HDR] Mode` keys; Off writes `FfxivHDR=false` and leaves Mode unspecified. HDR remains the default on a Windows HDR display. Scene HDR is Experimental. Peak nits, frame cap and both Dynamic frame-generation targets are monitor-derived rather than fixed values. The copied base INI leaves frame-generation and HDR option keys out so a fresh deployment or Reset supplies the selected choices; screen-derived values are computed when Lucent writes that baseline and are retained during ordinary updates.
 
 The four profiles use the #34 `ForcePerfQuality` columns (1080p / 1440p / 4K+): Ultra `2/2/2` with two passes; Fidelity `2/2/2` with one pass; Balanced `2/1/1` with one pass; Performance `1/1/0` with one pass, spatial compression and residual frame generation. Each profile also sets both compression flags explicitly to avoid inheriting an old INI value.
 
@@ -44,18 +44,18 @@ The four profiles use the #34 `ForcePerfQuality` columns (1080p / 1440p / 4K+): 
 
 The Intel license allows redistribution of the unmodified binary with its notice and forbids modification or alteration of the software or its operation, including during execution. The verified hashes establish the binaries' source and that Lucent copied the upstream bytes unchanged. The candidate includes no XeSS DLL patch or MFG unlock; its approved RTX 30 scope is Off/2× FSR in SDR and the 2× XeFG HDR fallback with MFG unlock disabled. Only RTX 30 XeFG 3×, 4× and Dynamic MFG unlocks remain deferred pending license clearance. The hashes do not establish whether an MFG unlock complies with the runtime-operation clause.
 
-## 4090 QA before release
+## 4090 QA record
 
-Run every case from a fresh deployment or from **Settings → Reset setup…** with the game closed. A Reset is required when changing the profile, frame-generation mode or HDR mode; do not switch these through Home or by editing the deployment record. Verify the selected values in the generated `OptiScaler.ini`, then launch XIV and confirm Neural Rendering is active.
+The maintainer manually ran every case from a fresh deployment or **Settings → Reset setup…** with the game closed. A Reset is required when changing the profile, frame-generation mode or HDR mode; do not switch these through Home or by editing the deployment record. The matrix below records that attestation; it is not agent-observed gameplay evidence. Verify the selected values in the generated `OptiScaler.ini`, then launch XIV and confirm Neural Rendering is active.
 
 - RTX 40 frame generation: **Off**, **2×**, **3×**, **4×**, **5×**, **6×** and **Dynamic**. For each choice, verify the overlay mode and complete ten minutes of play without a crash.
-- HDR: **Off**, **HDR** and **Scene HDR** with Windows HDR on where supported; repeat the frame-generation choices that are offered with each HDR selection, and verify the screen-derived peak nits. Repeat with Windows HDR off to verify the SDR fallback.
+- HDR: **Off**, **HDR** and **Scene HDR** with Windows HDR on where supported; repeat the frame-generation choices that are offered with each selected HDR mode, verify the screen-derived peak nits, and confirm the Windows HDR activation warning. The selected HDR mode determines the RTX 30 provider even when Windows HDR is currently off.
 - Profiles: **Ultra**, **Fidelity**, **Balanced** and **Performance** at the active resolution. Confirm the profile's Neural Rendering pass count, quality column and compression/residual settings.
 - Screen-derived values: verify the frame cap and Dynamic targets for the active display, then use Reset after a display refresh-rate change to confirm the new baseline is computed from that display. Existing configs retain their values during ordinary update/launch.
 - Hotkeys: confirm Delete toggles Neural Rendering, Page Up/Page Down remain XIV zoom, and End toggles frame generation.
 - Re-open Lucent and verify the selected choices persist. Use deployment history to roll back to 2026.10.14 and verify that candidate content is removed and the prior content is restored. Uninstall remains a separate operation that restores the pre-first-deployment baseline.
 
-The maintainer attests that the complete matrix above was run on the RTX 4090 before this candidate handoff and passed. This repository preparation records that attestation; it does not claim agent-observed gameplay results.
+The maintainer attests that the complete matrix above was run on the RTX 4090 before this candidate handoff and passed. Real Reset manual verification remains user-attested; this repository preparation records the attestation and automated manifest validation, not agent-observed gameplay results.
 
 ## Offline and live publication commands
 
