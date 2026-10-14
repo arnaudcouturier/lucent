@@ -116,7 +116,7 @@ A copy of every file from before a first deployment, kept under its own path in 
 _Avoid_: backup folder (the journal's backups are elsewhere)
 
 **Health check**:
-A comparison of the game folder against what the deployment should be.
+A comparison of the game folder against what the deployment should be. The player starts a full one with the main screen's **Scan** button; that label is the only player-facing use of "scan" for it.
 _Avoid_: verify, scan
 
 **Drift**:
@@ -138,6 +138,14 @@ _Avoid_: vanilla mode, paused, off
 **Uninstall**:
 Undoing a deployment from its journal, leaving a vanilla game folder. An existing setup comes back as it was; its carried-over presets stay as user files.
 _Avoid_: remove, clean up
+
+**Activity log**:
+Lucent's own line-by-line account of what it found and did, kept in `lucent.log` in its data folder and shown in the Logs section. Nothing is undone from it.
+_Avoid_: journal (that is the undo record), history
+
+**Tool log**:
+A log one of the deployed components writes in the game folder while XIV runs, such as `ReShade.log`. Uninstall removes it.
+_Avoid_: mod log
 
 **Recovery**:
 Undoing an unfinished deployment from its journal after a failure or a crash, so the game folder is as it was before. It runs before anything else at startup.

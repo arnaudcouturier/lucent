@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d0e11" />
+    <meta name="description" content="How to use Lucent, every in-game key, and what each setting Lucent ships for XIV does." />
+    <title>Lucent guide · Keys, settings and how to use it</title>
+    <link rel="icon" type="image/svg+xml" href="../src-tauri/icons/mark.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="./index.html" aria-label="Lucent home">
+          <svg viewBox="0 0 16 22" aria-hidden="true"><polygon points="8,0 16,8 8,22 0,8" /><path d="M0 8 L6 10 L8 22 M6 10 L16 8" /></svg>
+          Lucent
+        </a>
+        <nav class="nav-links" aria-label="Site">
+          <a href="./index.html#features">Features</a>
+          <a href="./index.html#installed">What it installs</a>
+          <a href="./guide.html" aria-current="page">Guide</a>
+          <a href="./files.html">Files</a>
+          <a href="./index.html#faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="button is-ghost" href="https://github.com/arnaudcouturier/lucent">GitHub</a>
+          <a class="button is-primary" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="container doc">
+      <aside class="toc" aria-label="On this page">
+        <p class="kicker">Guide</p>
+        <a href="#start">Getting started</a>
+        <a href="#keys">Keybinds</a>
+        <a href="#settings">Settings explained</a>
+        <a href="#profiles">Performance profiles</a>
+        <a href="#everyday">Everyday use</a>
+        <a href="#trouble">Quick fixes</a>
+      </aside>
+      <main id="main" tabindex="-1" class="doc-body">
+        <header class="doc-head">
+          <p class="kicker">Lucent guide</p>
+          <h1>Keys, settings and how-to.</h1>
+          <p class="lead">How to set Lucent up, the keys you’ll use in game, and what every setting it ships does. Settings below are the RTX 30/40 content, the tier with published content today; Lucent’s <strong>In-game keys</strong> always shows the keys in your own game folder.</p>
+        </header>
+
+
+        <!-- 01 · How to use it -->
+        <section class="doc-section" id="start" aria-labelledby="start-title">
+          <p class="kicker">01 · How to use it</p>
+          <h2 id="start-title">From download to playing.</h2>
+          <ol class="launch-steps">
+            <li><span class="step-number" aria-hidden="true">1</span><div><h3>Open Lucent.</h3><p>It’s a single portable <code>Lucent.exe</code>. Windows may pause the first launch; <a href="./index.html#smartscreen">here’s what to expect</a>. Close XIV first: Lucent never changes the game folder while the game runs.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">2</span><div><h3>Scan.</h3><p>Lucent finds your game folder (XIVLauncher, Steam, the Square Enix launcher or the default location; choose it yourself if needed), your graphics card and its tier. If only beta content is available, explicitly enable <strong>Beta channel</strong> here to try it. If another ReShade, GShade, OptiScaler or GPosingway is there, Scan lists every file Lucent will back up and replace, and the presets it keeps. <strong>Show files</strong> opens the full list.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">3</span><div><h3>Choose a profile.</h3><p>Pick Fidelity, Balanced or Performance (see <a href="#profiles">performance profiles</a>), whether to include ReShade, and whether to add Lucent to the Start menu. You can change the profile any time later.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">4</span><div><h3>Review, then Install.</h3><p>Install downloads every file and checks it against its hash, copies the files it replaces to your Backups folder, applies each change through a journal it can undo, then checks every deployed file. If anything fails, your game folder goes back exactly as it was.</p></div></li>
+            <li><span class="step-number" aria-hidden="true">5</span><div><h3>Play.</h3><p>Start XIV as usual. No ReShade preset is active until you pick one: press <kbd>Shift</kbd>+<kbd>F2</kbd> in game.</p></div></li>
+          </ol>
+          <p class="guide-note">Your original files are copied to <code>%LOCALAPPDATA%\Lucent\Backups\&lt;game folder name&gt;\game</code> under their own paths, so you can always find them. Lucent also keeps its own hash-checked backups, which is what Uninstall uses.</p>
+        </section>
+
+        <!-- 02 · Keybinds -->
+        <section class="doc-section" id="keys" aria-labelledby="keys-title">
+          <p class="kicker">02 · Keybinds</p>
+          <h2 id="keys-title">The keys you’ll use in game.</h2>
+          <p class="guide-text">These are the keys Lucent ships. If you change one in game, the <strong>Keys</strong> section of Lucent shows your keys as they are now, and what Lucent had set.</p>
+          <div class="key-table" role="table" aria-label="OptiScaler keys">
+            <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">OptiScaler</span></div></div>
+            <div role="row"><span role="cell"><kbd>Insert</kbd></span><span role="cell">Open or close the OptiScaler menu: Neural Rendering, upscaling, frame generation and every setting below.</span></div>
+            <div role="row"><span role="cell"><kbd>\</kbd></span><span role="cell">Neural Rendering on or off, with a small “On / Off” notice. The Keys section shows the binding your installed content ships; some content leaves it unbound.</span></div>
+            <div role="row"><span role="cell"><kbd>End</kbd></span><span role="cell">Frame generation on or off.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Up</kbd></span><span role="cell">Show or hide OptiScaler’s FPS overlay.</span></div>
+            <div role="row"><span role="cell"><kbd>Page Down</kbd></span><span role="cell">Cycle the FPS overlay through its simple and detailed styles.</span></div>
+          </div>
+          <div class="key-table" role="table" aria-label="ReShade keys">
+            <div class="key-group" role="rowgroup"><div role="row"><span role="columnheader">ReShade</span></div></div>
+            <div role="row"><span role="cell"><kbd>Shift</kbd>+<kbd>F2</kbd></span><span role="cell">Open or close the ReShade menu, where you choose a preset.</span></div>
+            <div role="row"><span role="cell"><kbd>Shift</kbd>+<kbd>F3</kbd></span><span role="cell">All ReShade effects on or off, to compare with and without.</span></div>
+            <div role="row"><span role="cell"><kbd>Print Screen</kbd></span><span role="cell">Screenshot with effects, saved as PNG in the game’s <code>game</code> folder.</span></div>
+          </div>
+          <h3 class="guide-subhead">Changing a key</h3>
+          <p class="guide-text"><strong>OptiScaler:</strong> open its menu, then <strong>Keybinds</strong>. Click an action and press the new key; <kbd>Esc</kbd> cancels and <kbd>Backspace</kbd> unbinds. OptiScaler takes single keys, not combinations. <strong>ReShade:</strong> open its menu, then <strong>Settings</strong>, and set <strong>Overlay key</strong> or <strong>Effect toggle key</strong>. Lucent keeps your keys through content updates, unless an update changes that same key.</p>
+        </section>
+
+        <!-- 03 · Settings explained -->
+        <section class="doc-section" id="settings" aria-labelledby="settings-title">
+          <p class="kicker">03 · Settings explained</p>
+          <h2 id="settings-title">What Lucent sets, and why.</h2>
+          <p class="guide-text">Lucent writes three config files in the game’s <code>game</code> folder: <code>OptiScaler.ini</code>, <code>ReShade.ini</code> and <code>ReshadeEffectShaderToggler.ini</code>. You can change any setting in the OptiScaler or ReShade menu. When content updates, Lucent keeps your change unless the new content changes the same setting; a few settings, marked <span class="reset-tag">reset</span>, always return to Lucent’s value.</p>
+
+          <h3 class="guide-subhead" id="profiles">Performance profiles</h3>
+          <p class="guide-text">A profile is three Neural Rendering settings. Change one by hand and Lucent shows the profile as <strong>Custom</strong> until you pick one again.</p>
+          <div class="profile-table" role="table" aria-label="Performance profiles">
+            <div role="row" class="profile-head"><span role="columnheader">Profile</span><span role="columnheader"><code>Passes</code></span><span role="columnheader"><code>SpatialCompression</code></span><span role="columnheader"><code>ResidualFG</code></span></div>
+            <div role="row"><span role="cell"><strong>Fidelity</strong><small>The sharpest image, for an RTX 4090 or 4080. Lucent’s default.</small></span><span role="cell">2</span><span role="cell">off</span><span role="cell">off</span></div>
+            <div role="row"><span role="cell"><strong>Balanced</strong><small>For most RTX 30 and 40 cards.</small></span><span role="cell">1</span><span role="cell">off</span><span role="cell">off</span></div>
+            <div role="row"><span role="cell"><strong>Performance</strong><small>The highest frame rate.</small></span><span role="cell">1</span><span role="cell">on</span><span role="cell">on</span></div>
+          </div>
+
+          <h3 class="guide-subhead">OptiScaler · Neural Rendering <code>[DlssNr]</code></h3>
+          <dl class="setting-list">
+            <div><dt><code>Enabled</code><span>true</span></dt><dd>Turns on DLSS 5 Neural Rendering, which redraws detail and light in the upscaler’s image before frame generation sees it. <kbd>\</kbd> toggles it in game.</dd></div>
+            <div><dt><code>Passes</code><span>profile</span></dt><dd>How many model layers run one after another. 2 is deliberately stronger and costs about twice the model time of 1.</dd></div>
+            <div><dt><code>RunBeforeSR</code><span>true</span></dt><dd>Runs Neural Rendering on the render-resolution image just before DLSS upscaling, instead of after it. Cheaper, and the upscaler cleans up its result.</dd></div>
+            <div><dt><code>ResidualFG</code><span>profile</span></dt><dd>Runs Neural Rendering every other frame and lets NVIDIA frame generation fill in its changes. Faster, with one extra frame of latency and occasional misaligned effects.</dd></div>
+            <div><dt><code>ResidualFGApproxCamera</code><span>true</span></dt><dd>Allows the every-other-frame mode to estimate camera movement when the game doesn’t supply full camera data.</dd></div>
+            <div><dt><code>SplitFrameWork</code><span>true</span></dt><dd>For XIV: spreads the every-other-frame work across two frames, which can smooth frame pacing at the cost of one more buffered frame.</dd></div>
+            <div><dt><code>PreSRTrailGuard</code><span>true</span></dt><dd>Limits Neural Rendering’s edits to what the current frame supports, reducing trails behind moving objects.</dd></div>
+            <div><dt><code>SpatialCompression</code><span>profile</span></dt><dd>Keeps full quality in the centre of the screen and spends less of the model’s work at the edges. <code>SpatialCenterX/Y = 50</code> sizes the centre region and <code>SpatialWorkX/Y = 60</code> is the share of work kept at the edges.</dd></div>
+            <div><dt><code>VitEvery</code><span>2</span></dt><dd>Reuses part of the model’s computation every second evaluation. Saves work; can leave slightly stale detail in fast motion.</dd></div>
+            <div><dt><code>PassFeedback</code><span>0.807</span></dt><dd>How much of one pass’s edit reaches the next when <code>Passes</code> is 2 or more; below 1 it reins the second pass in.</dd></div>
+            <div><dt><code>Preset</code> · <code>Style</code><span>1 · 2</span></dt><dd>The model’s built-in profile and style: style 2 is cinematic (0 standard, 1 natural). <code>Pass2Preset</code> and <code>Pass2Style</code> set the same for the second pass.</dd></div>
+            <div><dt><code>Intensity</code><span>2.0</span></dt><dd>How strongly the first pass applies the model’s picture (0 to 2). <code>Pass2Intensity = 1.29</code> sets the second pass.</dd></div>
+            <div><dt><code>LocalStructure</code> · <code>LocalTone</code><span>1.75 · 1.46</span></dt><dd>Strength of fine detail and of local light and shade (0 to 2). The second pass uses <code>0.53</code> and <code>1.24</code>.</dd></div>
+            <div><dt><code>SkinStructure</code><span>1.0</span></dt><dd>Detail on skin (−1 follows <code>LocalStructure</code>). The second pass uses <code>−0.32</code>, softening skin, with <code>Pass2AutoMask</code> on.</dd></div>
+            <div><dt><code>SkinProtection</code><span>true</span></dt><dd>A colour-based filter that tones the edit down on skin. <code>SkinDetail</code> and <code>SkinColour</code> at <code>0.75</code> keep three quarters of it there. Warm scenery can be mistaken for skin.</dd></div>
+            <div><dt><code>ColourStrength</code><span>1.1</span></dt><dd>How much of the model’s colour comes through, not just its brightness. 0 keeps the game’s hues exactly.</dd></div>
+            <div><dt><code>ReversibleMode</code><span>3</span></dt><dd>How the game’s HDR-range image is mapped for the SDR-trained model and back (3: hybrid mapping, composed).</dd></div>
+            <div><dt><code>WhitePointSource</code><span>2</span></dt><dd>Where the model’s white point comes from. 2 measures the scene’s exposure; in XIV it uses the game’s own lighting to keep the result stable.</dd></div>
+            <div><dt><code>ScalingDownscaler</code><span>4</span></dt><dd>Lanczos3, used only when the model runs above native resolution.</dd></div>
+            <div><dt><code>ToggleKey</code><span>0xDC</span></dt><dd>The <kbd>\</kbd> key toggles Neural Rendering in game.</dd></div>
+          </dl>
+
+          <h3 class="guide-subhead">OptiScaler · upscaling</h3>
+          <dl class="setting-list">
+            <div><dt><code>Dx11Upscaler</code><span>dlss_12</span></dt><dd>XIV is DirectX 11; this runs DLSS through a DX12 bridge, the only DX11 route that can also run Neural Rendering.</dd></div>
+            <div><dt><code>RenderPresetOverride</code> · <code>RenderPresetForAll</code><span>true · 11</span></dt><dd>Forces DLSS preset K for every quality level.</dd></div>
+            <div><dt><code>ForcePerfQuality</code><span>2</span></dt><dd>XIV picks its own DLSS quality; this answers it with Max Quality, rendering at two thirds of your resolution per axis (1.5×).</dd></div>
+            <div><dt><code>MipmapBiasOverride</code><span>−0.77</span></dt><dd>Sharpens textures to match the lower render resolution, so they look as crisp as at native.</dd></div>
+          </dl>
+
+          <h3 class="guide-subhead">OptiScaler · frame generation and pacing</h3>
+          <dl class="setting-list">
+            <div><dt><code>[FrameGen] Enabled</code><span>true</span></dt><dd>Turns frame generation on. <kbd>End</kbd> toggles it in game.</dd></div>
+            <div><dt><code>FGInput</code> · <code>FGOutput</code><span>Upscaler · DLSSG</span></dt><dd>Feeds the upscaler’s frames to NVIDIA DLSS frame generation.</dd></div>
+            <div><dt><code>FramerateLimit</code><span>138</span></dt><dd>Caps total frames per second, generated ones included, through Reflex. 138 sits just under a 144 Hz display’s refresh. Set 0 to remove the cap.</dd></div>
+            <div><dt><code>ForceVsync</code> · <code>SyncInterval</code><span>true · 1</span></dt><dd>Forces V-Sync on, presenting at most once per refresh, for even pacing without tearing.</dd></div>
+            <div><dt><code>ForceReflex</code> · <code>LatencyFlexMode</code><span>2 · 2</span></dt><dd>Settings for fakenvapi, OptiScaler’s Reflex stand-in: force its low-latency mode on, since XIV has no Reflex setting of its own, and pace frames with Reflex frame IDs.</dd></div>
+            <div><dt><code>ForceDMFG</code> · <code>FramerateTargetDMFG</code><span>true · 144</span></dt><dd>Dynamic multi frame generation toward 144 FPS. It needs an RTX 50 card and has no effect on RTX 30/40.</dd></div>
+            <div><dt><code>[XeFG]</code><span>4× · borderless</span></dt><dd>Settings for Intel’s frame generation, unused while the output is DLSSG.</dd></div>
+            <div><dt><code>HudInterpolation</code><span>true</span></dt><dd>Turns on interpolation for OptiScaler’s Companion nameplate layer, an opt-in feature of this XIV build.</dd></div>
+          </dl>
+
+          <h3 class="guide-subhead">OptiScaler · HDR, menu and logging</h3>
+          <dl class="setting-list">
+            <div><dt><code>FfxivHDR</code><span>true</span></dt><dd>Expands XIV’s SDR image to HDR10, only when Windows HDR is on for that display; otherwise the game stays SDR. Turn off RTX HDR and Auto HDR with it. <code>PaperWhiteNits = 240</code>, <code>HighlightExpansion = 0.6</code>, <code>Contrast = 1.1</code>, <code>Saturation = 1.05</code> and <code>Vibrance = 0.25</code> shape the result.</dd></div>
+            <div><dt><code>LoadReshade</code><span>true</span></dt><dd>OptiScaler loads <code>ReShade64.dll</code> itself, so ReShade doesn’t need to be installed as <code>dxgi.dll</code>.</dd></div>
+            <div><dt><code>Scale</code><span>1.2</span></dt><dd>The OptiScaler menu’s size.</dd></div>
+            <div><dt><code>LogToFile</code><span class="reset-tag">reset</span></dt><dd>Off. A debug log can pass 100 MB; turn it on only to report a problem. Updates turn it off again.</dd></div>
+          </dl>
+
+          <h3 class="guide-subhead">ReShade <code>ReShade.ini</code></h3>
+          <dl class="setting-list">
+            <div><dt><code>PresetPath</code><span>empty</span></dt><dd>No preset is active until you choose one in the ReShade menu. ReShade remembers your choice, and Lucent keeps it through updates.</dd></div>
+            <div><dt><code>EffectSearchPaths</code> · <code>TextureSearchPaths</code><span>.\reshade-shaders\…</span></dt><dd>Where shaders and textures load from, relative to the game folder.</dd></div>
+            <div><dt><code>SkipLoadingDisabledEffects</code><span>1</span></dt><dd>Compiles only the effects your preset uses, so the game loads faster.</dd></div>
+            <div><dt><code>PerformanceMode</code><span>0</span></dt><dd>Off, so every effect stays adjustable in the menu. On compiles faster shaders with settings fixed.</dd></div>
+            <div><dt><code>PreprocessorDefinitions</code><span>depth</span></dt><dd>Tells depth-aware shaders how XIV stores depth: reversed, not upside down, far plane 1000.</dd></div>
+            <div><dt><code>DepthCopyBeforeClears</code><span>2</span></dt><dd>Copies the depth buffer before XIV clears it, so depth effects see the right scene.</dd></div>
+            <div><dt><code>InputProcessing</code><span>2</span></dt><dd>The game gets no keyboard or mouse input while the ReShade menu is open.</dd></div>
+            <div><dt><code>ForceShortcutModifiers</code><span>1</span></dt><dd>Shortcuts need exactly their modifiers: <kbd>Shift</kbd>+<kbd>F2</kbd>, not <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F2</kbd>.</dd></div>
+            <div><dt><code>TutorialProgress</code><span>4</span></dt><dd>Skips ReShade’s first-run tutorial.</dd></div>
+            <div><dt><code>ShowFPS</code><span>2</span></dt><dd>ReShade’s frame counter shows only while its menu is open.</dd></div>
+            <div><dt><code>FontSize</code><span>13</span></dt><dd>ReShade’s default size, which it scales to your resolution (2× at 4K). <kbd>Ctrl</kbd> + mouse wheel resizes it in the menu.</dd></div>
+            <div><dt><code>FileFormat</code> · <code>SavePath</code><span>PNG · .\</span></dt><dd>Screenshots are PNG files in the game’s <code>game</code> folder.</dd></div>
+            <div><dt><code>[STYLE]</code><span>ember</span></dt><dd>Colours the ReShade menu in Lucent’s orange-on-charcoal theme.</dd></div>
+          </dl>
+
+          <h3 class="guide-subhead">Shader Toggler <code>ReshadeEffectShaderToggler.ini</code></h3>
+          <p class="guide-text">An add-on that hands XIV’s internal buffers to shaders. Its groups provide <strong>motion vectors</strong>, <strong>normals</strong>, <strong>decal normals</strong>, <strong>transforms</strong> and <strong>material</strong> data, which effects such as ray-traced lighting rely on, and a <strong>UI</strong> group that applies ReShade’s effects before the game draws its interface, so the HUD stays untouched. <code>ResourceShim = ffxiv</code> selects its XIV support. No group has a key.</p>
+        </section>
+
+        <!-- 04 · Everyday use -->
+        <section class="doc-section" id="everyday" aria-labelledby="everyday-title">
+          <p class="kicker">04 · Everyday use</p>
+          <h2 id="everyday-title">After setup.</h2>
+          <dl class="setting-list is-plain">
+            <div><dt>Status card</dt><dd>One line on how your setup is: <strong>Healthy</strong>, <strong>Disabled</strong>, files that need repair, or an update. It shows the one action that matters.</dd></div>
+            <div><dt>Scan</dt><dd>Checks every deployed file against its hash, right now. Use it after you’ve changed something, or if the game looks off. If a file is missing or changed, the card offers <strong>Repair</strong>. It’s on the Healthy card and under <strong>Settings → Game folder</strong>, and it works while XIV runs.</dd></div>
+            <div><dt>Repair</dt><dd>Puts back exactly what Lucent deployed, from its cache, downloading only what’s missing. Your own config changes and presets stay. Game patches that replace a file are the usual cause.</dd></div>
+            <div><dt>Launch XIV</dt><dd>On <strong>Home</strong>. Starts XIV the way you do: through XIVLauncher if it’s set up for this game folder, through Steam for a Steam copy, or with the Square Enix launcher. The label below the button shows which one it uses. If more than one applies, use the arrow beside <strong>Launch XIV</strong> to choose, or change it in <strong>Settings</strong>. Lucent remembers your choice.</dd></div>
+            <div><dt>In-game keys</dt><dd>The <strong>Keys</strong> section: every OptiScaler and ReShade key, read from your game folder each time you look, so a key you changed and forgot is never lost.</dd></div>
+            <div><dt>Enabled</dt><dd>Off leaves Lucent’s files in place but inactive: the game runs as if vanilla. Turn it on again any time.</dd></div>
+            <div><dt>Performance profile</dt><dd>Switch between Fidelity, Balanced and Performance. Close XIV first; changes apply the next time it starts.</dd></div>
+            <div><dt>Updates</dt><dd>Lucent tells you about new content and app versions; nothing downloads until you click <strong>Update</strong>. <strong>Skip</strong> stops the announcement. <strong>Versions</strong> rolls back to an earlier version.</dd></div>
+            <div><dt>Beta channel</dt><dd>On <strong>Scan</strong> before the first deployment when beta content is available, then in <strong>Settings</strong>. Offers beta app and content versions. Leaving Beta changes nothing installed.</dd></div>
+            <div><dt>XIVLauncher auto-repair</dt><dd>In <strong>Settings</strong>, if you use XIVLauncher. Lucent checks your setup when the game starts and repairs it after the game closes.</dd></div>
+            <div><dt>Uninstall</dt><dd><strong>Settings → Uninstall</strong> restores every file Lucent backed up and removes everything it added. Your own presets and shaders stay. To remove Lucent itself, use Settings → Apps.</dd></div>
+          </dl>
+        </section>
+
+        <!-- 05 · Troubleshooting -->
+        <section class="doc-section" id="trouble" aria-labelledby="trouble-title">
+          <p class="kicker">05 · When something looks wrong</p>
+          <h2 id="trouble-title">Quick fixes.</h2>
+          <dl class="setting-list is-plain">
+            <div><dt>After a game patch</dt><dd>Open Lucent. If the card says files need repair, click <strong>Repair</strong>. Otherwise click <strong>Scan</strong> to check every file.</dd></div>
+            <div><dt>Too slow</dt><dd>Pick <strong>Performance</strong>, or press <kbd>\</kbd> to compare with Neural Rendering off.</dd></div>
+            <div><dt>The look is too strong</dt><dd>Try <strong>Balanced</strong>, choose a lighter preset with <kbd>Shift</kbd>+<kbd>F2</kbd>, or turn effects off with <kbd>Shift</kbd>+<kbd>F3</kbd>.</dd></div>
+            <div><dt>Washed-out colours</dt><dd>With Windows HDR on, turn off RTX HDR and Auto HDR. OptiScaler handles HDR itself.</dd></div>
+            <div><dt>Still stuck</dt><dd><strong>Help → Report a bug</strong> copies diagnostics and opens a GitHub issue. Questions go in a <a href="https://github.com/arnaudcouturier/lucent/issues">GitHub issue</a> too.</dd></div>
+          </dl>
+        </section>
+
+      </main>
+    </div>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span>Lucent · An independent project for XIV.</span>
+        <nav aria-label="Footer">
+          <a href="./index.html">Home</a>
+          <a href="./files.html">Files</a>
+          <a href="https://github.com/arnaudcouturier/lucent/releases">Releases</a>
+          <a href="https://github.com/arnaudcouturier/lucent/issues">Report an issue</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

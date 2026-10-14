@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d0e11" />
+    <meta name="description" content="Every file Lucent installs for XIV, by path, with its size and SHA-256, for each content version and graphics card." />
+    <title>Lucent files · Everything it installs</title>
+    <link rel="icon" type="image/svg+xml" href="../src-tauri/icons/mark.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="./index.html" aria-label="Lucent home">
+          <svg viewBox="0 0 16 22" aria-hidden="true"><polygon points="8,0 16,8 8,22 0,8" /><path d="M0 8 L6 10 L8 22 M6 10 L16 8" /></svg>
+          Lucent
+        </a>
+        <nav class="nav-links" aria-label="Site">
+          <a href="./index.html#features">Features</a>
+          <a href="./index.html#installed">What it installs</a>
+          <a href="./guide.html">Guide</a>
+          <a href="./files.html" aria-current="page">Files</a>
+          <a href="./index.html#faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <a class="button is-ghost" href="https://github.com/arnaudcouturier/lucent">GitHub</a>
+          <a class="button is-primary" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">Download</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="container files-page">
+      <header class="doc-head">
+        <p class="kicker">Files</p>
+        <h1>Every file Lucent installs.</h1>
+        <p class="lead">Each content version, for each graphics card: where every file goes in your game folder, its size and its SHA-256. This page is built from the same manifest Lucent reads.</p>
+      </header>
+
+      <ul class="files-why">
+        <li><strong>Named by hash</strong><p>On GitHub, each file is stored under its SHA-256. Releases can’t hold folders, and many names repeat across folders, such as the several <code>LICENSE</code> files.</p></li>
+        <li><strong>Checked on arrival</strong><p>Because the name is the hash, Lucent verifies every byte it downloads before anything reaches your game.</p></li>
+        <li><strong>Stored once</strong><p>A file shared by two versions, or two folders, is uploaded once. Updates download only what changed.</p></li>
+      </ul>
+      <p class="guide-text">To check a file yourself, run <code>Get-FileHash -Algorithm SHA256 &lt;file&gt;</code> in PowerShell and compare it with the hash below. Each hash links to the exact file on GitHub.</p>
+
+      <label class="file-filter">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+        <input id="file-filter" type="search" placeholder="Filter by path, such as ReShade or .fx" autocomplete="off" spellcheck="false" />
+        <output id="file-filter-count" aria-live="polite"></output>
+      </label>
+
+      <!-- lucent:files -->
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span>Lucent · An independent project for XIV.</span>
+        <nav aria-label="Footer">
+          <a href="./index.html">Home</a>
+          <a href="./guide.html">Guide</a>
+          <a href="https://github.com/arnaudcouturier/lucent/blob/main/manifest.json">manifest.json</a>
+          <a href="https://github.com/arnaudcouturier/lucent/releases">Releases</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module">
+      // Narrows the lists to paths containing the filter, opening the folders that hold a match.
+      const input = document.getElementById('file-filter')
+      const status = document.getElementById('file-filter-count')
+      input.addEventListener('input', () => {
+        const query = input.value.trim().toLowerCase()
+        let shown = 0
+        for (const row of document.querySelectorAll('.file-row')) {
+          row.hidden = !!query && !row.dataset.path.includes(query)
+          if (!row.hidden) shown++
+        }
+        for (const details of document.querySelectorAll('.file-tree details')) {
+          const match = details.querySelector('.file-row:not([hidden])')
+          details.parentElement.hidden = !!query && !match
+          if (query) details.open = !!match
+        }
+        status.textContent = query ? `${shown.toLocaleString('en')} ${shown === 1 ? 'match' : 'matches'}` : ''
+      })
+    </script>
+  </body>
+</html>

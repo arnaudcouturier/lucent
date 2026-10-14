@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400" fill="none">
-  <!-- Original Lucent spire: faceted glass, a clustered base, and plain orbital rings. -->
+  <!-- Original Lucent spire: faceted glass and a clustered base. -->
   <defs>
     <linearGradient id="glass" x1="117" y1="79" x2="207" y2="319" gradientUnits="userSpaceOnUse">
       <stop stop-color="#fff" stop-opacity=".72"/>
@@ -11,8 +11,6 @@
       <stop offset="1" stop-color="#f47521" stop-opacity=".2"/>
     </linearGradient>
   </defs>
-  <ellipse cx="160" cy="210" rx="114" ry="31" transform="rotate(-24 160 210)" stroke="#fab818" stroke-opacity=".25"/>
-  <ellipse cx="160" cy="240" rx="108" ry="34" transform="rotate(24 160 240)" stroke="#fab818" stroke-opacity=".18"/>
   <g stroke="url(#edge)" stroke-width=".8" stroke-linejoin="round">
     <path d="m160 60-44 102 8 113 36 62 39-70 6-106z" fill="url(#glass)"/>
     <path d="m160 60-8 119-36-17z" fill="#fff" fill-opacity=".12"/>
@@ -29,8 +27,6 @@
     <path d="m181 281-15 39 15 33 19-35z" fill="#f47521" fill-opacity=".2"/>
     <path d="m181 281 2 38 17-1m-17 1-2 34"/>
   </g>
-  <path d="M57 259c11 11 59 4 114-20s92-54 87-65" stroke="#fab818" stroke-opacity=".65" stroke-width="1.2"/>
-  <path d="M63 197c-9 18 31 49 87 75s105 33 112 16" stroke="#fab818" stroke-opacity=".45"/>
   <path d="m55 251-5 10 10 1 4-9z" fill="#f47521" fill-opacity=".8"/>
   <path d="m256 179-4 8 8 2 5-8z" fill="#f47521" fill-opacity=".6"/>
   <path d="m248 284-3 8 9 3 4-8z" fill="#f47521" fill-opacity=".6"/>
