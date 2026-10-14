@@ -63,7 +63,7 @@ it('defaults to 2x at 120 Hz or above and offers only the matching RTX 40 modes'
   expect(frameGenerationOptionsForGpu(core.getState().deployment?.recipe.frameGenerationOptions ?? [], 'NVIDIA GeForce RTX 4090').map(({ id }) => id)).toEqual(['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'])
 })
 
-it('leaves a kept config and the stored mode alone through a same-tier GPU refresh', async () => {
+it('rewrites the config from the new card’s choices through a same-tier GPU refresh', async () => {
   const { platform, m } = await deployed(144)
   await deployedWith(platform, '4x')
   const configPath = `${GAME}\\OptiScaler.ini`
@@ -73,9 +73,12 @@ it('leaves a kept config and the stored mode alone through a same-tier GPU refre
   const changedGpu = await reopen(platform)
   expect(statusCard(changedGpu.getState())).toMatchObject({ kind: 'switch-tier', sameTier: true })
   await changedGpu.switchTier()
+  await changedGpu.review()
+  await changedGpu.deploy()
   expect(changedGpu.getState().error).toBeNull()
-  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
-  expect(await platform.readText(configPath)).toBe(before)
+  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '2x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
+  expect(await platform.readText(configPath)).not.toBe(before)
+  expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*2x/)
 })
 
 it('writes the stored mode, or the new card’s default, when the replace rule rewrites the config for a same-tier GPU', async () => {
@@ -86,6 +89,8 @@ it('writes the stored mode, or the new card’s default, when the replace rule r
   m.gpus = graphicsCard('NVIDIA GeForce RTX 4080').gpus
   const supported = await reopen(platform)
   await supported.switchTier()
+  await supported.review()
+  await supported.deploy()
   expect(supported.getState().error).toBeNull()
   expect(supported.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 4080' } })
   expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*4x/)
@@ -94,14 +99,16 @@ it('writes the stored mode, or the new card’s default, when the replace rule r
   m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
   const changedGpu = await reopen(platform)
   await changedGpu.switchTier()
+  await changedGpu.review()
+  await changedGpu.deploy()
   expect(changedGpu.getState().error).toBeNull()
   // 4x isn't offered on this card: the baseline gets its default, and the stored choice stays for Reset to offer.
-  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '4x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
+  expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '2x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
   expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*2x/)
   expect(await platform.readText(configPath)).toMatch(/Backend\s*=\s*rtx30/)
 })
 
-it('leaves values the player set by hand through a same-tier GPU refresh', async () => {
+it('rewrites values the player set by hand through a same-tier GPU refresh', async () => {
   const { platform, m } = await deployed(144)
   const configPath = `${GAME}\\OptiScaler.ini`
   const custom = (await platform.readText(configPath)).replace(/Mode\s*=\s*2x/i, 'Mode=third-party')
@@ -110,9 +117,13 @@ it('leaves values the player set by hand through a same-tier GPU refresh', async
 
   const changedGpu = await reopen(platform)
   await changedGpu.switchTier()
+  await changedGpu.review()
+  await changedGpu.deploy()
   expect(changedGpu.getState().error).toBeNull()
   expect(changedGpu.getState().deployment).toMatchObject({ frameGenerationMode: '2x', graphics: { name: 'NVIDIA GeForce RTX 3080' } })
-  expect(await platform.readText(configPath)).toBe(custom)
+  expect(await platform.readText(configPath)).not.toBe(custom)
+  expect(await platform.readText(configPath)).toMatch(/Mode\s*=\s*2x/)
+  expect(await platform.readText(configPath)).toMatch(/Backend\s*=\s*rtx30/)
 })
 
 it('leaves the mode in the config alone through Repair', async () => {
@@ -173,6 +184,8 @@ it('keeps the stored mode through a content update and takes the new tier’s ch
   m.gpus = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus
   const changedTier = await reopen(platform)
   await changedTier.switchTier()
+  await changedTier.review()
+  await changedTier.deploy()
   expect(changedTier.getState().error).toBeNull()
   expect(changedTier.getState().deployment?.frameGenerationMode).toBeNull()
   expect(changedTier.getState().deployment?.recipe.frameGenerationOptions).toEqual([])

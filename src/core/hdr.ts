@@ -111,3 +111,11 @@ export function restoreAutoHdr(current: string | null, before: string | null, af
   currentParts.parts[currentParts.index] = priorToken
   return currentParts.parts.join(';')
 }
+
+/** Builds the inverse transition for a durable journal entry when Auto HDR can be restored. */
+export function restoreAutoHdrTransition(
+  current: string | null, before: string | null, after: string | null,
+): { before: string | null; after: string | null } | null {
+  const restored = restoreAutoHdr(current, before, after)
+  return restored === current ? null : { before: current, after: restored }
+}

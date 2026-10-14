@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { disableAutoHdr, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
+import { disableAutoHdr, latestAutoHdrDisableIndex, restoreAutoHdr, restoreAutoHdrTransition } from './hdr'
 
 describe('Auto HDR entry ownership', () => {
   it('adds only the disabled AutoHDR token and preserves existing token spelling, order and terminator', () => {
@@ -48,6 +48,20 @@ describe('Auto HDR entry ownership', () => {
     const before = 'SwapEffectUpgradeEnable=257;GpuPreference=2;AutoHDREnable=2097;'
     const after = disableAutoHdr(before)
     expect(restoreAutoHdr(after, before, after)).toBe(before)
+  })
+
+  it('creates an inverse transition for a durable Off restore', () => {
+    const before = 'GpuPreference=2;AutoHDREnable=2097;'
+    const after = disableAutoHdr(before)
+    expect(restoreAutoHdrTransition(after, before, after)).toEqual({ before: after, after: before })
+    expect(restoreAutoHdrTransition('GpuPreference=2;AutoHDREnable=2097;', before, after)).toBeNull()
+  })
+
+  it('keeps external edits in the inverse transition used by Reset recovery', () => {
+    const before = 'GpuPreference=2;AutoHDREnable=2097;'
+    const after = disableAutoHdr(before)
+    expect(restoreAutoHdrTransition('GpuPreference=1;AutoHDREnable=2096;NewFlag=7;', before, after))
+      .toEqual({ before: 'GpuPreference=1;AutoHDREnable=2096;NewFlag=7;', after: 'GpuPreference=1;AutoHDREnable=2097;NewFlag=7;' })
   })
 
   it('restores only AutoHDR when another app changes a different token during HDR', () => {

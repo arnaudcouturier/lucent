@@ -305,6 +305,8 @@ describe('leaving Beta', () => {
     const reopened = await reopen(platform)
     expect(statusCard(reopened.getState())).toMatchObject({ kind: 'switch-tier', to: 'Radeon' })
     await reopened.switchTier()
+    await reopened.review()
+    await reopened.deploy()
     expect(reopened.getState()).toMatchObject({ error: null, deployment: { tier: 'radeon', contentVersion: BETA_CONTENT.id } })
   })
 
