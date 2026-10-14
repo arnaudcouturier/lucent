@@ -577,7 +577,7 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .segmented-choice-option:has(input:checked) { background: var(--hover-2); color: var(--ink); box-shadow: var(--ring-subtle); }
 .segmented-choice-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
 .segmented-choice-option:has(input:disabled) { opacity: 0.45; cursor: default; }
-.segmented-choice-experimental { color: var(--caution-ink); font-size: 9px; line-height: 1; font-weight: 500; }
+.segmented-choice-experimental { color: var(--caution-ink); font-size: 10px; line-height: 1; font-weight: 500; }
 .option-list { margin-top: var(--space-4); }
 .choice-group + .option-list, .profile-selector + .option-list { margin-top: var(--space-2); }
 .option-list.is-inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

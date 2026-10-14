@@ -67,7 +67,7 @@ const choicesStep = (m: Machine, gpu: Machine, stage: 'profile' | 'review' | 'do
   await core.continueSetup()
   pick(core)
   if (stage !== 'profile') await core.review()
-  if (stage === 'done') { await core.deploy() }
+  if (stage === 'done') await core.deploy()
   return core
 }
 const experimentalPicks = (core: Core) => {

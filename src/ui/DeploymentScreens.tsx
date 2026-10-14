@@ -11,6 +11,7 @@ import { gameActionsAvailable } from '../core/gameAccess'
 import { sizeLabel } from '../core/format'
 import { frameGenerationLabel, hdrLabel } from '../core/choices'
 import { frameGenerationDescription } from '../core/frameGeneration'
+import type { HdrMode } from '../shared/manifest'
 
 export function FlowError() {
   const [state, core] = useCore()
@@ -22,6 +23,10 @@ export function FlowError() {
     {activity.kind === 'review' && <button className="btn" disabled={!gameActionsAvailable(state) || !plan} onClick={() => void core.deploy()}>Try again</button>}
   </div></div> : notice ? <div className="callout is-notice" role="status"><CircleCheck size={14} strokeWidth={1.75} /><span>{notice}</span></div> : null
 }
+
+/** The line under Review's HDR choice: Auto HDR goes off for XIV, or the monitor had no HDR to offer. */
+const hdrNote = (mode: HdrMode, hdrSupported: boolean) => mode !== 'off' ? <small>Windows Auto HDR is turned off for XIV.</small>
+  : hdrSupported ? null : <small>XIV’s monitor doesn’t report HDR.</small>
 
 /** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
@@ -40,7 +45,7 @@ export function ReviewScreen() {
     <dl className="card summary-list">
       {profile && <div><dt>Profile</dt><dd>{profile.label}</dd></div>}
       {plan.frameGenerationMode && <div><dt>Frame generation</dt><dd>{frameGenerationLabel(plan.frameGenerationMode)}{screen && <small>{frameGenerationDescription(plan.frameGenerationMode, screen.frameCap, screen.refreshHz)}</small>}</dd></div>}
-      {plan.hdrMode && <div><dt>HDR</dt><dd>{hdrLabel(plan.hdrMode)}{plan.hdrMode === 'off' ? !screen?.hdrSupported && <small>XIV’s monitor doesn’t report HDR.</small> : <small>Windows Auto HDR is turned off for XIV.</small>}</dd></div>}
+      {plan.hdrMode && <div><dt>HDR</dt><dd>{hdrLabel(plan.hdrMode)}{hdrNote(plan.hdrMode, !!screen?.hdrSupported)}</dd></div>}
       <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
     </dl>

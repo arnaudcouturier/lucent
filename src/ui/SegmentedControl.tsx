@@ -1,20 +1,20 @@
 import { useId } from 'react'
 
-export interface SegmentedOption {
-  id: string
+export interface SegmentedOption<T extends string> {
+  id: T
   label: string
   experimental?: boolean
 }
 
 /** A compact native radio group styled as an Ember segmented control. */
-export function SegmentedControl({
+export function SegmentedControl<T extends string>({
   value, options, disabled = false, ariaLabel, onChange,
 }: {
-  value: string | null
-  options: SegmentedOption[]
+  value: T | null
+  options: SegmentedOption<T>[]
   disabled?: boolean
   ariaLabel: string
-  onChange(id: string): void
+  onChange(id: T): void
 }) {
   const name = useId()
   return <fieldset className="segmented-choice" disabled={disabled} aria-label={ariaLabel}>

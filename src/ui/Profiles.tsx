@@ -47,7 +47,7 @@ function FrameGenerationChoice() {
   return <ChoiceGroup title="Frame generation">
     <SegmentedControl ariaLabel="Frame generation" value={frameGenerationMode} disabled={busy || recoveryRequired}
       options={frameGenerationOptions.map((option) => ({ id: option.id, label: frameGenerationLabel(option.id), experimental: option.experimental }))}
-      onChange={(id) => core.selectFrameGenerationMode(id as NonNullable<typeof frameGenerationMode>)} />
+      onChange={core.selectFrameGenerationMode} />
     {frameGenerationMode && screen && <p className="choice-line">{frameGenerationDescription(frameGenerationMode, screen.frameCap, screen.refreshHz)}</p>}
   </ChoiceGroup>
 }
@@ -61,7 +61,7 @@ function HdrChoice() {
   return <ChoiceGroup title="HDR">
     <SegmentedControl ariaLabel="HDR" value={hdrMode} disabled={busy || recoveryRequired}
       options={hdrOptions.map((option) => ({ id: option.id, label: hdrLabel(option.id), experimental: option.experimental }))}
-      onChange={(id) => core.selectHdrMode(id as NonNullable<typeof hdrMode>)} />
+      onChange={core.selectHdrMode} />
     {line && <p className="choice-line">{line}{notes.length > 0 && <small>{notes.join(' ')}</small>}</p>}
   </ChoiceGroup>
 }
