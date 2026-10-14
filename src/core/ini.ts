@@ -1,6 +1,12 @@
 interface Line { text: string; ending: string }
 const normalizedName = (value: string) => value.trim().toLowerCase()
 
+/** INI overlays can serialize booleans, numbers and case differently without changing their meaning. */
+export function sameIniValue(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase()
+    || (left !== '' && right.trim() !== '' && Number(left) === Number(right))
+}
+
 /** Neither ReShade nor OptiScaler (SimpleIni) has inline comments: everything after `=` is the value. */
 function parseSetting(text: string) {
   const match = /^(\s*([^;#=\s][^=]*?)\s*=\s*)(.*?)(\s*)$/.exec(text)

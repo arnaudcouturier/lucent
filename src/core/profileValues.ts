@@ -4,6 +4,7 @@ import {
 } from '../shared/manifest'
 import type { IniSetting } from '../shared/manifest'
 import { frameGenerationSettingKeys } from './frameGeneration'
+import { sameIniValue } from './ini'
 
 /** Resolution columns use XIV's output height; 3440×1440 ultrawide therefore uses 1440p. */
 export function resolutionColumnForHeight(outputHeight: number): ResolutionColumn {
@@ -37,12 +38,6 @@ export function profileResolutionSettingsForHeight(
     if (current === undefined || baseline === undefined || !sameIniValue(current, baseline)) return []
     return [{ file, section, key, value: profileValueAt(setting, resolutionColumnForHeight(outputHeight)) }]
   })
-}
-
-/** INI overlays can serialize booleans, numbers and case differently without changing their meaning. */
-export function sameIniValue(left: string, right: string): boolean {
-  return left.toLowerCase() === right.toLowerCase()
-    || (left !== '' && right.trim() !== '' && Number(left) === Number(right))
 }
 
 /** Setting keys whose values are managed by a screen-derived or frame-generation choice. */

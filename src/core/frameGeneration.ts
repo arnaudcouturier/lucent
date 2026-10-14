@@ -1,4 +1,5 @@
 import { FRAME_GENERATION_IDS, type FrameGenerationId, type FrameGenerationOption, type IniSetting } from '../shared/manifest'
+import { sameIniValue } from './ini'
 
 const settingId = ({ file, section, key }: Pick<IniSetting, 'file' | 'section' | 'key'>) =>
   `${file.replace(/\\/g, '/').toLowerCase()}\0${section.toLowerCase()}\0${key.toLowerCase()}`
@@ -47,7 +48,7 @@ export function matchFrameGenerationMode(
   const matches = new Set(options.filter((option) => [option.settings, effectiveFrameGenerationSettings(option, true)].some((variant) =>
     variant.every((setting) => {
     const current = disk.get(settingId(setting))
-    return current !== undefined && sameValue(current, setting.value)
+    return current !== undefined && sameIniValue(current, setting.value)
     }))).map((option) => option.id))
   return matches.size === 1 ? [...matches][0] : null
 }
@@ -60,11 +61,6 @@ export function frameGenerationDescription(mode: FrameGenerationId, frameCap: nu
   if (mode === 'dynamic') return `Aims for ${cap} fps on your ${refresh} Hz screen`
   const multiplier = Number(mode.slice(0, -1))
   return `XIV renders up to ${Math.floor(frameCap / multiplier)} fps, shown at ${cap} on your ${refresh} Hz screen`
-}
-
-function sameValue(disk: string, expected: string) {
-  return disk.toLowerCase() === expected.toLowerCase()
-    || (disk !== '' && expected.trim() !== '' && Number(disk) === Number(expected))
 }
 
 function format(value: number) {

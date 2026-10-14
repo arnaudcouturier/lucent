@@ -1,6 +1,5 @@
 import type { HdrMode, HdrOption } from '../shared/manifest'
-import { readIni } from './ini'
-import { sameIniValue } from './profileValues'
+import { readIni, sameIniValue } from './ini'
 
 /** On-disk keys win. Multiple matches are ambiguous and therefore Custom. */
 export type HdrValueReader = (file: string, section: string, key: string) => string | undefined

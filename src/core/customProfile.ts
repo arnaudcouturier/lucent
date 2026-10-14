@@ -1,6 +1,6 @@
 import type { ProfileId } from '../shared/manifest'
 import type { DeploymentRecord } from './deployment'
-import { readIni } from './ini'
+import { readIni, sameIniValue } from './ini'
 import { joinPath } from './paths'
 import type { Platform } from './platform'
 import { fileKey } from './planner'
@@ -14,10 +14,6 @@ export interface CustomProfile {
   basedOn: ProfileId
   changed: ChangedSetting[]
 }
-
-/** An overlay may save a value Lucent wrote in another spelling, such as True for true or 0.500000 for 0.5. */
-const sameValue = (disk: string, value: string) => disk.toLowerCase() === value.toLowerCase()
-  || (disk !== '' && value.trim() !== '' && Number(disk) === Number(value))
 
 /** Compares profile settings with Lucent's last-written copy; unreadable configs are drift, the health check's job. */
 export async function detectCustomProfile(platform: Platform, record: DeploymentRecord, outputHeight = 2160): Promise<CustomProfile | null> {
@@ -39,7 +35,7 @@ export async function detectCustomProfile(platform: Platform, record: Deployment
     const configState = configs.get(config)!
     const disk = configState.disk?.get(section, key)
     const baseline = configState.baseline?.get(section, key)
-    if (configState.disk && (baseline === undefined || disk === undefined || !sameValue(disk, baseline))) changed.push({ file: config, section, key, value: disk })
+    if (configState.disk && (baseline === undefined || disk === undefined || !sameIniValue(disk, baseline))) changed.push({ file: config, section, key, value: disk })
   }
   return changed.length ? { basedOn: profile.id, changed } : null
 }
