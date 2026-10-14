@@ -1,6 +1,6 @@
 # Lucent
 
-Lucent applies a curated stack of third-party graphics mods (upscaling, DLSS 5 Neural Rendering, ReShade) to a player's FFXIV game folder, and keeps it working across game patches and content updates.
+Lucent is a manager for a player's FFXIV graphics mods. It deploys a tested set of third-party mods into the game folder, grouped as features (DLSS 5 through OptiScaler, and ReShade), and keeps them working across game patches and content updates.
 
 ## Language
 
@@ -43,6 +43,10 @@ Removing Lucent itself from Settings → Apps: optionally an uninstall of every 
 _Avoid_: using "uninstall" alone for it (that word belongs to deployments)
 
 ### Content
+
+**Feature**:
+Something Lucent manages for the player, made of one or more components: **DLSS 5** (OptiScaler with a Neural Rendering runtime, or FSR on Radeon) and **ReShade** (ReShade, its add-on, shaders and presets). Lucent is meant to take on more features over time.
+_Avoid_: module, plugin, mod (for the grouping)
 
 **Component**:
 One piece of third-party software Lucent deploys: an OptiScaler build, a Neural Rendering runtime, ReShade, a ReShade add-on, a shader pack or a preset pack.

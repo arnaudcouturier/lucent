@@ -24,7 +24,7 @@ export function MainScreen() {
 }
 
 function HomeScreen() {
-  return <Screen title="Your game" sub="Your graphics, kept in place." actions={<LaunchButton />}>
+  return <Screen title="Your game" sub="What Lucent manages in your game folder." actions={<LaunchButton />}>
     <StatusCard />
     <FlowError />
     <ProfileSelector />

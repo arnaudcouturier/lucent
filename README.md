@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/lucent-banner.svg" alt="Lucent — DLSS 5 and ReShade for XIV, in one app" width="100%">
+  <img src="docs/assets/lucent-banner.svg" alt="Lucent, a manager for XIV graphics mods" width="100%">
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 
 <br>
 
-Lucent is a portable Windows app that installs a tested DLSS 5 Neural Rendering and ReShade setup into your XIV game folder, and repairs it after game patches. Every file it replaces is backed up, and Uninstall puts them back.
+Lucent is a portable Windows app that manages graphics mods for XIV. It installs them in your game folder, repairs them after game patches and removes them cleanly. Every file it replaces is backed up first.
 
 ## Download
 
@@ -33,14 +33,22 @@ Lucent.exe isn't code-signed, so Windows warns on first launch. The site shows [
 
 ## Features
 
+Lucent manages two features so far. More can be added; if there's a tool you'd like it to handle, [open an issue](https://github.com/arnaudcouturier/lucent/issues).
+
+| | |
+|:--|:--|
+| **DLSS 5 Neural Rendering** | Through OptiScaler, with frame generation and settings tuned for XIV. Three profiles: Fidelity, Balanced and Performance. Radeon cards get FSR upscaling and frame generation instead. |
+| **ReShade** | The add-on build, with iMMERSE, qUINT, SweetFX, ipsuShade and the Alive presets. No preset is active until you pick one. Optional on cards that get DLSS 5 or FSR. |
+
+## What the manager does
+
 | | |
 |:--|:--|
 | **Finds your game** | Game folder, launcher and graphics card. Works with XIVLauncher, Steam and the Square Enix launcher. |
 | **Backs up first** | Scan lists every file it will replace, such as an existing GShade, ReShade or OptiScaler. Each one is backed up. |
 | **Repairs after patches** | Every deployed file is checked against its hash. If a patch replaced one, Repair puts it back. |
-| **Three profiles** | Fidelity, Balanced or Performance. Switch any time. |
-| **Updates when you want** | New versions are offered, not forced. Versions rolls back. |
-| **Clean uninstall** | Restores what it replaced and removes what it added. Your own presets and shaders stay. |
+| **Updates when you say** | New versions are offered, never forced. Versions rolls back. |
+| **Uninstalls cleanly** | Restores what it replaced and removes what it added. Your own presets and shaders stay. |
 | **No telemetry** | Open source. [Every file it installs](https://arnaudcouturier.github.io/lucent/files.html) is listed with its SHA-256. |
 
 ## Supported cards

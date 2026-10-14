@@ -6,6 +6,7 @@ Settled in a design grilling session on 2026-10-12. Each section is a decision; 
 
 - **Lucent** is a public, open-source (MIT for our own code) Windows manager for FFXIV that deploys OptiScaler with DLSS 5 Neural Rendering, ReShade (add-on build), shaders and presets.
 - It is a **manager, not a one-shot installer**: it stays useful after setup (repair after patches, profile switching, updates, rollback, clean uninstall).
+- **Positioning** (settled 2026-10-13): Lucent is presented as a manager for XIV graphics mods. DLSS 5 (OptiScaler) and ReShade are its two features, not its identity, so the site, README and app copy can take on more features without a rebrand.
 - **Form:** one portable GUI `.exe`. No `.bat` / `.ps1`.
 - **Stack:** Tauri 2 + React + TypeScript. Rust side stays thin: file ops, hashing, archive extraction, registry, GPU detection. Chosen because the project is vibe-coded and TS/React gives the highest aesthetic ceiling; Electron rejected (portable build unpacks on every launch), WinUI/WPF rejected (single-file pain, lower ceiling).
 - On first run it offers to install itself to `%LOCALAPPDATA%\Lucent` with a Start Menu shortcut and a per-user Settings → Apps entry (no admin). The offer is an **"Add Lucent to the Start menu"** checkbox on the Profile step, on by default.

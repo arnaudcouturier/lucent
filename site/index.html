@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0d0e11" />
-    <meta name="description" content="Lucent installs a tested DLSS 5 Neural Rendering and ReShade setup for XIV, and repairs it after game patches. Free, open source, no telemetry." />
-    <title>Lucent · DLSS 5 and ReShade for XIV</title>
+    <meta name="description" content="Lucent is a Windows app that manages graphics mods for XIV: DLSS 5 through OptiScaler, and ReShade with shaders and presets. It installs them, repairs them after game patches and removes them cleanly. Free and open source." />
+    <title>Lucent · A manager for XIV graphics mods</title>
     <link rel="icon" type="image/svg+xml" href="../src-tauri/icons/mark.svg" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -19,14 +19,15 @@
         </a>
         <nav class="nav-links" aria-label="Site">
           <a href="#features">Features</a>
+          <a href="#cards">Cards</a>
           <a href="#installed">What it installs</a>
           <a href="./guide.html">Guide</a>
           <a href="./files.html">Files</a>
           <a href="#faq">FAQ</a>
         </nav>
         <div class="nav-actions">
-          <a class="button is-ghost" href="https://github.com/arnaudcouturier/lucent">GitHub</a>
-          <a class="button is-primary" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">Download</a>
+          <a class="button is-ghost is-small" href="https://github.com/arnaudcouturier/lucent">GitHub</a>
+          <a class="button is-primary is-small" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">Download</a>
         </div>
       </div>
     </header>
@@ -34,10 +35,10 @@
     <main id="main" tabindex="-1">
       <section class="hero" aria-labelledby="hero-title">
         <div class="container hero-grid">
-          <div>
-            <p class="pill"><span class="dot" aria-hidden="true"></span>Open source · No telemetry</p>
-            <h1 id="hero-title">DLSS 5 &amp; ReShade<br /><span>for XIV, in one app.</span></h1>
-            <p class="lead">Lucent installs a tested DLSS 5 Neural Rendering and ReShade setup for your graphics card, and repairs it after game patches.</p>
+          <div class="hero-copy">
+            <p class="kicker">Free and open source</p>
+            <h1 id="hero-title">A manager for<br /><span>XIV graphics mods.</span></h1>
+            <p class="lead">Lucent installs graphics mods in your game folder, repairs them after game patches and removes them cleanly. It manages two so far: DLSS&nbsp;5 through OptiScaler, and ReShade with shaders and presets.</p>
             <div class="hero-actions">
               <a class="button is-primary is-large" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">
                 <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /></svg>
@@ -48,21 +49,20 @@
                 <svg class="i i-trail" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
               </a>
             </div>
-            <p class="section-note">Lucent.exe isn’t code-signed, so Windows warns on first launch. <a href="#smartscreen">What to expect</a>.</p>
-            <ul class="hero-meta" aria-label="Requirements">
-              <li>Windows 10 22H2 / 11</li>
-              <li>x64</li>
-              <li>Portable .exe</li>
-              <li>Free</li>
+            <p class="hero-note">Lucent.exe isn’t code-signed, so Windows warns the first time you open it. <a href="#smartscreen">What to expect</a>.</p>
+            <ul class="facts" aria-label="Requirements">
+              <li><b>Win 10 / 11</b><span>22H2 or later, x64</span></li>
+              <li><b>1 exe</b><span>Portable, no installer</span></li>
+              <li><b>MIT</b><span>No telemetry</span></li>
             </ul>
           </div>
 
-          <!-- The app's main screen, drawn in HTML so it stays sharp at every size. -->
+          <!-- The app's Home screen, drawn in HTML so it stays sharp at every size. -->
           <div class="mock-frame" aria-hidden="true">
             <div class="mock">
               <div class="mock-rail">
                 <div class="mock-brand"><svg viewBox="0 0 16 22"><polygon points="8,0 16,8 8,22 0,8" /><path d="M0 8 L6 10 L8 22 M6 10 L16 8" /></svg><span>Lucent</span></div>
-                <div class="mock-stage"><img src="./crystal.svg" alt="" width="320" height="400" /></div>
+                <div class="mock-stage"><img src="./crystal.svg" alt="" width="320" height="400" /><canvas class="mock-crystal" width="248" height="214" hidden></canvas></div>
                 <div class="mock-nav">
                   <span class="is-active">Home</span><span>Keys</span><span>Versions</span><span>Logs</span><span>Settings</span><span>Help</span>
                 </div>
@@ -72,7 +72,7 @@
               <div class="mock-pane">
                 <div class="mock-caption"><span>–</span><span>▢</span><span>✕</span></div>
                 <div class="mock-head">
-                  <div><div class="mock-title">Your game</div><div class="mock-sub">Your graphics, kept in place.</div></div>
+                  <div><div class="mock-title">Your game</div><div class="mock-sub">What Lucent manages in your game folder.</div></div>
                   <div class="mock-launch"><span class="mock-launch-button">▶ &nbsp;Launch XIV <span>⌄</span></span><small>with XIVLauncher</small></div>
                 </div>
                 <div class="mock-card mock-status">
@@ -93,24 +93,77 @@
         </div>
       </section>
 
-      <div class="container built-on">
-        <span>Installs</span>
-        <ul>
-          <li>OptiScaler</li>
-          <li>DLSS 5</li>
-          <li>ReShade</li>
-          <li>RenoDX</li>
-          <li>iMMERSE</li>
-          <li>Alive NEXT</li>
-          <li>ipsuShade</li>
-        </ul>
+      <div class="band">
+        <div class="container band-inner">
+          <span class="band-label">Installs</span>
+          <ul>
+            <li>OptiScaler</li>
+            <li>DLSS 5</li>
+            <li>ReShade</li>
+            <li>RenoDX</li>
+            <li>iMMERSE</li>
+            <li>Alive NEXT</li>
+            <li>ipsuShade</li>
+          </ul>
+        </div>
       </div>
 
       <section class="section" id="features" aria-labelledby="features-title">
         <div class="container">
           <div class="section-head">
             <p class="kicker">Features</p>
-            <h2 id="features-title">What it does</h2>
+            <h2 id="features-title">What Lucent manages</h2>
+            <p>Each feature is a group of mods that Lucent installs, updates and repairs together. Your graphics card decides which setup you get.</p>
+          </div>
+          <div class="feature-pair">
+            <article class="card product">
+              <header class="product-head">
+                <span class="product-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.94 14.06 4 20" /><path d="m14 4 1.5 1.5L20 7l-4.5 1.5L14 10l-1.5-1.5L8 7l4.5-1.5z" /><path d="M5 3v4" /><path d="M3 5h4" /></svg></span>
+                <span class="tag">Through OptiScaler</span>
+              </header>
+              <h3>DLSS 5 Neural Rendering</h3>
+              <p>Redraws detail and light in the image before DLSS upscales it, then adds frame generation. The settings are tuned for XIV and <a href="./guide.html#settings">explained in the guide</a>.</p>
+              <ul class="checks">
+                <li>Three profiles: Fidelity, Balanced and Performance</li>
+                <li>A setup for each NVIDIA card family</li>
+                <li>Radeon cards get FSR upscaling and frame generation</li>
+              </ul>
+              <dl class="product-keys">
+                <div><dt><kbd>Insert</kbd></dt><dd>OptiScaler menu</dd></div>
+                <div><dt><kbd>\</kbd></dt><dd>Neural Rendering on or off</dd></div>
+                <div><dt><kbd>End</kbd></dt><dd>Frame generation on or off</dd></div>
+              </dl>
+            </article>
+            <article class="card product">
+              <header class="product-head">
+                <span class="product-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" /></svg></span>
+                <span class="tag">With shaders and presets</span>
+              </header>
+              <h3>ReShade</h3>
+              <p>The add-on build of ReShade, with iMMERSE, qUINT, SweetFX, ipsuShade and the Alive presets. No preset is active until you pick one in game.</p>
+              <ul class="checks">
+                <li>Works on any graphics card</li>
+                <li>Optional on cards that get DLSS 5 or FSR</li>
+                <li>Your own presets and shaders are kept</li>
+              </ul>
+              <dl class="product-keys">
+                <div><dt><kbd>Shift</kbd>+<kbd>F2</kbd></dt><dd>ReShade menu</dd></div>
+                <div><dt><kbd>Shift</kbd>+<kbd>F3</kbd></dt><dd>Effects on or off</dd></div>
+              </dl>
+            </article>
+          </div>
+          <p class="next-feature">
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+            <span>Lucent can manage more than these two. If there’s a tool you’d like it to handle, <a href="https://github.com/arnaudcouturier/lucent/issues">open an issue</a>.</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="manager" aria-labelledby="manager-title">
+        <div class="container">
+          <div class="section-head">
+            <p class="kicker">For every feature</p>
+            <h2 id="manager-title">What the manager does</h2>
             <p>No archives to unpack and no config files to edit.</p>
           </div>
           <ul class="feature-grid">
@@ -120,14 +173,9 @@
               <p>Game folder, launcher and graphics card. Works with XIVLauncher, Steam and the Square Enix launcher.</p>
             </li>
             <li class="card feature">
-              <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2" /><rect width="6" height="6" x="9" y="9" rx="1" /><path d="M15 2v2" /><path d="M15 20v2" /><path d="M2 15h2" /><path d="M2 9h2" /><path d="M20 15h2" /><path d="M20 9h2" /><path d="M9 2v2" /><path d="M9 20v2" /></svg></span>
-              <h3>Matched to your card</h3>
-              <p>Each card family gets its own setup, labelled Stable or Experimental.</p>
-            </li>
-            <li class="card feature">
               <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1" /><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" /><path d="M10 12h4" /></svg></span>
               <h3>Backs up first</h3>
-              <p>Every file it replaces is backed up. Uninstall restores them and removes what Lucent added.</p>
+              <p>Scan lists every file it will replace, such as an old ReShade or GShade. Each one is backed up.</p>
             </li>
             <li class="card feature">
               <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg></span>
@@ -135,14 +183,19 @@
               <p>Scan checks every file against its hash. If a patch replaced one, Repair puts it back.</p>
             </li>
             <li class="card feature">
-              <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" /></svg></span>
-              <h3>Three profiles</h3>
-              <p>Fidelity, Balanced or Performance. Switch any time. Changes you made in game are kept.</p>
+              <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg></span>
+              <h3>Updates when you say</h3>
+              <p>New versions are offered, never forced. Versions rolls back to an earlier one from the cache.</p>
+            </li>
+            <li class="card feature">
+              <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg></span>
+              <h3>Uninstalls cleanly</h3>
+              <p>Puts back what it replaced and removes what it added. Your own presets and shaders stay.</p>
             </li>
             <li class="card feature">
               <span class="feature-icon"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /><path d="m9 12 2 2 4-4" /></svg></span>
               <h3>No telemetry</h3>
-              <p>Open source. Every file it installs is listed with its hash.</p>
+              <p>Open source. <a href="./files.html">Every file it installs</a> is listed with its hash.</p>
             </li>
           </ul>
         </div>
@@ -151,7 +204,7 @@
       <section class="section" id="how" aria-labelledby="how-title">
         <div class="container">
           <div class="section-head">
-            <p class="kicker">How it works</p>
+            <p class="kicker">Setup</p>
             <h2 id="how-title">Four steps</h2>
           </div>
           <ol class="steps">
@@ -168,10 +221,10 @@
           <div class="section-head">
             <p class="kicker">Graphics cards</p>
             <h2 id="cards-title">Supported cards</h2>
-            <p>Lucent detects your GPU and picks its setup. Experimental means players haven’t confirmed it yet.</p>
+            <p>Lucent detects your card and picks its setup. Experimental means players haven’t confirmed it yet.</p>
           </div>
           <!-- lucent:tiers -->
-          <p class="section-note">Available: published for everyone. In Beta: turn on the Beta channel on Scan for your first deployment, or in Settings afterward.</p>
+          <p class="section-note">Available: published for everyone. In Beta: turn on the Beta channel on Scan for your first install, or in Settings afterward.</p>
         </div>
       </section>
 
@@ -227,10 +280,11 @@
       </section>
 
       <section class="section" id="faq" aria-labelledby="faq-title">
-        <div class="container">
+        <div class="container faq-grid">
           <div class="section-head">
             <p class="kicker">FAQ</p>
             <h2 id="faq-title">Common questions</h2>
+            <p>Anything else: <a href="https://github.com/arnaudcouturier/lucent/issues">open an issue</a> on GitHub.</p>
           </div>
           <div class="faq">
             <details>
@@ -242,12 +296,16 @@
               <p>Lucent checks its files every time it opens, and Scan checks them whenever you ask. If a patch replaced one, the status card offers Repair, which restores it from Lucent’s cache.</p>
             </details>
             <details>
+              <summary>Can I use ReShade without DLSS 5?<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></summary>
+              <p>On a card Lucent has no DLSS 5 or FSR setup for, it installs ReShade on its own. On NVIDIA and Radeon cards, OptiScaler is always installed and ReShade is the optional part.</p>
+            </details>
+            <details>
               <summary>Does it collect any data?<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></summary>
               <p>No. Lucent contacts GitHub to check for updates and download content, and nothing else. Copy diagnostics puts details on your clipboard only when you ask.</p>
             </details>
             <details>
               <summary>Which graphics cards work?<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></summary>
-              <p>Lucent has a setup for RTX 50, RTX 30/40, RTX 20, Radeon and any other card. <a href="#cards">Graphics cards</a> above shows each one’s status and whether its content is published yet.</p>
+              <p>Lucent has a setup for RTX 50, RTX 30/40, RTX 20, Radeon and any other card. <a href="#cards">Supported cards</a> above shows each one’s status and whether its content is published yet.</p>
             </details>
             <details>
               <summary>How do I remove it?<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></summary>
@@ -285,10 +343,10 @@
         </div>
       </section>
 
-      <section class="container" aria-labelledby="cta-title">
-        <div class="card cta">
+      <section class="container cta-wrap" aria-labelledby="cta-title">
+        <div class="cta">
           <h2 id="cta-title">Download Lucent</h2>
-          <p>One portable exe. Free and open source.</p>
+          <p>One portable exe for Windows. Free and open source.</p>
           <div class="hero-actions">
             <a class="button is-primary is-large" href="https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe">
               <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /></svg>
@@ -302,7 +360,7 @@
 
     <footer class="footer">
       <div class="container footer-inner">
-        <span>Lucent · An unofficial tool for XIV.</span>
+        <span class="footer-brand"><svg viewBox="0 0 16 22" aria-hidden="true"><polygon points="8,0 16,8 8,22 0,8" /><path d="M0 8 L6 10 L8 22 M6 10 L16 8" /></svg>Lucent · An unofficial manager for XIV.</span>
         <nav aria-label="Footer">
           <a href="./guide.html">Guide</a>
           <a href="./files.html">Files</a>
@@ -313,5 +371,6 @@
         <p class="legal">Lucent is MIT licensed; the components it deploys keep their own licences. It is not affiliated with Square Enix; FINAL FANTASY XIV is a trademark of Square Enix Holdings Co., Ltd. Type: <a href="https://github.com/vercel/geist-font">Geist</a> (<a href="./licenses/Geist.txt">OFL</a>, <a href="./licenses/Geist-Mono.txt">Mono</a>). Icons: <a href="https://lucide.dev/">Lucide</a> (<a href="./licenses/Lucide.txt">ISC</a>). The crystal artwork is original.</p>
       </div>
     </footer>
+    <script type="module" src="./crystal.ts"></script>
   </body>
 </html>

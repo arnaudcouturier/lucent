@@ -1,6 +1,6 @@
 # Lucent
 
-Windows manager app that deploys DLSS 5 (OptiScaler), ReShade, shaders and presets for FFXIV.
+Windows manager for FFXIV graphics mods. It manages two features so far: DLSS 5 (OptiScaler) and ReShade (with shaders and presets), and is built to take on more.
 Design decisions: `docs/decisions.md`.
 
 ## Agent skills

@@ -37,7 +37,7 @@ export function ProfileScreen() {
     {(choices.reShade || choices.startMenu) && <div className="card option-list">
       {choices.reShade && <label className="option-row">
         <input type="checkbox" checked={includeReShade} disabled={busy} onChange={(e) => core.setIncludeReShade(e.target.checked)} />
-        <span><strong>Include ReShade</strong><small>Shaders and presets, ready when you want them. None is active until you pick one in game.</small></span>
+        <span><strong>Include ReShade</strong><small>Shaders and presets. None is active until you pick one in game.</small></span>
       </label>}
       {choices.startMenu && <label className="option-row">
         <input type="checkbox" checked={addToStartMenu} disabled={busy} onChange={(e) => core.setAddToStartMenu(e.target.checked)} />

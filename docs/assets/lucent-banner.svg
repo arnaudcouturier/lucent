@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="Lucent — DLSS 5 and ReShade for XIV, in one app">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-label="Lucent, a manager for XIV graphics mods">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="360" gradientUnits="userSpaceOnUse">
       <stop stop-color="#0d0e11"/>
@@ -19,7 +19,7 @@
   <circle cx="824" cy="118" r="3" fill="#f47521"/>
   <circle cx="700" cy="262" r="2" fill="#ffffff" fill-opacity=".6"/>
   <text x="360" y="158" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="76" font-weight="600" fill="#f4f4f5" letter-spacing="1">Lucent</text>
-  <text x="363" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="27" fill="#f47521">DLSS 5 and ReShade for XIV, in one app</text>
-  <text x="363" y="248" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#a0a0a6">A tested setup for your graphics card, repaired after game patches</text>
+  <text x="363" y="205" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="27" fill="#f47521">A manager for XIV graphics mods</text>
+  <text x="363" y="248" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="20" fill="#a0a0a6">Installs DLSS 5 and ReShade, and repairs them after game patches</text>
   <text x="363" y="292" font-family="Consolas, monospace" font-size="16" fill="#6e7078">portable exe · open source · no telemetry</text>
 </svg>
