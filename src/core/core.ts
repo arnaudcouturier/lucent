@@ -47,6 +47,8 @@ export interface TierChange {
   from: string
   /** The new tier's label. */
   to: string
+  /** The new adapter remains in the same tier, so this applies current-GPU recipe variants. */
+  sameTier?: boolean
 }
 
 /** The last successful update check time plus any result currently shown in Settings. */
@@ -71,7 +73,7 @@ export type Activity =
       /** Null when the graphics card still matches the deployed tier, or the new tier has no content yet. */
       tierChange: TierChange | null
       /** `scan` is the main screen's on-demand health check; the others write to the game folder. */
-      operation: 'repair' | 'update' | 'rollback' | 'tier' | 'scan' | null
+      operation: 'repair' | 'update' | 'rollback' | 'tier' | 'gpu-refresh' | 'scan' | null
     }
 
 export interface State {
@@ -281,6 +283,14 @@ export function createCore(platform: Platform): Core {
     return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions: options, frameGenerationMode: mode === undefined
       ? defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60) : mode }
   }
+  const currentFrameGenerationOptions = (record: DeploymentRecord) => {
+    const content = state.manifest.status === 'ready'
+      ? state.manifest.manifest.versions.find((version) => version.id === record.contentVersion)
+      : undefined
+    return content?.tiers[record.tier]?.frameGenerationOptions ?? record.recipe.frameGenerationOptions ?? []
+  }
+  const currentGpuName = (record: DeploymentRecord) => state.graphics.status === 'found'
+    ? state.graphics.adapter.name : record.graphics.name
   const elapsed = (since: number) => `${Math.max(1, Math.round((performance.now() - since) / 1000))} s`
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
   /** A cached version rolls back without the manifest; any other comes from the published manifest. */
@@ -402,7 +412,7 @@ export function createCore(platform: Platform): Core {
     const targets = await screenDerivedWriteTargets(platform, gameFolder, screen)
     if (targets.length && !await prepareWrite({ kind: 'repair', gameFolder }, targets)) return { record: null, deferred: true }
     const applied = await applyScreenDerivedSettings(platform, gameFolder, screen)
-    const frameGenerationMode = await frameGenerationModeOnDisk(platform, applied.record)
+    const frameGenerationMode = await frameGenerationModeOnDisk(platform, applied.record, currentGpuName(applied.record), currentFrameGenerationOptions(applied.record))
     set({ deployment: applied.record, frameGenerationMode })
     if (applied.changes.length) {
       const previousValue = applied.changes[0].previousValue ?? 'unset'
@@ -473,17 +483,20 @@ export function createCore(platform: Platform): Core {
   /** The graphics card's tier and the content to plan it with: the deployed version when it has that tier, else the newest. */
   const tierSwitchTarget = (record: DeploymentRecord): { tier: Tier; content: ContentVersion } | null => {
     const { graphics, manifest } = state
-    if (graphics.status !== 'found' || !graphics.tier || graphics.tier.id === record.tier || manifest.status !== 'ready') return null
+    if (graphics.status !== 'found' || !graphics.tier || manifest.status !== 'ready') return null
+    const sameTier = graphics.tier.id === record.tier
+    if (sameTier && graphics.adapter.name.trim().toLowerCase() === record.graphics.name.trim().toLowerCase()) return null
     const tier = graphics.tier
     const candidates = manifest.manifest.versions.filter((v) => v.tiers[tier.id] && (v.id === record.contentVersion || onChannel(v, state.channel)) && !needsNewerApp(v.minAppVersion, APP_VERSION))
-    const content = candidates.find((v) => v.id === record.contentVersion) ?? candidates.sort((a, b) => b.id.localeCompare(a.id))[0]
+    const content = candidates.find((v) => v.id === record.contentVersion)
+      ?? (!sameTier ? candidates.sort((a, b) => b.id.localeCompare(a.id))[0] : undefined)
     return content ? { tier, content } : null
   }
   const tierChange = (record: DeploymentRecord): TierChange | null => {
     const target = tierSwitchTarget(record)
     if (!target || state.graphics.status !== 'found' || state.manifest.status !== 'ready') return null
     const from = state.manifest.manifest.tiers.find((t) => t.id === record.tier)?.label ?? record.cachedVersions?.[0]?.tier.label ?? record.tier
-    return { gpu: state.graphics.adapter.name, from, to: target.tier.label }
+    return { gpu: state.graphics.adapter.name, from, to: target.tier.label, ...(target.tier.id === record.tier ? { sameTier: true } : {}) }
   }
   /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
   const announceApp = async (): Promise<AppUpdate | null> => {
@@ -531,7 +544,7 @@ export function createCore(platform: Platform): Core {
       return
     }
     try {
-      const frameGenerationMode = await frameGenerationModeOnDisk(platform, record)
+      const frameGenerationMode = await frameGenerationModeOnDisk(platform, record, currentGpuName(record), currentFrameGenerationOptions(record))
       if (state.deployment?.gameFolder === record.gameFolder && state.frameGenerationMode !== frameGenerationMode) set({ frameGenerationMode })
     } catch { /* The last result stays visible; a failed health/read check reports the config problem separately. */ }
   }
@@ -666,7 +679,7 @@ export function createCore(platform: Platform): Core {
     set({ profiles, selectedProfile, recommendedProfile: recommendation })
   }
   /** Moves the deployment to other content, a version or a tier, through the update path, then checks it again. */
-  const changeContent = async (operation: 'update' | 'rollback' | 'tier', request: GameWriteRequest, target: () => { content: ContentVersion; tier: Tier }, graphics?: GpuAdapter) => {
+  const changeContent = async (operation: 'update' | 'rollback' | 'tier' | 'gpu-refresh', request: GameWriteRequest, target: () => { content: ContentVersion; tier: Tier }, graphics?: GpuAdapter) => {
     const { activity, deployment, manifest } = state
     if (activity.kind !== 'deployment' || !deployment) return
     set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { ...activity, operation } })
@@ -677,7 +690,8 @@ export function createCore(platform: Platform): Core {
       const { content, tier } = target()
       if (needsNewerApp(content.minAppVersion, APP_VERSION)) throw new Error('Update Lucent before applying this content version.')
       const since = performance.now()
-      const title = operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
+      const title = operation === 'gpu-refresh' ? `GPU refresh for ${tier.label}`
+        : operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
       const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), graphics, state.screen?.refreshHz ?? 60, state.screen?.height)
       applied = true
@@ -921,15 +935,18 @@ export function createCore(platform: Platform): Core {
     },
     async selectFrameGenerationMode(mode) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
-      const option = frameGenerationOptionsForGpu(state.deployment.recipe.frameGenerationOptions ?? [], state.deployment.graphics.name).find((candidate) => candidate.id === mode)
+      const record = state.deployment
+      const gpuName = currentGpuName(record)
+      const options = frameGenerationOptionsForGpu(currentFrameGenerationOptions(record), gpuName)
+      const option = options.find((candidate) => candidate.id === mode)
       if (!option || state.frameGenerationMode === mode) return
-      const gameFolder = state.deployment.gameFolder
+      const gameFolder = record.gameFolder
       set({ busy: true, error: null })
       try {
         const screen = await refreshScreen()
         if (!await prepareWrite({ kind: 'frame-generation', gameFolder, mode }, effectiveFrameGenerationSettings(option, screen?.hdrOn ?? false).map((setting) => setting.file))) return
         await refreshHealth(state.deployment)
-        const deployment = await changeFrameGenerationMode(platform, gameFolder, mode, screen?.hdrOn ?? false)
+        const deployment = await changeFrameGenerationMode(platform, gameFolder, mode, screen?.hdrOn ?? false, gpuName, currentFrameGenerationOptions(record))
         set({ deployment, frameGenerationMode: mode })
         await syncScreenSettings(gameFolder)
         log.write('info', `Frame generation: ${mode === 'off' ? 'Off' : mode === 'dynamic' ? 'Dynamic' : `${mode.slice(0, -1)}×`}`)
@@ -1018,7 +1035,8 @@ export function createCore(platform: Platform): Core {
       const { activity, deployment, graphics } = state
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
       const target = tierSwitchTarget(deployment)
-      if (target) await changeContent('tier', { kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id }, () => target, graphics.adapter)
+      if (target) await changeContent(target.tier.id === deployment.tier ? 'gpu-refresh' : 'tier',
+        { kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id }, () => target, graphics.adapter)
     },
     async applyVersion(version) {
       const { activity, deployment } = state

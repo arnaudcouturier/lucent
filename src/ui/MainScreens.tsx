@@ -54,7 +54,12 @@ function HomeScreen() {
 function FrameGenerationSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
   const record = state.deployment
   if (!record || state.activity.kind !== 'deployment') return null
-  const options = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
+  const content = state.manifest.status === 'ready'
+    ? state.manifest.manifest.versions.find((version) => version.id === record.contentVersion)
+    : undefined
+  const optionSource = content?.tiers[record.tier]?.frameGenerationOptions ?? record.recipe.frameGenerationOptions ?? []
+  const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : record.graphics.name
+  const options = frameGenerationOptionsForGpu(optionSource, gpuName)
   if (!options.length) return null
   const labels: Record<FrameGenerationId, string> = { off: 'Off', '2x': '2x', '3x': '3x', '4x': '4x', '5x': '5x', '6x': '6x', dynamic: 'Dynamic' }
   const mode = state.frameGenerationMode

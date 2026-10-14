@@ -138,7 +138,7 @@ export function EnabledRow() {
   </label>
 }
 
-const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', tier: 'Switching tier', scan: 'Scanning', 'app-update': 'Updating Lucent' } as const
+const OPERATION_LABEL = { deploy: 'Installing', repair: 'Repairing', update: 'Updating', rollback: 'Rolling back', tier: 'Switching tier', 'gpu-refresh': 'Refreshing GPU settings', scan: 'Scanning', 'app-update': 'Updating Lucent' } as const
 
 /** Checks every deployed file now, so a problem shows without reopening Lucent. */
 export function ScanButton() {
@@ -179,9 +179,11 @@ function StatusCardContent({ card }: { card: Card }) {
   </div>
   if (card.kind === 'switch-tier') return <div className="health-card is-tier" role="status">
     <Cpu size={20} />
-    <div className="health-body"><h2>New graphics card</h2><p>Your {card.gpu} matches the {card.to} tier. Lucent is set up for {card.from}.</p>
+    <div className="health-body"><h2>New graphics card</h2><p>{card.sameTier
+      ? `Your ${card.gpu} is in the ${card.to} tier, but Lucent still has settings for your previous card.`
+      : `Your ${card.gpu} matches the ${card.to} tier. Lucent is set up for ${card.from}.`}</p>
       <p className="update-size">Enabled and your own changes stay as they are, and so does your profile if {card.to} offers it.</p></div>
-    <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.switchTier()}><Cpu size={14} />Switch tier</button>
+    <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.switchTier()}><Cpu size={14} />{card.sameTier ? 'Refresh for this GPU' : 'Switch tier'}</button>
   </div>
   if (card.kind === 'drift') return <div className="health-card is-drift" role="alert">
     <TriangleAlert size={20} />

@@ -149,7 +149,9 @@ export function planDeployment(
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.performanceProfilesV2 ? { performanceProfilesV2: recipe.performanceProfilesV2.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.screenDerivedSettings ? { screenDerivedSettings: recipe.screenDerivedSettings.filter((s) => includedConfig(s.file)) } : {}),
-    ...(recipe.frameGenerationOptions || selection.frameGenerationOptions ? { frameGenerationOptions: frameGenerationOptions.map((option) => ({
+    // Keep every GPU variant in the deployment record. A later Scan can then offer the new card's
+    // choices and the deliberate GPU refresh can apply its settings without losing same-id variants.
+    ...(recipe.frameGenerationOptions || selection.frameGenerationOptions ? { frameGenerationOptions: (recipe.frameGenerationOptions ?? frameGenerationOptions).map((option) => ({
       ...option,
       settings: option.settings.filter((setting) => includedConfig(setting.file)),
       ...(option.hdrSettings ? { hdrSettings: option.hdrSettings.filter((setting) => includedConfig(setting.file)) } : {}),

@@ -65,13 +65,14 @@ export const PROFILE_MANIFEST: Manifest = {
 }
 
 const frameGenerationSetting = (mode: string) => ({ file: 'OptiScaler.ini', section: 'FrameGeneration', key: 'Mode', value: mode })
+const frameGenerationBackend = (gpu: 'rtx30' | 'rtx40') => ({ file: 'OptiScaler.ini', section: 'FrameGeneration', key: 'Backend', value: gpu })
 const rtx30FrameGeneration = ['off', '2x'].map((id) => ({
-  id: id as 'off' | '2x', gpuNamePatterns: ['\\bRTX\\s+30[0-9]{2}\\b'], settings: [frameGenerationSetting(id)],
+  id: id as 'off' | '2x', gpuNamePatterns: ['\\bRTX\\s+30[0-9]{2}\\b'], settings: [frameGenerationSetting(id), frameGenerationBackend('rtx30')],
 }))
 const rtx40FrameGeneration = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'].map((id) => ({
   id: id as 'off' | '2x' | '3x' | '4x' | '5x' | '6x' | 'dynamic',
   gpuNamePatterns: ['\\bRTX\\s+40[0-9]{2}\\b'], experimental: ['3x', '4x', '5x', '6x'].includes(id),
-  settings: [frameGenerationSetting(id)],
+  settings: [frameGenerationSetting(id), frameGenerationBackend('rtx40')],
 }))
 
 /** Illustrative mode variants for the Home gallery; these inert values are never published. */

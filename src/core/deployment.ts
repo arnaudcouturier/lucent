@@ -1,4 +1,4 @@
-import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type IniSetting, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type FrameGenerationOption, type IniSetting, type ProfileId, type ScreenDerivedSetting, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
@@ -824,7 +824,21 @@ export async function updateDeployment(
       if ((await maybeStat(platform, diskPath))?.kind !== 'file') continue
       const diskText = await platform.readText(diskPath)
       if (diskText.includes('\0')) continue
-      mergedTexts.set(key, mergeIni(record.ownedConfigs[basePath], diskText, incomingText, resetKeys.filter((k) => fileKey(k.file) === key)))
+      let mergedText = mergeIni(record.ownedConfigs[basePath], diskText, incomingText, resetKeys.filter((k) => fileKey(k.file) === key))
+      if (currentMode === null && oldOptions.length) {
+        // A Custom combination has no managed target to apply. Keep its frame-generation keys
+        // verbatim while the rest of the config follows the incoming recipe.
+        const onDisk = readIni(diskText)
+        const merged = readIni(mergedText)
+        for (const setting of oldOptions.flatMap((option) => [...option.settings, ...(option.hdrSettings ?? [])])) {
+          if (fileKey(setting.file) !== key) continue
+          const value = onDisk.get(setting.section, setting.key)
+          if (value === undefined) merged.remove(setting.section, setting.key)
+          else merged.set(setting.section, setting.key, value)
+        }
+        mergedText = merged.toString()
+      }
+      mergedTexts.set(key, mergedText)
     }
     let steps: PlanStep[] = []
     const emittedMerged = new Set<string>()
@@ -1159,8 +1173,11 @@ export async function changePerformanceProfile(
 }
 
 /** Reads the selected frame-generation mode from its owned configs; null means the disk is Custom. */
-export async function frameGenerationModeOnDisk(platform: Platform, record: DeploymentRecord): Promise<FrameGenerationId | null> {
-  const options = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name)
+export async function frameGenerationModeOnDisk(
+  platform: Platform, record: DeploymentRecord, gpuName = record.graphics.name,
+  optionSource: FrameGenerationOption[] = record.recipe.frameGenerationOptions ?? [],
+): Promise<FrameGenerationId | null> {
+  const options = frameGenerationOptionsForGpu(optionSource, gpuName)
   if (!options.length) return null
   const declared = new Map<string, IniSetting>()
   for (const option of options) for (const setting of [...option.settings, ...(option.hdrSettings ?? [])]) {
@@ -1188,10 +1205,11 @@ export async function frameGenerationModeOnDisk(platform: Platform, record: Depl
 /** Applies one mode from the deployed recipe without involving the performance profile. */
 export async function changeFrameGenerationMode(
   platform: Platform, gameFolder: string, mode: FrameGenerationId, hdrOn = false,
+  gpuName?: string, optionSource?: FrameGenerationOption[],
 ): Promise<DeploymentRecord> {
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing frame generation.')
-  const option = frameGenerationOptionsForGpu(record.recipe.frameGenerationOptions ?? [], record.graphics.name).find((candidate) => candidate.id === mode)
+  const option = frameGenerationOptionsForGpu(optionSource ?? record.recipe.frameGenerationOptions ?? [], gpuName ?? record.graphics.name).find((candidate) => candidate.id === mode)
   if (!option) throw new Error('This frame-generation mode is unavailable for the deployed GPU.')
   return changeOwnedIniSettings(platform, gameFolder, effectiveFrameGenerationSettings(option, hdrOn), (changed) => { changed.frameGenerationMode = mode })
 }
