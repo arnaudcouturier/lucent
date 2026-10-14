@@ -72,8 +72,7 @@ Here is an example for one tested tier; add entries for the other tested tiers a
         { "id": "fidelity", "label": "Fidelity", "description": "One Neural Rendering pass with Quality upscaling.", "summary": "One Neural Rendering pass, Quality upscaling.", "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "2", "1440p": "2", "4k+": "2" } }] },
         { "id": "balanced", "label": "Balanced", "description": "One Neural Rendering pass with resolution-aware upscaling.", "summary": { "1080p": "One Neural Rendering pass, Quality upscaling.", "1440p": "One Neural Rendering pass, Balanced upscaling.", "4k+": "One Neural Rendering pass, Balanced upscaling." }, "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "2", "1440p": "1", "4k+": "1" } }] },
         { "id": "performance", "label": "Performance", "description": "One pass with compression and residual frame generation.", "summary": { "1080p": "One pass, compression, residual frame generation, Balanced upscaling.", "1440p": "One pass, compression, residual frame generation, Balanced upscaling.", "4k+": "One pass, compression, residual frame generation, Performance upscaling." }, "settings": [{ "file": "OptiScaler.ini", "section": "DlssNr", "key": "Passes", "value": "1" }, { "file": "OptiScaler.ini", "section": "DlssNr", "key": "SpatialCompression", "value": "true" }, { "file": "OptiScaler.ini", "section": "DlssNr", "key": "ResidualFG", "value": "true" }, { "file": "OptiScaler.ini", "section": "QualityOverrides", "key": "ForcePerfQuality", "value": { "1080p": "1", "1440p": "1", "4k+": "0" } }] }
-      ],
-      "resetKeys": [{ "file": "OptiScaler.ini", "section": "Logging", "key": "LogToFile" }]
+      ]
     }
   }
 }
@@ -112,7 +111,7 @@ it with its hash. Copy steps inherit a source's `when` unless explicitly set. Fo
 ]
 ```
 
-`knownBrokenGameVersions`, legacy `performanceProfiles`, `performanceProfilesV2` and `resetKeys` are stored and validated by the shared manifest schema.
+`knownBrokenGameVersions`, legacy `performanceProfiles`, `performanceProfilesV2` and the `update` rule of each `ownedConfigs` entry (`keep` when absent, `addMissingKeys` or `replace`; see `docs/manifest.md`) are stored and validated by the shared manifest schema. The former `resetKeys` field is ignored.
 The V2 field must contain all four profiles and can store a string or `1080p` / `1440p` / `4k+` values for each setting. The
 app chooses a column from XIV's output height (<1300, <2000 or 2000+); GPU-name regexes optionally
 recommend a profile, with Balanced as the fallback. The old field remains readable for older content,

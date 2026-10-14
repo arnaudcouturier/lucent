@@ -53,6 +53,16 @@ for files the game itself generates. Use two real content versions for the updat
   Repeat a game-folder change through UAC and confirm it uses the original player's data folder.
 - [ ] Turn Enabled off. Confirm the Disabled deployment runs the game as vanilla.
 - [ ] Update and roll back between two real content versions; confirm the game works after each.
+  With a setting tuned in each config file first, confirm the tuned value survives where the new content
+  keeps the file, only absent keys appear where it adds missing keys, and the file is backed up and
+  rewritten where it replaces. The status card's changelog names the files it adds keys to or replaces, and
+  Logs has a line per config file.
+- [ ] Delete `OptiScaler.ini` and choose Repair (or let XIVLauncher's repair run on close): it returns with
+  your first-install choices and the frame cap of the screen you have now. Tune it again, replace a deployed
+  file, and Repair: the tuned file is left alone.
+- [ ] Open a 0.1.1 deployment with this app: every config file stays as it was, the activity log
+  says the record was migrated once, and Reset later offers the recorded profile (Fidelity as Ultra),
+  frame generation Off and HDR Off.
 - [ ] Update from the full shader pack to the pruned content. Confirm unused Lucent-owned shaders
   are removed, user shaders stay, and the Alive and ipsuShade presets load their shipped effects.
   Presets that require paid or user-supplied effects still require those files from the player.

@@ -1250,15 +1250,6 @@ kbd {
   font-size: 0.85em;
 }
 
-.reset-tag {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: var(--r-chip);
-  background: var(--caution-tint);
-  color: var(--caution);
-  font: var(--text-chip);
-}
-
 .key-table,
 .profile-table,
 .setting-list {
@@ -1354,12 +1345,6 @@ kbd {
 .setting-list dt > span {
   color: var(--accent);
   font: 400 12px/1.5 var(--mono);
-}
-
-.setting-list dt > span.reset-tag {
-  width: fit-content;
-  color: var(--caution);
-  font: var(--text-chip);
 }
 
 .setting-list dd {

@@ -79,9 +79,34 @@ Each version contains:
   `ownedConfigs`, `shippedPresets`, `generatedFiles`, and `overlay` hint (`neural-rendering`,
   `upscaling`, or `null` for a ReShade-only recipe).
 
+`ownedConfigs` lists the **config files**: the files OptiScaler and ReShade read their settings from. Lucent writes them
+once, when it deploys the baseline, and from then on they belong to the player. Each entry may carry an `update` field,
+the **config update rule** that decides what an update does with a file the player already has:
+
+| `update` | What an update does |
+|---|---|
+| `"keep"` (the default when the field is absent) | Nothing: the file is not touched. |
+| `"addMissingKeys"` | Writes the keys absent on disk with the new baseline's value. Keys already on disk keep the player's value, and the layout and comments on disk stay. For a new OptiScaler build that brings new keys. |
+| `"replace"` | Backs the file up through the journal, then writes the new baseline from the stored first-install choices (the frame cap and peak brightness are computed then). |
+
+```json
+"ownedConfigs": [
+  { "path": "OptiScaler.ini", "update": "addMissingKeys" },
+  { "path": "ReShade.ini", "update": "keep", "when": "reshade" }
+]
+```
+
+The rule is per content version and per tier, and it applies on every update that arrives at that version, so use
+`replace` sparingly: it discards the player's tuning, such as ReShade's selected preset and keybinds. A config file that
+is missing, can't be read as text, or is new to the deployment is simply written from the baseline, whatever its rule.
+The status card's changelog adds a line for the files an update adds keys to or replaces, and the activity log has a
+line per config file. Older Lucent releases ignore `update` and merge as they always did, so content that uses it should
+require an app version that supports it with `minAppVersion`. There is no record of what Lucent last wrote and no
+list of keys to reset: the former `resetKeys` field is ignored.
+
 A tier recipe may also declare `screenDerivedSettings`, settings Lucent computes from the monitor XIV uses at the moment it
-writes the config files for the first time. Nothing recalculates them afterwards: an update carries forward the value Lucent
-wrote and computes only a key the new content adds, because once deployed the config files belong to the player.
+writes a config file from the baseline: the first deployment, a `replace` update, a key an `addMissingKeys` update adds,
+and Repair of a missing file. Nothing recalculates them otherwise, because once deployed the config files belong to the player.
 Each entry names an owned config, section and key, plus the value computation. Older Lucent releases ignore this optional
 field, so content that depends on it should require an app version that supports it. The first computation is
 `"frameCap"`, written with six decimal places using `floor(R − R²/3600)` for refresh rate `R` in Hz, or
@@ -100,9 +125,8 @@ three entries:
 
 The field accepts only the known computation values, must use unique keys, and each target must name an owned config.
 The plan writes screen-derived settings after the profile and frame generation values, so they win over profile settings
-with the same key; without a readable screen, the content's own values stay. Lucent stores their last-written values
-with the owned config for update merges, while config health checks remain parseability checks so a player's edit is
-never reported as drift.
+with the same key; without a readable screen, the content's own values stay. Config health checks only look that a file
+exists and is readable, so a player's edit is never reported as drift.
 
 A tier recipe may also declare `frameGenerationOptions`, a list of modes the baseline can be deployed with. Each option has an `id` of
 `off`, `2x` through `6x`, or `dynamic`, plus nonempty `settings` targeting an owned config. Optional
@@ -112,8 +136,9 @@ the yellow Experimental label. `hdrSettings` may override values for keys also d
 records the selected mode and appends its settings after the performance profile, so frame-generation keys
 remain separate from profiles. The mode is a first-install choice on the Profile step, among the options the player's
 GPU matches: picking a multiplier tagged Experimental is the opt-in, with no dialog. The default is 2x at 120 Hz or
-above, otherwise Off, falling back to the first offered mode. Nothing changes it afterwards: an update reads the
-config values to find the mode the player kept, and keeps values that match no declared mode as they are.
+above, otherwise Off, falling back to the first offered mode. The deployment record keeps the mode so Reset can offer it
+again, and a baseline written later (a `replace` update, Repair of a missing file) uses it where the card still offers it,
+otherwise that default. Nothing reads the mode back from the config files.
 
 ```json
 "frameGenerationOptions": [
@@ -129,8 +154,8 @@ modes describe `floor(frameCap / multiplier)` as the render rate.
 A tier may declare optional `hdrOptions` content data. The Profile step offers them only when the monitor XIV runs on
 supports HDR, with HDR selected by default; a monitor without HDR deploys `off`. A declaration contains one option each for `off`, `hdr` and
 `scene-hdr`; each option owns the complete set of INI values that identifies and applies it. `scene-hdr` may set
-`experimental: true`. Older content without this field has no HDR settings. An update reads the current INI
-values to find the mode the player kept, and keeps an unrecognized combination as it is. The mode keys are separate from
+`experimental: true`. Older content without this field has no HDR settings. The record keeps the chosen mode, and a
+baseline written later uses it where the content still offers it, otherwise Off. The mode keys are separate from
 performance-profile keys. Example:
 
 ```json
@@ -182,7 +207,8 @@ The device-name restrictions follow [Microsoft's Windows file-naming rules](http
 
 `planDeployment` is a pure function of the content version, tier, ReShade choice, performance
 profile, frame generation and HDR choices, XIV's screen and scanned folder/cache facts. The deployment record stores the
-choices (`profile`, `frameGenerationMode`, `hdrMode`, `includeReShade`) so Reset can offer them again. The profile cards on
+choices (`profile`, `frameGenerationMode`, `hdrMode`, `includeReShade`) so Reset can offer them again, and so a baseline
+written later (a `replace` update, Repair of a missing config) uses them. Updates keep the stored choices. The profile cards on
 the Profile step show each profile's `summary` at the player's resolution, so a summary should name the passes, the
 upscaling quality, and spatial compression and residual frame generation where the profile sets them. Review renders its counts and download size directly. Counts cover unique
 original files to back up and final added files, excluding temporary files created and renamed by
@@ -215,9 +241,14 @@ Data lives under `%LOCALAPPDATA%\Lucent`: `cache\<sha256>`, and per game folder
 `Backups\<game folder name>\game\<its path>` (numbered when another game folder's deployment has
 the name), recorded as `backupFolder`. That readable copy is for the player only: the journal
 never restores from it, and it is removed once the whole deployment is undone. A record stores the game folder,
-GPU, tier, content version, ReShade choice, Enabled, performance profile, the recipe's steps,
-path lists and profiles, each journal entry,
-last-written config text, and every deployed file's SHA-256, size and modification time.
+GPU, tier, content version, the first-install choices, Enabled, the recipe's steps,
+path lists and profiles, each journal entry, and every deployed file's SHA-256, size and modification time. It keeps
+no copy of the config files: the player owns them, and the journal's backups are the only record of what a step replaced.
+
+A 0.1.1 record also kept the config text Lucent last wrote, to merge on update. Opening such a deployment (the window or
+an XIVLauncher run) migrates it once: Lucent drops that text, leaves every file on disk as it is, and infers the first-install
+choices Reset offers again. The profile is the recorded one (the old two-pass Fidelity becomes Ultra), frame generation is Off
+and HDR is Off, where the content has them. The activity log says so.
 
 Recovery and operations that change shared data hold an exclusive process lease on
 `operation.lock` in this data folder, including health checks that update a journal. Another Lucent
@@ -258,17 +289,19 @@ The gallery includes `existing-setup`, `review`, `review-existing-setup`, `revie
 ## Health check and Repair
 
 A health check runs on open, after a deployment, and before and after Repair or any other change to the game folder.
-Every stamped file must be present. An owned config must also be readable as text, and a shipped
-preset only present, so a user change to either is never Drift. Every other file must keep its
+Every stamped file must be present. A config file must also be readable as text, and a shipped
+preset only present, so the player's changes to either are never Drift. Every other file must keep its
 hash. A size and modified time matching the record's stamp stand in for the hash, except right
 after a deployment or Repair, and when the game version differs from the one the record saved at
 its last healthy check. A healthy check saves the game version and refreshes stamps whose hash
 still matched. The drift card counts the drifted files and, after a game version change, names
 the new version.
 
-Repair runs a full health check, then restores each drifted file to what Lucent last wrote:
-deployed files from the cache, downloading only the missing assets of the deployed content
-version, and owned configs as their last-written copy. It journals each
+Repair runs a full health check, then puts back each drifted file: deployed files come from the cache,
+downloading only the missing assets of the deployed content version. A config file is written only when it is
+missing (or can't be read as text), from the deployed baseline and the stored first-install choices, with the frame cap
+and peak brightness computed from XIV's screen as it is now. A config that is there is the player's, so Repair never
+restores its contents; XIVLauncher's repair on close follows the same rule. It journals each
 write with a verified backup from `changeStart`, so a failure or interruption undoes only the
 repair. Disabled entry files come back under their disabled names. A full health check follows.
 
@@ -318,9 +351,8 @@ and is ignored by Lucent 0.1.x.
 Scan → Profile → Review preselects the first matching recommendation. The selected profile is
 applied after the recipe, and settings for an excluded ReShade config are omitted. The saved recipe
 keeps only the content's own steps; the record names the profile and stores the profile data from
-that content version. Its values are written once, with the baseline, and saved into the
-last-written copy; the resolution column comes from XIV's screen at that moment and does not follow a
-later monitor change. Once deployed, the profile is not a control: there is no command to change it, and
+that content version. Its values are written with the baseline; the resolution column comes from XIV's screen at that
+moment and does not follow a later monitor change. Once deployed, the profile is not a control: there is no command to change it, and
 the config files belong to the player.
 
 Config edits preserve BOM, line endings, whitespace, ordering and comment lines; a no-op round
@@ -347,10 +379,10 @@ Update is planned from the deployment as it stands: `planDeployment` gets the de
 new version no longer deploys. A Disabled deployment keeps its entry files renamed aside to
 `<entry>.disabled` through journaled renames, and the record's performance profile is reapplied. Only
 the files the cache lacks are downloaded, and all of them are verified before the game folder changes.
-Owned configs are backed up first and merged key by key with the new version's copy: Lucent's
-last-written copy is the base, what's on disk is the second side, and what the new version ships
-(including its reset keys for that tier) is the third, so a user change survives unless the new
-version changed or reset the same key. An edited shipped preset is kept when Lucent's hash for it is
+Each config file the player has follows the update rule the new version gives it (see
+`ownedConfigs` above): `keep` leaves it, `addMissingKeys` writes only the keys it lacks, and `replace` backs it up
+and writes the new baseline from the stored choices. The planned steps for a config that is kept or only gains keys are
+dropped, so the file is never rewritten with the player's values. An edited shipped preset is kept when Lucent's hash for it is
 unchanged, or saved as `<name> (my edits)` beside it when Lucent's changed too. Like a repair, the update journals from `changeStart`, and the directories it creates from
 `changeDirectoryStart`, so a failure or interruption undoes only the update. A full health check
 follows. The previous version's files stay in the cache. An update never takes over an existing setup: one that
@@ -365,8 +397,8 @@ announced. A version requiring a newer app or lacking a recipe for
 the deployment's tier is shown with an explanation and cannot be applied. A skipped version can
 be applied explicitly; doing so clears its skip.
 
-Applying an older version uses the same journaled update and config merge. It preserves Disabled
-and the performance profile, pins the target, and skips the version left behind. The pin is a fact
+Applying an older version uses the same journaled update and the older version's config update rules. It preserves Disabled
+and the stored choices, pins the target, and skips the version left behind. The pin is a fact
 on the deployment's record, not a gate on announcements: newer unskipped versions still appear.
 Applying a newer version clears the pin. No version is applied automatically.
 
