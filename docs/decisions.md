@@ -67,7 +67,7 @@ Untested tiers stay Experimental (labelled in the UI) until testers confirm them
 Settled in a design grilling session on 2026-10-13.
 
 - **Frame generation** is its own group on Home, below the performance profile: a segmented control of **Off · 2× · 3× · 4× · 5× · 6× · Dynamic**, filtered to what the player's card can run. It is separate from the profile: switching profile doesn't change it, and it never makes a profile Custom. Like profiles, it can be changed while XIV runs (see Settings changes while XIV runs), and the first-run Profile step doesn't offer it.
-  - The options are manifest data per tier, filtered by GPU model, since RTX 30 and RTX 40 share a tier but not an unlock. RTX 40: 2× native, 3×–6× through the fork's built-in `AdaMfgUnlock`, Dynamic only once it is verified on the RTX 4090. RTX 50: all of them, natively. RTX 20, RTX 30 and Radeon: 2× through FSR frame generation, then 3×, 4× and Dynamic through XeFG with the fork's unlock (XIV's practical XeFG ceiling is 4×). NVIDIA's frame generation doesn't run below RTX 40 in this fork, so RTX 30 had none before this.
+  - The options are manifest data per tier, filtered by GPU model, since RTX 30 and RTX 40 share a tier but not an unlock. The planned matrix is RTX 40: 2× native, 3×–6× through the fork's built-in `AdaMfgUnlock`, Dynamic only once it is verified on the RTX 4090; RTX 50: all multipliers natively; RTX 20, RTX 30 and Radeon: 2× through FSR frame generation, then XeFG MFG where the runtime and license allow it. The 2026.10.15 RTX 30/40 Beta candidate is narrower: RTX 30 offers Off and experimental 2× FSR only. RTX 30 XeFG MFG is deferred pending Intel license clearance; its HDR fallback uses XeFG at 2× with every MFG unlock and dynamic setting disabled. RTX 40 options are separately gated by the 4090 QA checklist.
   - Multipliers that need an unlock carry a yellow **Experimental** tag. No confirmation dialog.
   - One line under the control says what the choice means at the frame cap: "XIV renders up to 56 fps, shown at 224 on your 240 Hz screen", or "Aims for 224 fps on your 240 Hz screen" for Dynamic. Every supported multiplier stays offered, even one that renders XIV slowly; the line makes the trade-off visible.
   - Default, for a first deployment and for existing deployments on update: 2× on screens of 120 Hz and up, Off below.
@@ -78,7 +78,7 @@ Settled in a design grilling session on 2026-10-13.
   - It is a **screen-derived setting**: Lucent rewrites it at every write to `OptiScaler.ini`, when Lucent opens, on Launch XIV and at XIVLauncher's check when the game starts, only when the value changed, with a line in the activity log. A change made in the overlay is overwritten. It replaces the hardcoded 138 and 144 that only fit a 144 Hz screen.
 - **HDR** is a group on Home below Frame generation, shown only when XIV's monitor supports HDR: **Off · HDR · Scene HDR**, Scene HDR tagged Experimental. The default, HDR, is the fork's original SDR expansion (`[HDR] FfxivHDR = true`, `Mode = 0`); Scene HDR is its RenoDX scene method (`Mode = 1`). With Windows HDR off, the line says how to turn it on (Win+Alt+B); OptiScaler falls back to SDR by itself.
   - Peak brightness (`PeakNits`) is screen-derived, from the monitor's reported peak luminance, and the line points to the Windows HDR Calibration app for a monitor that reports it wrongly. Paper white, contrast, saturation, vibrance and highlight expansion stay as the content tunes them; players adjust them live in OptiScaler's overlay, and Lucent keeps those as user changes. Lucent has no brightness slider: a change there could only be seen at the next launch.
-  - OptiScaler's HDR needs NVIDIA frame generation, XeFG or none. While HDR is on, 2× on RTX 20, RTX 30 and Radeon uses XeFG instead of FSR frame generation, without the player seeing a difference.
+  - OptiScaler's HDR needs NVIDIA frame generation, XeFG or none. While HDR is on, the candidate's RTX 30 2× choice uses XeFG instead of FSR frame generation, without exposing an MFG unlock. Other tiers can add HDR provider alternatives after their own runtime and licensing checks.
   - While HDR is on, Lucent turns Windows Auto HDR off for `ffxiv_dx11.exe` only (the per-app graphics setting) and restores it when HDR goes Off or on uninstall. RTX HDR can't be changed reliably; on NVIDIA cards the line mentions it.
   - Scene HDR's inputs for Neural Rendering, DLSS and ReShade stay off in the content, and the HDR screenshot key stays unbound.
 - **Performance profiles** become four, each step giving up one thing:
@@ -96,7 +96,7 @@ Settled in a design grilling session on 2026-10-13.
 - **Home layout**: the profile, Frame generation and HDR read as one family of segmented controls, each with one line describing the current choice. Custom lights no segment, and its line says "Custom · based on Balanced: Passes set to 2". The first-run Profile step keeps descriptive rows. That is the starting point; the final layout is whichever reads cleanest at real size in 1000×680.
 - **Keys**: OptiScaler's keys are single virtual keys, without modifiers. Neural Rendering moves to **Delete**: it sits in the same place on every keyboard, laptops and 75% boards included, XIV doesn't use it, and it pairs with Insert for OptiScaler's menu. `\` was a different key on each layout (`*` on AZERTY, `^` on QWERTZ). The FPS overlay keys (`FpsShortcutKey`, `FpsCycleShortcutKey`, Page Up and Page Down by default) are unbound because they are XIV's zoom; End stays the frame generation toggle. Keys and the Done screen name keys as Windows does for the player's keyboard layout ("Suppr" on a French keyboard).
 - **Check for updates**: the card's subtitle is the status line: "Checking…", "Up to date · checked 5 min ago" (the quiet check on open counts), an available update, or a yellow error. The callout at the top of Settings no longer carries the result; nobody saw it there.
-- **Testing**: a Beta content version with a checklist for the RTX 4090: each multiplier, Dynamic, both HDR methods and the four profiles. Whatever fails there doesn't ship for RTX 40. RTX 20, RTX 50 and Radeon get these options with their first content.
+- **Testing**: a Beta content version with a checklist for the RTX 4090: each multiplier, Dynamic, both HDR methods and the four profiles. Whatever fails there doesn't ship for RTX 40. RTX 20, RTX 50 and Radeon need their own tested content. No Intel-backed MFG option ships until its license clearance is resolved.
 
 ## Settings changes while XIV runs
 
@@ -197,7 +197,8 @@ Settled by the look prototype on 2026-10-12: variant **D · Ember**, kept as the
 
 ## Deferred
 
-Nothing is deferred. The shader set is settled under Deployment engine, and each tier's performance profile settings come from its tested content in the manifest (RTX 30/40 publishes all of them).
+- RTX 30 XeFG MFG unlocks (3×, 4× and Dynamic) are excluded from the 2026.10.15 Beta candidate pending Intel license clearance. The candidate ships only Off and experimental 2× FSR for RTX 30; its Windows HDR alternative is XeFG 2× without an unlock.
+- The shader set is settled under Deployment engine, and each tier's performance profile settings come from its tested content in the manifest.
 
 ---
 

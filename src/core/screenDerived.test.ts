@@ -57,7 +57,7 @@ describe('screen-derived settings', () => {
     expect(config).toContain('FramerateTargetDMFG=224.000000')
     expect(config).toContain('DynamicTargetFPS=224.000000')
     expect((await readDeployment(platform, ROOT))?.ownedConfigs['OptiScaler.ini']).toContain('FramerateLimit=224.000000')
-    expect((await platform.readText(`${DEFAULT_ENV.LocalAppData}\\Lucent\\lucent.log`))).toContain('Frame cap: 224 fps for a 240 Hz screen, was 120')
+    expect((await platform.readText(`${DEFAULT_ENV.LocalAppData}\\Lucent\\lucent.log`))).toContain('Frame cap: 224 fps for a 240 Hz screen, was unset')
     const journalLength = (await readDeployment(platform, ROOT))!.journal.length
     const originalWriteText = platform.writeText.bind(platform)
     let configWrites = 0
