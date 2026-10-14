@@ -26,9 +26,6 @@ Lucent is a portable Windows app that manages graphics mods for XIV. It installs
 
 **[Lucent.exe](https://github.com/arnaudcouturier/lucent/releases/latest/download/Lucent.exe)** &nbsp;·&nbsp; Windows 10 22H2 or 11 &nbsp;·&nbsp; x64
 
-> [!NOTE]
-> The first release isn't out yet.
-
 Lucent.exe isn't code-signed, so Windows warns on first launch. The site shows [what to expect](https://arnaudcouturier.github.io/lucent/#smartscreen) and how to verify the file.
 
 ## Features
