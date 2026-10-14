@@ -23,9 +23,21 @@ The settled native UI state was observed without changing the game:
 - Reset confirmation showed a readable timestamped backup destination.
 - The prefilled choices were Ultra, 2x, HDR Off, and Include ReShade; the display values were 240 Hz, frame cap 224, and rendered cap 112.
 - Review reported 188 backups, 0 added files, and 0 downloads.
-- The flow was backed out to Home. **Continue/Apply was not pressed.** This proves the preflight and cancel path only; it is not evidence that Reset rewrites files successfully.
+- The flow was backed out to Home after Review. **Review was reached; Apply was not pressed.** This proves the preflight and cancel path only; it is not evidence that Reset rewrites files successfully.
 
 The app record, configuration hashes, and timestamps were rechecked after cancellation and remain unchanged. No game process was launched, no uninstall was run, and no registry preference was changed.
+
+## Applied Reset evidence
+
+After the protected baseline was captured, root ran the coordinated reversible lifecycle check with XIV closed:
+
+- Enabled was switched off and verified by the native UI; `winmm.dll` became `winmm.dll.disabled`.
+- A temporary comment was appended to `OptiScaler.ini` to prove that Reset backed up the exact pre-Reset bytes. The marker hash was `fe81abce040018ea9a9b6ac205eeaa66b620783f29924f1332fda44796160b62`.
+- Reset used the same Ultra / 2x / HDR Off / Include ReShade choices. Review showed 188 backups, 0 added files, and 0 downloads. Apply completed successfully while Disabled persisted.
+- The displayed Reset backup contained 188 files, and its `OptiScaler.ini` hash matched the marked pre-Reset file exactly. The live marker was removed and the live config returned to the protected baseline hash.
+- After re-enabling, the native UI returned to Healthy and Enabled. Read-only comparison found all 188 managed files matching the baseline, all 241 unowned paths matching by path, size, and UTC mtime, and all eight unowned top-level files byte-for-byte unchanged.
+
+This proves the applied Reset, readable backup, Disabled persistence, and re-enable lifecycle. It does not prove uninstall, rollback to a prior content version, or gameplay behavior.
 
 ## Protective baseline
 
@@ -42,7 +54,7 @@ The baseline is a safety aid for the upcoming coordinated test. Immediately befo
 ## Remaining coordinated test sequence
 
 1. Confirm XIV is closed and retain the external baseline. Root/user coordination is required before any operation that rewrites or removes live game files.
-2. Open Reset and verify the readable destination, prefilled choices, review counts, and current graph. If Reset is approved, apply once, then verify the backup contents, expected baseline configuration, all managed hashes, the unowned-file listing, and a subsequent Healthy/Enabled state.
+2. **Completed 2026-10-14:** Opened Reset, verified the readable destination, prefilled choices, review counts, and current graph; applied once while Disabled; verified the marked config in the 188-file backup, baseline restoration, managed hashes, the unowned-file listing, Disabled persistence, and subsequent Healthy/Enabled state.
 3. Keep uninstall as a separate destructive test. Before applying it, capture the fresh recursive listing. Afterward verify that the backed-up `nvngx_dlss.dll` is restored byte-for-byte, Lucent-owned additions and empty created directories are removed, and every unowned file and user path is unchanged. Preserve the external baseline if the app cleans its normal backup directory.
 4. A maintainer must perform the coordinated game launch and gameplay attestation for the required profile, frame-generation, HDR, ReShade, and launcher choices. The agent will not launch the user’s game or alter the user’s setup for this step.
 5. Stable promotion stays blocked until the applied Reset and uninstall evidence, plus the gameplay attestation, are recorded.
@@ -55,7 +67,8 @@ The baseline is a safety aid for the upcoming coordinated test. Immediately befo
 | Test suites and prior gameplay attestation | proved | release evidence |
 | Existing setup deployed and healthy | proved | complete record, matching managed hashes, native Home state |
 | Reset UI preflight and cancel path | proved | native settled UI observation; no Apply |
-| Applied Reset and backup restoration | unchecked | requires coordinated live-file write |
+| Applied Reset and backup restoration | proved | coordinated run restored the baseline and preserved the marked config in the readable 188-file backup |
+| Disabled persistence and re-enable | proved | `winmm.dll.disabled` remained in place through Reset, then native Enable restored the active entry |
 | Uninstall and preservation of user files | unchecked | requires coordinated destructive action |
 | Fresh gameplay attestation for this lifecycle run | unchecked | requires maintainer/game launch |
 | Stable promotion | unchecked | blocked by the three items above |
