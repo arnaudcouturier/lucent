@@ -756,54 +756,6 @@ kbd {
   line-height: 1.6;
 }
 
-/* Steps: numbered cards */
-.steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
-}
-
-.step {
-  padding: 26px;
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  box-shadow: var(--ring-card);
-}
-
-.step::before {
-  counter-increment: step;
-  content: counter(step);
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--field);
-  box-shadow: var(--ring-button);
-  color: var(--ink);
-  font: 600 14px/1 var(--mono);
-}
-
-.step:first-child::before {
-  background: var(--accent);
-  box-shadow: 0 2px 0 var(--edge-accent);
-  color: var(--on-accent);
-}
-
-.step h3 {
-  margin-top: 22px;
-  font-size: 17px;
-}
-
-.step p {
-  margin-top: 6px;
-  font-size: 14px;
-}
-
 /* Supported cards */
 .tier-list {
   margin: 0;
@@ -1685,8 +1637,7 @@ kbd {
   .tier-row > :nth-child(2) { grid-area: optiscaler; }
   .tier-row > :nth-child(3) { grid-area: reshade; }
 
-  .feature-grid,
-  .steps {
+  .feature-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1740,7 +1691,6 @@ kbd {
   }
 
   .feature-grid,
-  .steps,
   .files-why {
     grid-template-columns: 1fr;
   }
