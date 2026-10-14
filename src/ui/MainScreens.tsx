@@ -16,6 +16,7 @@ import { gameActionsAvailable } from '../core/gameAccess'
 import { replacedOriginals } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
+import type { State } from '../core/core'
 
 export function MainScreen() {
   const { section } = useSection()
@@ -103,10 +104,15 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
   official: { title: LAUNCH_LABELS.official, text: 'Opens the official launcher in your game folder.' },
 }
 
-function SettingsScreen() {
+export function SettingsScreen() {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck } = state
   const [confirming, setConfirming] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
   const restored = deployment ? replacedOriginals(deployment).length : 0
   return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
     <FlowError />
@@ -125,7 +131,10 @@ function SettingsScreen() {
     </SettingsGroup>}
     <SettingsGroup title="Updates">
       {deployment && activity.kind === 'deployment' && <div className="card option-row settings-check">
-        <span><strong>Check for updates</strong><small>Lucent {__APP_VERSION__} · content {deployment.contentVersion}</small></span>
+        <span><strong>Check for updates</strong>
+          <small className={`update-check-status${updateCheck.status === 'failed' ? ' is-caution' : ''}`} role="status">{updateStatusLine(state, now)}</small>
+          <small>Lucent {__APP_VERSION__} · content {deployment.contentVersion}</small>
+        </span>
         <button className="btn" disabled={busy} onClick={() => void core.checkForUpdates()}><RefreshCw size={14} strokeWidth={1.75} />Check now</button>
       </div>}
       <label className="card option-row settings-switch">
@@ -192,6 +201,41 @@ function HelpAction({ icon: Icon, title, text, onClick, disabled, external }: { 
     <span className="help-action-body"><strong>{title}</strong><small>{text}</small></span>
     {external && <ArrowUpRight size={15} strokeWidth={1.75} className="help-action-out" />}
   </button>
+}
+
+function updateStatusLine(state: State, now: number) {
+  const { updateCheck, appUpdate, activity } = state
+  if (updateCheck.status === 'checking') return 'Checking…'
+  if (updateCheck.status === 'failed') return `Couldn’t reach GitHub · ${updateCheck.error ?? 'The check failed.'}`
+  if (updateCheck.status === 'stale') {
+    const checked = updateCheck.checkedAt ? `checked ${relativeCheckTime(updateCheck.checkedAt, now)}` : 'checked earlier'
+    const outcome = updateCheck.outcome?.channel === state.channel ? updateCheck.outcome : null
+    const lastFound = [outcome?.appVersion && `Lucent ${outcome.appVersion}`, outcome?.contentVersion && `content ${outcome.contentVersion}`].filter((item): item is string => !!item)
+    if (lastFound.length) return `Last successful check found ${lastFound.join(' and ')} · ${checked}`
+    if (outcome) return `Up to date · ${checked}`
+    return `Last successful check · ${checked}`
+  }
+  if (updateCheck.status === 'idle' && !updateCheck.checkedAt) return 'Not checked yet'
+
+  const contentUpdate = activity.kind === 'deployment' ? activity.update : null
+  const available = [appUpdate && `Lucent ${appUpdate.version}`, contentUpdate && `content ${contentUpdate.version}`].filter((item): item is string => !!item)
+  if (available.length) {
+    const label = available.join(' and ')
+    return `${label[0].toUpperCase()}${label.slice(1)} ${available.length > 1 ? 'are' : 'is'} available · update from Home`
+  }
+  if (!updateCheck.checkedAt) return 'Not checked yet'
+  return `Up to date · checked ${relativeCheckTime(updateCheck.checkedAt, now)}`
+}
+
+function relativeCheckTime(checkedAt: string, now: number) {
+  const elapsed = Math.max(0, now - Date.parse(checkedAt))
+  const minutes = Math.floor(elapsed / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  const days = Math.floor(hours / 24)
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
 
 function HelpScreen() {

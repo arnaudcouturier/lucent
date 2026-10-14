@@ -10,9 +10,11 @@ import { App } from '../ui/App'
 import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
 import { Screen, Window } from '../ui/Window'
+import { SettingsScreen } from '../ui/MainScreens'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
 import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
+import { APP_RELEASES_URL } from '../core/appUpdate'
 import { BETA_CONTENT, BETA_MANIFEST, NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
 import { MANIFEST_URL } from '../core/manifest'
 import './gallery.css'
@@ -33,6 +35,8 @@ interface GalleryState {
   preview?: { activity: Activity; description: string }
   /** The window Settings → Apps opens, instead of the main one. */
   uninstallWindow?: boolean
+  /** Shows the Settings screen directly for update-card review. */
+  settingsPreview?: boolean
 }
 
 const crystalPreview = (key: string, label: string, activity: Activity, description: string): GalleryState => ({
@@ -144,6 +148,32 @@ const updateAvailable = (stage: 'update' | 'updating') => async () => {
     void reopened.update()
   })
   return reopened
+}
+
+/** The Settings update card across its quiet, current, available and failed check states. */
+const updateCheckPreview = (stage: 'checking' | 'current' | 'app' | 'content' | 'both' | 'failed') => async () => {
+  const m = machine(MACHINES.steam, { remoteText: { [APP_RELEASES_URL]: '[]' } })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+
+  if (stage === 'checking') {
+    const fetchText = platform.fetchText.bind(platform)
+    platform.fetchText = async (url) => url === MANIFEST_URL ? new Promise<string>(() => {}) : fetchText(url)
+    void core.checkForUpdates()
+    return core
+  }
+  if (stage === 'app' || stage === 'both') Object.assign(m.remoteText!, appReleaseHost().remoteText)
+  if (stage === 'content' || stage === 'both') Object.assign(m.remoteText!, nextContentHost().remoteText)
+  if (stage === 'failed') {
+    delete m.remoteText![MANIFEST_URL]
+    delete m.remoteText![APP_RELEASES_URL]
+  }
+  await core.checkForUpdates()
+  return core
 }
 
 /** The player swaps their graphics card after deploying. */
@@ -336,6 +366,10 @@ const STATES: GalleryState[] = [
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
   { key: 'healthy-launchers', label: 'Main · Choose XIVLauncher or Steam', setup: multipleLaunchers },
   { key: 'healthy-official', label: 'Main · Square Enix launcher', setup: workflow('healthy', MACHINES.squareenix) },
+  ...([
+    ['checking', 'Checking…'], ['current', 'Up to date'], ['app', 'App update available'],
+    ['content', 'Content update available'], ['both', 'App and content updates'], ['failed', 'Couldn’t reach GitHub'],
+  ] as const).map(([stage, label]) => ({ key: `settings-update-${stage}`, label: `Settings · ${label}`, setup: updateCheckPreview(stage), settingsPreview: true })),
   { key: 'game-running', label: 'Main · XIV running', async setup() {
     const m = machine(MACHINES.steam)
     const core = await workflow('healthy', m)()
@@ -460,7 +494,7 @@ export function Gallery() {
                 </div>
               </Screen>
             </Window>
-          ) : state.uninstallWindow ? <UninstallWindow /> : <App />}
+          ) : state.settingsPreview ? <Window><SettingsScreen /></Window> : state.uninstallWindow ? <UninstallWindow /> : <App />}
         </CoreContext.Provider>
       )}
       <div className="gallery-bar" role="toolbar" aria-label="State gallery">

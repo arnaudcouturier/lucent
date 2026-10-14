@@ -46,6 +46,14 @@ export interface TierChange {
   to: string
 }
 
+/** The last successful update check time plus any result currently shown in Settings. */
+export interface UpdateCheckState {
+  status: 'idle' | 'checking' | 'checked' | 'stale' | 'failed'
+  checkedAt: string | null
+  error: string | null
+  outcome: { channel: Channel; appVersion: string | null; contentVersion: string | null } | null
+}
+
 /** Activity reported by the core. Later workflow commands will advance this beyond Scan. */
 export type Activity =
   | { kind: 'scan' | 'profile' | 'review' | 'done' }
@@ -69,6 +77,8 @@ export interface State {
   gameRunning: boolean | null
   /** App releases are available even before a deployment exists. */
   appUpdate: AppUpdate | null
+  /** Settings' update status. `checkedAt` is the last check where both sources loaded. */
+  updateCheck: UpdateCheckState
   /** Null while idle; otherwise the app download/replacement progress from 0 to 1. */
   appUpdateProgress: number | null
   /** Beta also offers beta app and content versions. Leaving it changes nothing deployed. */
@@ -167,7 +177,7 @@ export interface Core {
   setAutoRepair(enabled: boolean): Promise<void>
   /** Switches between Stable and Beta for app and content versions, then announces again. Never touches the game folder, so XIV may be running. */
   setChannel(channel: Channel): Promise<void>
-  /** Settings' Check for updates: reads the manifest and app releases again and announces what's new, reporting a failed check. Never touches the game folder. */
+  /** Settings' Check now: refreshes app/content announcements and exposes the result in updateCheck. Never touches the game folder. */
   checkForUpdates(): Promise<void>
   /** Opens the uninstall window Settings → Apps starts, continuing a confirmed uninstall after admin access. */
   openAppUninstall(): Promise<void>
@@ -220,7 +230,7 @@ export function createCore(platform: Platform): Core {
   const log = openActivityLog(platform)
   const logged = loggedPort(nativePlatform, log, (path) => gameRelative(state.deployment?.gameFolder ?? ('path' in state.gameFolder ? state.gameFolder.path : null), path))
   let state: State = {
-    activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
+    activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
     plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
   }
@@ -413,9 +423,9 @@ export function createCore(platform: Platform): Core {
     return fetchAppUpdate(platform, { appVersion: APP_VERSION, skipped: skippedApp, channel: state.channel })
   }
   /** Checked on open and after an update or a skip; there is no background service. */
-  const announceUpdate = async (record: DeploymentRecord): Promise<ContentUpdate | null> => {
-    if (state.manifest.status !== 'ready') return null
-    const { manifest } = state.manifest
+  const announceUpdate = async (record: DeploymentRecord, manifestState = state.manifest): Promise<ContentUpdate | null> => {
+    if (manifestState.status !== 'ready') return null
+    const { manifest } = manifestState
     const { skippedContent } = await readSettings(platform)
     const content = announcedContent(manifest, { channel: state.channel, tier: record.tier, current: record.contentVersion, skipped: [...skippedContent, ...(record.pendingSelection?.skip ? [record.pendingSelection.skip] : [])], appVersion: APP_VERSION })
     const tier = manifest.tiers.find((t) => t.id === record.tier)
@@ -461,19 +471,80 @@ export function createCore(platform: Platform): Core {
       if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full); await refreshCustomProfile(); await refreshKeybinds() }
     } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
-  const refreshAnnouncement = async () => {
-    try {
-      // App releases don't depend on a deployment; content announcements do.
-      if (state.activity.kind !== 'deployment' || !state.deployment) { set({ appUpdate: await announceApp() }); return }
-      const [update, appUpdate] = await Promise.all([announceUpdate(state.deployment), announceApp()])
-      if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update }, appUpdate })
-      await refreshVersions()
-    } catch { /* The card keeps the last announcement; Update explains any failure. */ }
-  }
   const refreshVersions = async () => {
     if (!state.deployment) { set({ versions: [] }); return }
     set({ versions: await versionChoices(platform, state.deployment, state.manifest.status === 'ready' ? state.manifest.manifest : null, await readSettings(platform), state.channel, APP_VERSION) })
   }
+  const refreshUpdateCheck = async (manual = false, knownManifest?: ManifestState) => {
+    const previous = state.updateCheck
+    set({ updateCheck: { ...previous, status: 'checking', error: null } })
+    const [manifest, releases, settings] = await Promise.all([
+      knownManifest ? Promise.resolve(knownManifest) : loadManifest(platform),
+      platform.fetchText(APP_RELEASES_URL).then((text) => ({ text }), (error: unknown) => ({ error })),
+      readSettings(platform).then((value) => ({ value }), (error: unknown) => ({ error })),
+    ])
+    if ('error' in settings) {
+      set({ updateCheck: manual
+        ? { ...previous, status: 'failed', error: message(settings.error) }
+        : { ...previous, status: previous.checkedAt ? 'stale' : 'idle', error: null } })
+      return
+    }
+    const preferences = settings.value
+    let releasesError: string | null = null
+    let appUpdate: AppUpdate | null = state.appUpdate
+    if ('text' in releases) {
+      let releaseList: unknown
+      try { releaseList = JSON.parse(releases.text) }
+      catch { releasesError = 'GitHub returned an unreadable app releases list.' }
+      if (!releasesError && !Array.isArray(releaseList)) releasesError = 'GitHub returned an invalid app releases list.'
+      if (!releasesError) appUpdate = announcedAppUpdate(parseAppReleases(releases.text), { appVersion: APP_VERSION, skipped: preferences.skippedApp, channel: state.channel })
+    } else releasesError = message(releases.error)
+
+    const manifestError = manifest.status === 'ready' ? null : `The manifest didn’t load. ${'message' in manifest ? manifest.message : ''}`.trim()
+    const record = state.activity.kind === 'deployment' ? state.deployment : null
+    let update = state.activity.kind === 'deployment' ? state.activity.update : null
+    let versions = state.versions
+    let contentError: string | null = null
+    if (manifest.status === 'ready' && record) {
+      try {
+        update = await announceUpdate(record, manifest)
+        versions = await versionChoices(platform, record, manifest.manifest, preferences, state.channel, APP_VERSION)
+      } catch (error) { contentError = message(error) }
+    }
+
+    const allSucceeded = !manifestError && !releasesError && !contentError
+    let checkedAt: string | null = null
+    let outcome = previous.outcome
+    let settingsError: string | null = null
+    if (allSucceeded) {
+      checkedAt = new Date().toISOString()
+      const successfulOutcome = { channel: state.channel, appVersion: appUpdate?.version ?? null, contentVersion: update?.version ?? null }
+      try {
+        await writeSettings(platform, { ...preferences, lastUpdateCheck: { checkedAt, ...successfulOutcome } })
+        outcome = successfulOutcome
+      }
+      catch (error) { settingsError = `Could not save the check time. ${message(error)}` }
+    }
+    const checkSucceeded = allSucceeded && !settingsError
+
+    const graphics = manifest.status === 'ready' && state.graphics.status === 'found'
+      ? { ...state.graphics, tier: matchTier(state.graphics.adapter, manifest.manifest) } : state.graphics
+    const patch: Partial<State> = {
+      appUpdate,
+      ...(manifest.status === 'ready' ? { manifest, graphics } : {}),
+      ...(manifest.status === 'ready' && !contentError && record ? { versions } : {}),
+      updateCheck: checkSucceeded && checkedAt
+        ? { status: 'checked', checkedAt, error: null, outcome }
+        : manual
+          ? { ...previous, status: 'failed', error: manifestError ?? releasesError ?? contentError ?? settingsError ?? 'The check failed.' }
+          : { ...previous, status: previous.checkedAt ? 'stale' : 'idle', error: null },
+    }
+    set(patch)
+    if (manifest.status === 'ready' && !contentError && record && state.activity.kind === 'deployment') {
+      set({ activity: { ...state.activity, update, tierChange: tierChange(record) } })
+    }
+  }
+  const refreshAnnouncement = async () => { await refreshUpdateCheck() }
   const finishSelection = async (record: DeploymentRecord) => {
     if (!record.pendingSelection) return
     const settings = await readSettings(platform)
@@ -615,23 +686,8 @@ export function createCore(platform: Platform): Core {
     async checkForUpdates() {
       const record = state.deployment
       if (state.busy || !record || state.activity.kind !== 'deployment') return
-      set({ busy: true, error: null, notice: null })
-      try {
-        // Unlike the quiet check on open, a check the player asked for says when it couldn't reach GitHub.
-        const [manifest, releases, settings] = await Promise.all([loadManifest(platform), platform.fetchText(APP_RELEASES_URL), readSettings(platform)])
-        if (manifest.status !== 'ready') throw new Error('message' in manifest ? manifest.message : 'The manifest didn’t load.')
-        const { graphics } = state
-        set({ manifest, graphics: graphics.status === 'found' ? { ...graphics, tier: matchTier(graphics.adapter, manifest.manifest) } : graphics })
-        const appUpdate = announcedAppUpdate(parseAppReleases(releases), { appVersion: APP_VERSION, skipped: settings.skippedApp, channel: state.channel })
-        const update = await announceUpdate(record)
-        if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, update, tierChange: tierChange(record) }, appUpdate })
-        await refreshVersions()
-        const found = [appUpdate && `Lucent ${appUpdate.version}`, update && `content ${update.version}`].filter((text): text is string => !!text)
-        const available = found.join(' and ')
-        set({ notice: found.length
-          ? `${available[0].toUpperCase()}${available.slice(1)} ${found.length > 1 ? 'are' : 'is'} available. Update from Home.`
-          : `You’re up to date: Lucent ${APP_VERSION}, content ${record.contentVersion}.` })
-      } catch (error) { set({ error: `Couldn’t check for updates. ${message(error)}` }) }
+      set({ busy: true })
+      try { await refreshUpdateCheck(true) }
       finally { set({ busy: false }) }
     },
     async reportBug() {
@@ -673,14 +729,15 @@ export function createCore(platform: Platform): Core {
         await checkSelfInstall()
         // The channel decides which app and content versions the announcements below look at.
         const settings = await readSettings(platform)
-        set({ channel: settings.channel })
+        set({ channel: settings.channel, updateCheck: { status: settings.lastUpdateCheck ? 'checked' : 'idle', checkedAt: settings.lastUpdateCheck?.checkedAt ?? null,
+          error: null, outcome: settings.lastUpdateCheck ? { channel: settings.lastUpdateCheck.channel, appVersion: settings.lastUpdateCheck.appVersion, contentVersion: settings.lastUpdateCheck.contentVersion } : null } })
         // A folder the player picked by hand outranks the auto-detected ones, on every Scan.
         const picked = settings.gameFolder ? await checkPickedFolder(platform, settings.gameFolder) : null
-        const [found, graphics, manifest, xivLauncher, appUpdate] = await Promise.all([
-          picked ? Promise.resolve(picked) : findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform), announceApp(),
+        const [found, graphics, manifest, xivLauncher] = await Promise.all([
+          picked ? Promise.resolve(picked) : findGameFolder(platform), scanGraphics(platform), loadManifest(platform), scanXivLauncher(platform),
         ])
         if (graphics.status === 'found' && manifest.status === 'ready') graphics.tier = matchTier(graphics.adapter, manifest.manifest)
-        set({ gameFolder: found ? { status: 'found', ...found } : { status: 'not-found' }, graphics, manifest, xivLauncher, appUpdate })
+        set({ gameFolder: found ? { status: 'found', ...found } : { status: 'not-found' }, graphics, manifest, xivLauncher })
         const folder = resume ? await checkPickedFolder(platform, resume.gameFolder) : found
         if (resume && !folder) throw new Error('The game folder from the administrator request no longer contains XIV.')
         if (folder) set({ gameFolder: { status: 'found', ...folder } })
@@ -696,6 +753,7 @@ export function createCore(platform: Platform): Core {
           if (content) prepareProfiles(content)
           await refreshFolderChanges()
         }
+        await refreshUpdateCheck(false, manifest)
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
       if (resume && !state.error && !state.recoveryRequired) {
