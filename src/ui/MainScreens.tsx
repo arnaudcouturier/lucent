@@ -64,7 +64,7 @@ function HdrSelector({ state, core }: { state: State; core: ReturnType<typeof us
   const details = [
     mode === null ? 'Custom HDR settings.' : '',
     screen.hdrOn
-      ? peakNits.toLocaleString('en') + ' nits peak (400–4,000 range). If it looks wrong, use Windows HDR Calibration for this display.'
+      ? peakNits.toLocaleString('en') + ' nits peak · Use Windows HDR Calibration if it looks wrong.'
       : 'Turn on HDR in Windows to use it (Win+Alt+B).',
     nvidia ? 'Turn off RTX HDR in the NVIDIA app.' : '',
   ].filter(Boolean).join(' ')
