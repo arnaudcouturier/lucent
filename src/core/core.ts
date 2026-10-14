@@ -13,7 +13,7 @@ import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, pa
 export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
-import { joinPath } from './paths'
+import { joinPath, normalizePath } from './paths'
 import { type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type HdrOption, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
 import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
@@ -139,6 +139,10 @@ export interface State {
   launcher: LaunchKind | null
   /** Launch was just pressed; it clears once XIV runs, or after a few seconds while its launcher is open. */
   launching: boolean
+  /** The flow currently being prepared. Reset and tier switch keep the deployment visible until the new plan is applied. */
+  setupMode: 'install' | 'reset' | 'tier'
+  /** The next readable backup folder shown in Reset's confirmation. */
+  resetBackupPath: string | null
 }
 
 export interface Core {
@@ -154,6 +158,8 @@ export interface Core {
   /** Find it: scans again for a missing game folder; if it's still gone, Scan offers the folder picker. */
   findGameFolder(): Promise<void>
   continueSetup(): Promise<void>
+  /** Starts Reset setup… from Settings, preserving the deployment while choices are reviewed. */
+  resetSetup(): Promise<void>
   /** The Profile step's choice; once there is a deployment, its profile stays as it was deployed. */
   selectProfile(profile: ProfileId): Promise<void>
   /** The Profile step's frame generation mode, if the card offers it. Nothing changes it after the step. */
@@ -258,7 +264,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -319,6 +325,7 @@ export function createCore(platform: Platform): Core {
   }
   const writeTargets = async (request: GameWriteRequest): Promise<string[]> => {
     if (request.kind === 'deploy') return state.plan?.steps.flatMap(stepWritePaths) ?? []
+    if (request.kind === 'reset') return state.plan?.steps.flatMap(stepWritePaths) ?? []
     const record = await readDeployment(platform, request.gameFolder)
     if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
@@ -347,6 +354,9 @@ export function createCore(platform: Platform): Core {
   class ElevationPending extends Error {}
   let resumeContentVersion: string | null = null
   let resumeReviewedPaths: string[] | null = null
+  type PendingSetup = { mode: 'reset' | 'tier'; content: ContentVersion; tier: Tier; graphics: GpuAdapter }
+  let pendingSetup: PendingSetup | null = null
+  let setupReturnActivity: Extract<Activity, { kind: 'deployment' }> | null = null
   /** Find it clears this, so a scan that still finds no game folder leads to first-run Scan and its folder picker. */
   let showLostDeployment = true
   const recover = async () => {
@@ -408,6 +418,13 @@ export function createCore(platform: Platform): Core {
       return null
     }
   }
+  /** A Reset copy is separate from the original-install backup, which uninstall must preserve. */
+  const nextResetBackupPath = async (record: DeploymentRecord) => {
+    const paths = await dataPaths(platform, record.gameFolder)
+    const base = record.backupFolder ?? normalizePath(record.gameFolder).split('\\').at(-1) ?? 'Game'
+    const stamp = new Date().toISOString().replace(/[.:]/g, '-').replace(/Z$/, '')
+    return joinPath(paths.readableBackups, `${base} - Reset ${stamp}`, 'game')
+  }
   const restoreDeployment = async (folder: GameFolder) => {
     await refreshLaunch(folder)
     let record = await readDeployment(platform, folder.path)
@@ -445,7 +462,7 @@ export function createCore(platform: Platform): Core {
       log.write('info', `Deployment: content ${record.contentVersion}, ${state.manifest.status === 'ready' && state.manifest.manifest.tiers.find((t) => t.id === record.tier)?.label || record.tier} tier${profileNote(profilesForRecipe(record.recipe), record.profile)}, ${record.enabled ? 'Enabled' : 'Disabled'}`)
       noteHealth(record, drift)
       if (update) log.write('info', `Content ${update.version} is available`)
-      set({ deployment: record, ...recordedChoices(record), activity: deploymentActivity(record, drift, update) })
+      set({ deployment: record, ...recordedChoices(record), resetBackupPath: await nextResetBackupPath(record), activity: deploymentActivity(record, drift, update) })
       await refreshKeybinds()
       await pruneCache(record)
       await refreshVersions()
@@ -641,9 +658,12 @@ export function createCore(platform: Platform): Core {
     return content
   }
   /** The Profile step's options and picks: what the player chose so far stays, and anything new gets its default. */
-  const prepareProfiles = (content: ContentVersion) => {
-    if (state.graphics.status !== 'found' || !state.graphics.tier) return
-    const recipe = content.tiers[state.graphics.tier.id]
+  const prepareProfiles = (content: ContentVersion, targetTier?: Tier) => {
+    if (state.graphics.status !== 'found') return
+    const tier = targetTier ?? state.graphics.tier
+    if (!tier) return
+    const recipe = content.tiers[tier.id]
+    if (!recipe) return
     const gpuName = state.graphics.adapter.name
     const profiles = profilesForRecipe(recipe)
     const recommendation = recipe.performanceProfilesV2 === undefined ? null : recommendedProfile(profiles, gpuName)?.id ?? null
@@ -690,6 +710,53 @@ export function createCore(platform: Platform): Core {
       await refreshHealthAfter(true)
       await refreshAnnouncement()
       if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, operation: null, tierChange: state.deployment ? tierChange(state.deployment) : null } })
+      set({ busy: false, deploymentProgress: null })
+    }
+  }
+  /** Reset and tier switch use the first-install choices, then rewrite every deployed file. */
+  const applyReset = async () => {
+    const { deployment, manifest } = state
+    if (!deployment || !pendingSetup || state.activity.kind !== 'review' || !state.plan || !reviewedPaths) return
+    set({ busy: true, error: null, notice: null, deploymentProgress: null, activity: { kind: 'deploying', progress: 0 } })
+    let applied = false
+    try {
+      const target = pendingSetup
+      if (manifest.status !== 'ready') throw new Error('Finish Scan before resetting setup.')
+      await refreshScreen()
+      const selection: PlanSelection = {
+        ...planSelection(target.content, target.tier),
+        frameGenerationOptions: state.frameGenerationOptions,
+        frameGenerationMode: state.frameGenerationMode,
+        hdrMode: state.hdrMode,
+        hdrOn: state.screen?.hdrOn ?? false,
+        screen: state.screen,
+        outputHeight: state.screen?.height,
+      }
+      if (!await prepareWrite({ kind: 'reset', gameFolder: deployment.gameFolder, contentVersion: target.content.id, tier: target.tier.id,
+        includeReShade: state.includeReShade, profile: state.selectedProfile, frameGenerationMode: state.frameGenerationMode,
+        hdrMode: state.hdrMode, reviewedPaths: [...reviewedPaths], backupPath: state.resetBackupPath ?? '' })) return
+      const since = performance.now()
+      const record = await updateDeployment(platform, deployment.gameFolder, target.content, target.tier, manifest.source,
+        loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))),
+        target.graphics, state.screen, (line) => log.write('info', `Config ${line}`), undefined,
+        { reset: true, backupPath: state.resetBackupPath ?? '', selection, profile: state.selectedProfile, includeReShade: state.includeReShade, userSid: playerUserSid })
+      applied = true
+      log.write('success', `${target.mode === 'tier' ? 'Tier switch' : 'Reset'} finished in ${elapsed(since)}`)
+      set({ deployment: record, setupMode: 'install', resetBackupPath: await nextResetBackupPath(record), activity: { kind: 'done' }, ...recordedChoices(record) })
+      pendingSetup = null
+      setupReturnActivity = null
+      try { await finishSelection(record) } catch (error) { set({ notice: `Setup finished. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
+      let names: Record<number, string> = {}
+      const keyConfigs = await readKeyConfigs(record)
+      try { names = await platform.getKeyNames(liveKeyCodes(record, keyConfigs)) } catch { /* US labels remain available. */ }
+      set({ hotkeys: deploymentHotkeys(record, keyConfigs, names) })
+      await pruneCache(record)
+    } catch (error) {
+      const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
+      set({ activity: { kind: recoveryRequired ? 'scan' : 'review' }, recoveryRequired,
+        error: recoveryRequired ? error.message : `${failureReason(error)} ${applied ? 'The reset itself finished; run Scan to check the deployment.' : 'The game folder has not been changed.'}` })
+    } finally {
+      await refreshHealthAfter(true)
       set({ busy: false, deploymentProgress: null })
     }
   }
@@ -798,8 +865,10 @@ export function createCore(platform: Platform): Core {
       if (state.busy) return
       scanned = null
       reviewedPaths = null
+      pendingSetup = null
+      setupReturnActivity = null
       notedHealth = null
-      set({ busy: true, error: null, plan: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, hdrOptions: [], hdrMode: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, setupMode: 'install', resetBackupPath: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, hdrOptions: [], hdrMode: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
         const context = await takeElevationResume(platform)
@@ -850,6 +919,18 @@ export function createCore(platform: Platform): Core {
             set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, includeReShade: resume.includeReShade, addToStartMenu: false })
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
+          } else if (resume.kind === 'reset') {
+            if (!state.deployment || state.graphics.status !== 'found' || state.manifest.status !== 'ready') throw new Error('The deployment for the administrator request is no longer available.')
+            const tier = state.manifest.manifest.tiers.find((candidate) => candidate.id === resume.tier)
+            const content = state.manifest.manifest.versions.find((candidate) => candidate.id === resume.contentVersion && candidate.tiers[resume.tier])
+            if (!tier || !content) throw new Error('The content for the administrator request is no longer published.')
+            pendingSetup = { mode: resume.tier === state.deployment.tier ? 'reset' : 'tier', content, tier, graphics: state.graphics.adapter }
+            set({ setupMode: pendingSetup.mode, includeReShade: resume.includeReShade, selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, resetBackupPath: resume.backupPath })
+            prepareProfiles(content, tier)
+            set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, activity: { kind: 'profile' } })
+            resumeReviewedPaths = resume.reviewedPaths
+            await core.review(resume.includeReShade)
+            if (!state.error) await core.deploy()
           } else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall()
@@ -886,6 +967,22 @@ export function createCore(platform: Platform): Core {
         prepareProfiles(contentForTier())
         if (setupChoices(state).any) set({ activity: { kind: 'profile' }, error: null })
         else await core.review()
+      } catch (error) { set({ error: message(error) }) }
+    },
+    async resetSetup() {
+      const { activity, deployment, graphics } = state
+      if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
+      try {
+        await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
+        const target = versionSource(deployment, deployment.contentVersion)
+        setupReturnActivity = activity
+        pendingSetup = { mode: 'reset', content: target.content, tier: target.tier, graphics: graphics.adapter }
+        // Scan and the previous successful Reset already prepared the next path shown in the
+        // confirmation. Keep it so the displayed path is the folder this transaction will fill.
+        if (!state.resetBackupPath) set({ resetBackupPath: await nextResetBackupPath(deployment) })
+        set({ setupMode: 'reset', plan: null, error: null, notice: null, includeReShade: deployment.includeReShade, addToStartMenu: false })
+        prepareProfiles(target.content, target.tier)
+        set({ activity: { kind: 'profile' } })
       } catch (error) { set({ error: message(error) }) }
     },
     async selectProfile(profile) {
@@ -974,9 +1071,15 @@ export function createCore(platform: Platform): Core {
     async switchTier() {
       const { activity, deployment, graphics } = state
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
+      await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
       const target = tierSwitchTarget(deployment)
-      if (target) await changeContent(target.tier.id === deployment.tier ? 'gpu-refresh' : 'tier',
-        { kind: 'tier', gameFolder: deployment.gameFolder, tier: target.tier.id, contentVersion: target.content.id }, () => target, graphics.adapter)
+      if (!target) return
+      setupReturnActivity = activity
+      pendingSetup = { mode: 'tier', content: target.content, tier: target.tier, graphics: graphics.adapter }
+      if (!state.resetBackupPath) set({ resetBackupPath: await nextResetBackupPath(deployment) })
+      set({ setupMode: 'tier', plan: null, error: null, notice: null, includeReShade: deployment.includeReShade, addToStartMenu: false })
+      prepareProfiles(target.content, target.tier)
+      set({ activity: { kind: 'profile' } })
     },
     async applyVersion(version) {
       const { activity, deployment } = state
@@ -1021,21 +1124,38 @@ export function createCore(platform: Platform): Core {
       finally { set({ busy: false }) }
     },
     async review(includeReShade = state.includeReShade) {
-      if (state.busy || state.deployment || state.recoveryRequired) return
+      if (state.busy || state.recoveryRequired || (state.deployment && state.setupMode === 'install')) return
       set({ busy: true, error: null })
       try {
-        const content = contentForTier()
-        prepareProfiles(content)
+        const existing = state.setupMode !== 'install' ? state.deployment : null
+        const pending = existing ? pendingSetup : null
+        const target = existing && pending ? pending : null
+        const content = target?.content ?? contentForTier()
+        const tier = target?.tier ?? (state.graphics.status === 'found' ? state.graphics.tier : null)
+        if (!tier) throw new Error('Choose the game folder before continuing.')
+        prepareProfiles(content, target?.tier)
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier) throw new Error('Choose the game folder before continuing.')
-        if (!scanned || scanned.gameFolder !== state.gameFolder.path) throw new UnreviewedFilesError([])
-        const selection = planSelection(content, state.graphics.tier)
-        const acknowledged = resumeReviewedPaths ?? planDeployment(content, state.graphics.tier, includeReShade,
-          { files: scanned.files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true, selection).filesToBackup
-        const scan = await scanDeployment(platform, state.gameFolder.path, content, null, signatures())
-        const plan = planDeployment(content, state.graphics.tier, includeReShade, scan, state.selectedProfile, true, selection)
-        assertReviewedTakeovers(plan, acknowledged)
-        reviewedPaths = [...plan.filesToBackup]
-        set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
+        if (existing) {
+          const scan = await scanDeployment(platform, state.gameFolder.path, content, existing, [])
+          const selection = planSelection(content, tier, existing)
+          selection.outputHeight = state.screen?.height
+          const plan = planDeployment(content, tier, state.includeReShade, scan, state.selectedProfile, existing.enabled, {
+            ...selection, frameGenerationOptions: state.frameGenerationOptions, frameGenerationMode: state.frameGenerationMode,
+            hdrMode: state.hdrMode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen,
+          })
+          reviewedPaths = plan.filesToBackup
+          set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
+        } else {
+          if (!scanned || scanned.gameFolder !== state.gameFolder.path) throw new UnreviewedFilesError([])
+          const selection = planSelection(content, tier)
+          const acknowledged = resumeReviewedPaths ?? planDeployment(content, tier, includeReShade,
+            { files: scanned.files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true, selection).filesToBackup
+          const scan = await scanDeployment(platform, state.gameFolder.path, content, null, signatures())
+          const plan = planDeployment(content, tier, includeReShade, scan, state.selectedProfile, true, selection)
+          assertReviewedTakeovers(plan, acknowledged)
+          reviewedPaths = [...plan.filesToBackup]
+          set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
+        }
       } catch (error) {
         if (error instanceof UnreviewedFilesError) requireNewScan()
         set({ error: message(error) })
@@ -1048,9 +1168,24 @@ export function createCore(platform: Platform): Core {
       void refreshFolderChanges()
     },
     setAddToStartMenu(add) { if (!state.busy && (state.activity.kind === 'profile' || state.activity.kind === 'review')) set({ addToStartMenu: add }) },
-    backToScan() { if (!state.busy && !state.deployment) { reviewedPaths = null; set({ activity: { kind: 'scan' }, plan: null, error: null }) } },
-    backToProfile() { if (!state.busy && !state.deployment) { reviewedPaths = null; set({ activity: { kind: setupChoices(state).any ? 'profile' : 'scan' }, plan: null, error: null }) } },
+    backToScan() {
+      if (state.busy) return
+      reviewedPaths = null
+      if (state.deployment && state.setupMode !== 'install') {
+        pendingSetup = null
+        const activity = setupReturnActivity ?? deploymentActivity(state.deployment, null, null)
+        setupReturnActivity = null
+        set({ setupMode: 'install', activity, plan: null, error: null, ...recordedChoices(state.deployment) })
+      } else if (!state.deployment) set({ activity: { kind: 'scan' }, plan: null, error: null })
+    },
+    backToProfile() {
+      if (state.busy) return
+      reviewedPaths = null
+      if (state.deployment && state.setupMode !== 'install') set({ activity: { kind: 'profile' }, plan: null, error: null })
+      else if (!state.deployment) set({ activity: { kind: setupChoices(state).any ? 'profile' : 'scan' }, plan: null, error: null })
+    },
     async deploy() {
+      if (state.setupMode !== 'install') { await applyReset(); return }
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'review' || !state.plan || !reviewedPaths) return
       const acknowledged = [...reviewedPaths]
       set({ busy: true, error: null, notice: null, activity: { kind: 'deploying', progress: 0 } })
@@ -1079,7 +1214,7 @@ export function createCore(platform: Platform): Core {
         const hotkeys = deploymentHotkeys(record, keyConfigs, names)
         deployedDrift = await checkHealth(platform, record, state.gameFolder.version)
         noteHealth(record, deployedDrift)
-        set({ deployment: record, activity: { kind: 'done' }, hotkeys })
+        set({ deployment: record, resetBackupPath: await nextResetBackupPath(record), activity: { kind: 'done' }, hotkeys })
         await pruneCache(record)
         await refreshVersions()
       } catch (error) {
@@ -1242,8 +1377,8 @@ export function createCore(platform: Platform): Core {
   return {
     ...core,
     scan: coordinated(core.scan, false), chooseGameFolder: coordinated(core.chooseGameFolder), findGameFolder: coordinated(core.findGameFolder, false),
-    continueSetup: coordinated(core.continueSetup), review: coordinated(core.review), deploy: coordinated(core.deploy),
-    selectProfile: coordinated(core.selectProfile), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
+    continueSetup: coordinated(core.continueSetup), resetSetup: coordinated(core.resetSetup), review: coordinated(core.review, false), deploy: coordinated(core.deploy, false),
+    selectProfile: coordinated(core.selectProfile, false), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
     update: coordinated(core.update), applyVersion: coordinated(core.applyVersion), switchTier: coordinated(core.switchTier),
     updateApp: coordinated(core.updateApp), skipAppUpdate: coordinated(core.skipAppUpdate), skipUpdate: coordinated(core.skipUpdate),
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),

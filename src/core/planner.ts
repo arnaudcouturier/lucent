@@ -116,7 +116,7 @@ export function planDeployment(
     // The frame-generation provider follows the player's HDR choice. Windows HDR can be
     // off while the player is choosing HDR (and Lucent explains how to turn it on), so
     // deriving this from the current display state would deploy FSR for a future HDR pick.
-    ...(selectedFrameGeneration ? effectiveFrameGenerationSettings(selectedFrameGeneration, enabled && hdrActive) : [])
+    ...(selectedFrameGeneration ? effectiveFrameGenerationSettings(selectedFrameGeneration, hdrActive) : [])
       .filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...screenSettings.filter((s) => includedConfig(s.file)),
   ]

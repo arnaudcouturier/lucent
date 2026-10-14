@@ -52,6 +52,12 @@ for files the game itself generates. Use two real content versions for the updat
   journal. After the first operation finishes, the second window can Scan and headless repair works.
   Repeat a game-folder change through UAC and confirm it uses the original player's data folder.
 - [ ] Turn Enabled off. Confirm the Disabled deployment runs the game as vanilla.
+- [ ] In Settings, open **Reset setup…**. Confirm the dialog names a new readable backup folder,
+  the Profile step is prefilled with the stored choices, and changing the screen recomputes the
+  frame cap and peak brightness. Confirm Reset rewrites tuned config files, keeps Disabled,
+  and Uninstall afterwards restores the original vanilla folder.
+- [ ] Change to a GPU in another tier. Confirm **Switch tier** opens the same prefilled Profile →
+  Review flow, defaults options unavailable in the new tier, and keeps Disabled through Apply setup.
 - [ ] Update and roll back between two real content versions; confirm the game works after each.
   With a setting tuned in each config file first, confirm the tuned value survives where the new content
   keeps the file, only absent keys appear where it adds missing keys, and the file is backed up and

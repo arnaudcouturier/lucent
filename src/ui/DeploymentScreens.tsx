@@ -31,11 +31,11 @@ const hdrNote = (mode: HdrMode, hdrSupported: boolean) => mode !== 'off' ? <smal
 /** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
   const [state, core] = useCore()
-  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen } = state
+  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen, setupMode } = state
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   const profile = profiles.find((p) => p.id === plan.profile)
-  return <Screen title="Review" sub="Here’s what Lucent will put in your game folder.">
+  return <Screen title="Review" sub={setupMode === 'reset' ? 'Here’s the tested setup Lucent will write again.' : setupMode === 'tier' ? 'Here’s the setup for this graphics card.' : 'Here’s what Lucent will put in your game folder.'}>
     {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     <dl className="card plan-numbers">
       <div><dt>Files backed up</dt><dd>{plan.counts.backedUp}</dd></div>
@@ -53,7 +53,7 @@ export function ReviewScreen() {
     <FlowError />
     <footer className="screen-actions is-pinned">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
-      {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />Install</button>}
+      {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />{setupMode === 'install' ? 'Install' : 'Apply setup'}</button>}
     </footer>
   </Screen>
 }

@@ -175,6 +175,68 @@ it('restores the per-game Auto HDR value on deployment uninstall', async () => {
   expect(await gpuPreferences(platform)).toBe(original)
 })
 
+it('Reset follows the new HDR choice and restores Auto HDR when Off is selected', async () => {
+  const original = 'GpuPreference=2;AutoHDREnable=1;'
+  const { core, platform } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  await core.resetSetup()
+  core.selectHdrMode('off')
+  await core.review()
+  await core.deploy()
+
+  expect(core.getState()).toMatchObject({ error: null, deployment: { hdrMode: 'off' } })
+  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*false/i)
+  expect(await gpuPreferences(platform)).toBe(original)
+})
+
+it('rolls Auto HDR back with the files when Reset Off fails partway through', async () => {
+  const original = 'GpuPreference=2;AutoHDREnable=1;'
+  const disabled = 'GpuPreference=2;AutoHDREnable=0;'
+  const { core, platform } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  expect(await gpuPreferences(platform)).toBe(disabled)
+
+  let gameMutations = 0
+  const originalCopyFile = platform.copyFile.bind(platform)
+  platform.copyFile = async (from, to, replace, stagingDirectory) => {
+    if (to.toLowerCase().startsWith(`${GAME.toLowerCase()}\\`)) {
+      gameMutations++
+      if (gameMutations === 2) throw new Error('injected Reset failure')
+    }
+    await originalCopyFile(from, to, replace, stagingDirectory)
+  }
+  const originalWriteText = platform.writeText.bind(platform)
+  platform.writeText = async (path, text, stagingDirectory) => {
+    if (path.toLowerCase().startsWith(`${GAME.toLowerCase()}\\`)) {
+      gameMutations++
+      if (gameMutations === 2) throw new Error('injected Reset failure')
+    }
+    await originalWriteText(path, text, stagingDirectory)
+  }
+
+  await core.resetSetup()
+  core.selectHdrMode('off')
+  await core.review()
+  await core.deploy()
+
+  expect(gameMutations).toBeGreaterThanOrEqual(2)
+  expect(core.getState().error).toMatch(/injected Reset failure/i)
+  expect(await gpuPreferences(platform)).toBe(disabled)
+})
+
+it('Reset recomputes screen-derived values from the current monitor', async () => {
+  const { core, platform, m } = await deployed()
+  const monitor = m.monitors![0]
+  m.monitors![0] = { ...monitor, refreshHz: 60, peakNits: 700 }
+  await platform.writeText(XIV_CONFIG, (await platform.readText(XIV_CONFIG)).replace(/Refreshrate 144/i, 'Refreshrate 60'))
+
+  await core.resetSetup()
+  await core.review()
+  await core.deploy()
+
+  expect(core.getState().error).toBeNull()
+  expect(await config(platform)).toMatch(/PeakNits\s*=\s*700/i)
+  expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*59\.000000/i)
+})
+
 it('restores Auto HDR when Lucent is uninstalled from Settings → Apps and the deployment is kept', async () => {
   const original = 'GpuPreference=2;AutoHDREnable=1;'
   const { platform, m } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })

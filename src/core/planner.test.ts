@@ -100,9 +100,9 @@ it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profi
     && step.section === section && step.key === key)?.value
   expect(disabledValue('HDR', 'FfxivHDR')).toBe('true')
   expect(disabledValue('HDR', 'Mode')).toBe('0')
-  expect(disabledValue('XeFG', 'UnlockMFG')).toBe('true')
-  expect(disabledValue('XeFG', 'MaxInterpolatedFrames')).toBe('3')
-  expect(disabledValue('XeFG', 'DynamicMFG')).toBe('true')
+  expect(disabledValue('XeFG', 'UnlockMFG')).toBe('false')
+  expect(disabledValue('XeFG', 'MaxInterpolatedFrames')).toBe('1')
+  expect(disabledValue('XeFG', 'DynamicMFG')).toBe('false')
 })
 
 it('counts originals once across rename, overwrite and delete, while protecting unowned files', () => {

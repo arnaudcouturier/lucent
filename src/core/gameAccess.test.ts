@@ -29,7 +29,7 @@ it('observes XIV starting and closing without rescanning', async () => {
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
 })
 
-it.each(['deploy', 'repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
+it.each(['deploy', 'repair', 'enabled', 'uninstall', 'update', 'switchTier', 'resetSetup'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -126,7 +126,7 @@ it('keeps the reviewed takeover paths through elevation instead of authorizing f
   expect(platform.downloads).toHaveLength(0)
 })
 
-it.each(['repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
+it.each(['repair', 'enabled', 'uninstall', 'update'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -136,7 +136,6 @@ it.each(['repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('co
   core.finish()
   if (command === 'repair') await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
   if (command === 'update') Object.assign(m.remoteText!, nextContentHost().remoteText)
-  if (command === 'switchTier') m.gpus = RADEON
   core = createCore(platform)
   await core.scan()
   m.readOnlyDirectories = [GAME]
@@ -149,9 +148,64 @@ it.each(['repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('co
   expect(resumed.getState().error).toBeNull()
   if (command === 'enabled') expect(resumed.getState().deployment?.enabled).toBe(false)
   else if (command === 'update') expect(resumed.getState().deployment?.contentVersion).toBe('2026.11.02')
-  else if (command === 'switchTier') expect(resumed.getState().deployment?.tier).toBe('radeon')
   else if (command === 'repair') expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
   else expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
+  expect(platform.elevationRequests).toHaveLength(1)
+})
+
+it('keeps tier choices through an elevated Reset flow', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  let core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  m.gpus = RADEON
+  core = createCore(platform)
+  await core.scan()
+  await core.switchTier()
+  await core.review()
+  m.readOnlyDirectories = [GAME]
+  await core.deploy()
+  expect(platform.elevationRequests).toHaveLength(1)
+  const request = JSON.parse(await platform.readText(platform.elevationRequests[0]))
+  expect(request.request).toMatchObject({ kind: 'reset', tier: 'radeon', frameGenerationMode: null })
+  m.elevated = true
+  const resumed = createCore(platform)
+  await resumed.scan()
+  expect(resumed.getState().error).toBeNull()
+  expect(resumed.getState().deployment).toMatchObject({ tier: 'radeon' })
+  expect(platform.elevationRequests).toHaveLength(1)
+})
+
+it('keeps Reset choices through coordinated calls and an elevated resume', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  let core = createCore(platform)
+  await core.scan()
+  await core.continueSetup()
+  await core.selectProfile('performance')
+  core.setIncludeReShade(false)
+  await core.review()
+  await core.deploy()
+  core.finish()
+
+  await core.resetSetup()
+  await core.selectProfile('balanced')
+  expect(core.getState()).toMatchObject({ activity: { kind: 'profile' }, selectedProfile: 'balanced', includeReShade: false })
+  await core.review()
+  m.readOnlyDirectories = [GAME]
+  await core.deploy()
+
+  expect(platform.elevationRequests).toHaveLength(1)
+  const request = JSON.parse(await platform.readText(platform.elevationRequests[0]))
+  expect(request.request).toMatchObject({ kind: 'reset', tier: 'rtx-30-40', profile: 'balanced', includeReShade: false })
+  m.elevated = true
+  const resumed = createCore(platform)
+  await resumed.scan()
+
+  expect(resumed.getState()).toMatchObject({ error: null, activity: { kind: 'done' }, deployment: { profile: 'balanced', includeReShade: false } })
   expect(platform.elevationRequests).toHaveLength(1)
 })
 

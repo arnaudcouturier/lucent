@@ -1,7 +1,7 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, Play, RefreshCw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard } from './DeploymentScreens'
@@ -102,11 +102,15 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
   official: { title: LAUNCH_LABELS.official, text: 'Opens the official launcher in your game folder.' },
 }
 
-export function SettingsScreen() {
+export function SettingsScreen({ openReset = false }: { openReset?: boolean } = {}) {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath } = state
   const [confirming, setConfirming] = useState(false)
+  const [resetConfirming, setResetConfirming] = useState(false)
   const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (openReset && deployment && resetBackupPath) setResetConfirming(true)
+  }, [openReset, deployment, resetBackupPath])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
@@ -155,7 +159,11 @@ export function SettingsScreen() {
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.checkFiles()}><ScanSearch size={14} strokeWidth={1.75} />Scan</button>
       </div>
     </SettingsGroup>}
-    {deployment && <SettingsGroup title="Uninstall" tone="danger">
+    {deployment && <SettingsGroup title="Danger zone" tone="danger">
+      <div className="card settings-danger">
+        <span><strong>Reset setup</strong><small>Offers the first-install choices again and writes the tested setup.</small></span>
+        <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={() => setResetConfirming(true)}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
+      </div>
       <div className="card settings-danger">
         <span><strong>Uninstall from this game</strong><small>{restored
           ? `Removes everything Lucent added and puts back the ${restored === 1 ? 'file' : `${restored.toLocaleString('en')} files`} it replaced.`
@@ -164,7 +172,31 @@ export function SettingsScreen() {
       </div>
     </SettingsGroup>}
     {confirming && <UninstallDialog restored={restored} onClose={() => setConfirming(false)} />}
+    {resetConfirming && resetBackupPath && <ResetDialog backupPath={resetBackupPath} onClose={() => setResetConfirming(false)} />}
   </Screen>
+}
+
+function ResetDialog({ backupPath, onClose }: { backupPath: string; onClose: () => void }) {
+  const [state, core] = useCore()
+  const { busy } = state
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => { ref.current?.showModal() }, [])
+  const reset = async () => {
+    await core.resetSetup()
+    onClose()
+  }
+  return (
+    <dialog ref={ref} className="confirm" aria-labelledby="reset-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
+      <h2 id="reset-title">Reset this setup?</h2>
+      <p>Lucent will offer the first-install choices again and write the tested setup. Your current config files will be backed up first at <Path path={backupPath} />.</p>
+      <footer className="confirm-actions">
+        <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void reset()}>
+          {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <RotateCcw size={14} strokeWidth={1.75} />}{busy ? 'Opening…' : 'Reset setup'}
+        </button>
+      </footer>
+    </dialog>
+  )
 }
 
 function UninstallDialog({ restored, onClose }: { restored: number; onClose: () => void }) {

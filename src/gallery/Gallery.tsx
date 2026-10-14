@@ -39,6 +39,8 @@ interface GalleryState {
   uninstallWindow?: boolean
   /** Shows the Settings screen directly for update-card review. */
   settingsPreview?: boolean
+  /** Opens Reset setup's confirmation dialog on the Settings preview. */
+  openReset?: boolean
 }
 
 const crystalPreview = (key: string, label: string, activity: Activity, description: string): GalleryState => ({
@@ -68,6 +70,11 @@ const choicesStep = (m: Machine, gpu: Machine, stage: 'profile' | 'review' | 'do
   pick(core)
   if (stage !== 'profile') await core.review()
   if (stage === 'done') await core.deploy()
+  return core
+}
+const resetFlow = (stage: 'confirmation' | 'profile') => async () => {
+  const core = await workflow('healthy')()
+  if (stage === 'profile') await core.resetSetup()
   return core
 }
 const experimentalPicks = (core: Core) => {
@@ -416,6 +423,8 @@ const STATES: GalleryState[] = [
     await core.setEnabled(false)
     return core
   } },
+  { key: 'reset-confirmation', label: 'Settings · Reset setup confirmation', setup: resetFlow('confirmation'), settingsPreview: true, openReset: true },
+  { key: 'reset-profile', label: 'Profile · Reset setup prefilled', setup: resetFlow('profile') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'new-gpu', label: 'Main · New graphics card', setup: newGraphicsCard },
@@ -528,7 +537,7 @@ export function Gallery() {
                 </div>
               </Screen>
             </Window>
-          ) : state.settingsPreview ? <Window><SettingsScreen /></Window> : state.uninstallWindow ? <UninstallWindow /> : <App />}
+          ) : state.settingsPreview ? <Window><SettingsScreen openReset={state.openReset} /></Window> : state.uninstallWindow ? <UninstallWindow /> : <App />}
         </CoreContext.Provider>
       )}
       <div className="gallery-bar" role="toolbar" aria-label="State gallery">

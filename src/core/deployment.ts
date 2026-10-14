@@ -13,7 +13,7 @@ import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 import { storedSelection } from './choices'
 import { profilesForRecipe, selectProfileForUpdate } from './profileValues'
-import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
+import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, restoreAutoHdr, restoreAutoHdrTransition } from './hdr'
 
 export interface FileStamp extends FileStat { sha256: string }
 export interface JournalEntry {
@@ -69,6 +69,16 @@ export interface DeploymentRecord {
 export type DeploymentPhase = 'downloading' | 'backing-up' | 'applying' | 'checking'
 /** `done` of `total` counts bytes while downloading, and files in every other phase. */
 export interface DeploymentProgress { phase: DeploymentPhase; progress: number; file: string | null; done?: number; total?: number }
+
+/** Additional inputs for the deliberate Reset flow. Updates keep their config rules. */
+export interface UpdateDeploymentOptions {
+  reset?: boolean
+  backupPath?: string
+  selection?: PlanSelection
+  profile?: ProfileId | null
+  includeReShade?: boolean
+  userSid?: string
+}
 
 export function failureReason(error: unknown): string {
   if (error instanceof PlatformError) {
@@ -524,15 +534,35 @@ async function prepareAutoHdrOff(platform: Platform, gameFolder: string, userSid
   }
 }
 
+/** Prepares a reversible journal entry that restores Lucent's earlier Auto HDR disable transition. */
+async function prepareAutoHdrRestore(platform: Platform, record: DeploymentRecord): Promise<JournalEntry | null> {
+  const name = await platform.resolveGamePath(joinPath(record.gameFolder, 'game'), 'ffxiv_dx11.exe')
+  const transitions = record.journal.flatMap((entry) => entry.registry?.kind === 'user-gpu-preferences'
+    && fileKey(entry.registry.name) === fileKey(name) ? [{ ...entry.registry, undone: entry.undone }] : [])
+  const owned = latestAutoHdrDisableIndex(transitions)
+  if (owned === null) return null
+  const { userSid, before, after } = transitions[owned]
+  const current = await platform.readUserGpuPreferences(userSid, name)
+  const transition = restoreAutoHdrTransition(current, before, after)
+  if (!transition) return null
+  return { registry: { kind: 'user-gpu-preferences', userSid, name, ...transition }, before: {}, after: {} }
+}
+
 /** Journals the intent durably, then writes the per-game value; recovery and Uninstall put the player's value back. */
-async function applyAutoHdrOff(platform: Platform, record: DeploymentRecord, save: () => Promise<void>, intent: JournalEntry) {
+async function applyAutoHdrTransition(
+  platform: Platform, record: DeploymentRecord, save: () => Promise<void>, intent: JournalEntry, action: string,
+) {
   const { userSid, name, before, after } = intent.registry!
   record.journal.push(intent)
   await save()
   await requireGameStopped(platform)
-  if (await platform.readUserGpuPreferences(userSid, name) !== before) throw new Error('Windows per-game graphics preferences changed while Lucent was turning Auto HDR off. Try again.')
+  if (await platform.readUserGpuPreferences(userSid, name) !== before) throw new Error(`Windows per-game graphics preferences changed while Lucent was ${action}. Try again.`)
   await platform.writeUserGpuPreferences(userSid, name, after)
   if (await platform.readUserGpuPreferences(userSid, name) !== after) throw new Error('Windows did not save the per-game Auto HDR preference. Try again.')
+}
+
+async function applyAutoHdrOff(platform: Platform, record: DeploymentRecord, save: () => Promise<void>, intent: JournalEntry) {
+  await applyAutoHdrTransition(platform, record, save, intent, 'turning Auto HDR off')
 }
 
 /**
@@ -820,6 +850,7 @@ export async function updateDeployment(
   graphics?: GpuAdapter, screen: ResolvedScreen | null = null, note: (line: string) => void = () => {},
   /** Rollback restores configs journaled when the target version was left, ignoring the target's update rules. */
   rollbackConfigBackups?: Record<string, string | null>,
+  options: UpdateDeploymentOptions = {},
 ): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
@@ -828,12 +859,20 @@ export async function updateDeployment(
   const scan = await scanDeployment(platform, gameFolder, content, record, [])
   const targetRecipe = content.tiers[tier.id]
   const gpuName = graphics?.name ?? record.graphics.name
-  const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, gpuName)
-  const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled, storedSelection(record, targetRecipe, gpuName, screen))
+  const reset = options.reset === true
+  const profile = reset ? options.profile ?? record.profile ?? null : selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, gpuName)
+  const selection = reset ? options.selection ?? storedSelection(record, targetRecipe, gpuName, screen) : storedSelection(record, targetRecipe, gpuName, screen)
+  const includeReShade = reset ? options.includeReShade ?? record.includeReShade : record.includeReShade
+  const plan = planDeployment(content, tier, includeReShade, scan, profile, record.enabled, selection)
   if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
   await requireGameStopped(platform)
+  // Reset is the one deliberate path that may restore Auto HDR when Off is chosen, or capture a
+  // fresh per-user transition when HDR is chosen. Existing update and rollback flows leave it alone.
+  // The restore is journaled below with the reset so a failed apply puts the setting back too.
+  const autoHdrRestore = reset && (!plan.hdrMode || plan.hdrMode === 'off') ? await prepareAutoHdrRestore(platform, record) : null
+  const autoHdr = reset && plan.hdrMode && plan.hdrMode !== 'off' ? await prepareAutoHdrOff(platform, gameFolder, options.userSid) : null
   // `record` journals the update while it applies; `updated` replaces it once the new version is in place.
   const updated = structuredClone(record)
   record.status = 'applying'
@@ -848,6 +887,7 @@ export async function updateDeployment(
     let steps: PlanStep[] = plan.steps
     let expectedFiles = plan.expectedFiles
     const notes: string[] = []
+    if (reset && options.backupPath) await copyReadableBackup(platform, gameFolder, options.backupPath, plan.filesToBackup, report)
     // A config the player has keeps whatever its rule says. A missing or unreadable config is only written by a rule that
     // explicitly asks for content; `keep` leaves it alone so Repair remains the operation that restores it. A locked config
     // is a separate failure: it must not be mistaken for a missing file and overwritten while another process holds it.
@@ -861,7 +901,10 @@ export async function updateDeployment(
       expectedFiles = expectedFiles.filter((f) => fileKey(f.path) !== key)
       return Math.max(first, 0)
     }
-    for (const config of plan.recipe.ownedConfigs) {
+    if (reset) {
+      // Reset intentionally rewrites every Lucent-owned config from the tested baseline and current screen.
+      for (const config of plan.recipe.ownedConfigs) notes.push(`${config.path}: rewritten from the tested setup`)
+    } else for (const config of plan.recipe.ownedConfigs) {
       const key = fileKey(config.path)
       const rule = updateRule(config)
       const deployed = Object.keys(record.files).some((path) => fileKey(path) === key)
@@ -982,7 +1025,9 @@ export async function updateDeployment(
       }
       steps = withPreserved
     }
+    if (autoHdrRestore) await applyAutoHdrTransition(platform, record, save, autoHdrRestore, 'restoring Auto HDR')
     await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)) }, steps)
+    if (autoHdr) await applyAutoHdrOff(platform, record, save, autoHdr)
     const files = await stampFiles(platform, record, expectedFiles, report)
     // A config left as it is keeps the file the player has; Lucent only stamps what is there, since a health check reads no more of it.
     for (const path of keptConfigs) {
@@ -1020,7 +1065,9 @@ export async function updateDeployment(
       // The stored first-install choices stay as the player made them, even where this content doesn't offer one; Reset
       // offers them again. The profile moves only where the content renames it (the old two-pass Fidelity is Ultra). Another
       // tier has its own options, so the choices that tier's baseline was written with replace them.
-      ...(tier.id === record.tier ? {
+      ...(reset ? {
+        profile: plan.profile, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode,
+      } : tier.id === record.tier ? {
         // Migration records the old two-pass Fidelity as Ultra even while a legacy recipe still only exposes Fidelity.
         // Keep that stored choice until four-profile content can represent it; the plan itself still uses legacy Fidelity
         // settings through selectProfileForUpdate.
