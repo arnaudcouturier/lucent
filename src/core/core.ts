@@ -732,6 +732,9 @@ export function createCore(platform: Platform): Core {
         screen: state.screen,
         outputHeight: state.screen?.height,
       }
+      // Reset reopens the first-install choices. Register Lucent before requesting game-folder
+      // elevation, just as Install does, so the player's choice survives the admin relaunch.
+      if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
       if (!await prepareWrite({ kind: 'reset', gameFolder: deployment.gameFolder, contentVersion: target.content.id, tier: target.tier.id,
         includeReShade: state.includeReShade, profile: state.selectedProfile, frameGenerationMode: state.frameGenerationMode,
         hdrMode: state.hdrMode, reviewedPaths: [...reviewedPaths], backupPath: state.resetBackupPath ?? '' })) return

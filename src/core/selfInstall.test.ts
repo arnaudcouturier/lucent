@@ -90,6 +90,22 @@ it('keeps working from where it is when the box is unchecked', async () => {
   expect(reopened.getState()).toMatchObject({ error: null, activity: { kind: 'deployment' }, deployment: { gameFolder: ROOT } })
 })
 
+it('can add Lucent to the Start menu when Reset changes the original choice', async () => {
+  const platform = createFakePlatform(fixture())
+  const core = await deploy(platform, false)
+  expect(await exists(platform, INSTALLED_EXE)).toBe(false)
+
+  await core.resetSetup()
+  core.setAddToStartMenu(true)
+  await core.review()
+  await core.deploy()
+
+  expect(core.getState()).toMatchObject({ error: null, selfInstalled: true, activity: { kind: 'done' } })
+  expect(await exists(platform, INSTALLED_EXE)).toBe(true)
+  expect(await platform.readText(SHORTCUT)).toBe(`Shortcut to ${INSTALLED_EXE}`)
+  expect(await entry(platform, 'DisplayName')).toBe('Lucent')
+})
+
 it('shares one data folder between the downloaded copy and the installed copy', async () => {
   const m = fixture()
   const platform = createFakePlatform(m)
