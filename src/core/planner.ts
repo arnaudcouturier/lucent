@@ -2,6 +2,7 @@ import { assertGamePath, DEFAULT_PROFILE, LEGACY_DEFAULT_PROFILE, type ContentFi
 import type { ExistingSetup } from './existingSetup'
 import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profilesForRecipe, recommendedProfile } from './profileValues'
 import { effectiveFrameGenerationSettings } from './frameGeneration'
+import { screenDerivedValue, type ResolvedScreen } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
 /** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
@@ -70,6 +71,8 @@ export interface PlanSelection extends ProfilePlanContext {
   hdrActive?: boolean
   /** On-disk values to carry forward when a content update sees a Custom HDR combination. */
   hdrSettingsOverride?: IniSetting[]
+  /** XIV's screen: the recipe's screen-derived settings (frame cap, peak brightness) are written from it. Omit to keep the content's values. */
+  screen?: Pick<ResolvedScreen, 'frameCap' | 'peakNits'> | null
 }
 
 export function planDeployment(
@@ -100,7 +103,7 @@ export function planDeployment(
   const resolvedProfileSettings = selected ? profileSettingsForHeight(selected, selection.outputHeight ?? 2160) : []
   const profileSettings = resolvedProfileSettings.filter((setting) =>
     !profileOwnedElsewhereKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`))
-  // Profiles apply after the recipe; HDR and frame generation then own their declared settings.
+  // Profiles apply after the recipe; HDR and frame generation then own their declared settings, and the screen has the last word.
   const contentSteps: Step[] = [
     ...recipeSteps,
     ...profileSettings.filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
@@ -108,6 +111,8 @@ export function planDeployment(
     ...(hdrMode === null ? selection.hdrSettingsOverride ?? [] : []).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...(selectedFrameGeneration ? effectiveFrameGenerationSettings(selectedFrameGeneration, enabled && !!selection.hdrOn && hdrActive) : [])
       .filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...(selection.screen ? recipe.screenDerivedSettings ?? [] : []).filter((s) => includedConfig(s.file))
+      .map((s) => ({ kind: 'ini_set' as const, file: s.file, section: s.section, key: s.key, value: screenDerivedValue(s, selection.screen!) })),
   ]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
   const initial = new Set(scan.files.map(fileKey))

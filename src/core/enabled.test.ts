@@ -85,18 +85,6 @@ it('disabling a drifted entry file keeps the drift visible under its disabled na
   expect(await platform.listFiles(GAME)).not.toContain('winmm.dll')
 })
 
-it('changing the performance profile while Disabled keeps the deployment Disabled', async () => {
-  const { platform, core } = await deployed()
-  await core.setEnabled(false)
-  await core.selectProfile('balanced')
-  expect(core.getState().error).toBeNull()
-  expect(core.getState().deployment).toMatchObject({ enabled: false, profile: 'balanced' })
-  expect(core.getState().activity).toMatchObject({ kind: 'deployment', enabled: false, drift: null })
-  expect(await platform.listFiles(GAME)).toContain('winmm.dll.disabled')
-  expect(await platform.listFiles(GAME)).not.toContain('winmm.dll')
-  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Passes = 1/)
-})
-
 it('uninstall from Disabled leaves the folder as it was before Lucent', async () => {
   const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT)))
   const before = await snapshot(platform)

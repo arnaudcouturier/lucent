@@ -5,8 +5,8 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { applyScreenDerivedSettings, assertReviewedTakeovers, backupFolderName, replacedOriginals, changeFrameGenerationMode, changeOwnedIniSettings, changePerformanceProfile, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, frameGenerationModeOnDisk, hdrStateOnDisk, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, scanDeployment, screenDerivedWriteTargets, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord, type JournalEntry, type OwnedIniSideEffect } from './deployment'
-import { disabledName, fileKey, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -14,11 +14,10 @@ export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath } from './paths'
-import { type ContentVersion, type FrameGenerationId, type HdrMode, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
-import { defaultProfileForRecipe, profileOwnedElsewhereSettingKeys, profilesForRecipe, recommendedProfile, profileSettingsForHeight, selectProfileForUpdate } from './profileValues'
+import { type ContentVersion, type FrameGenerationId, type PerformanceProfile, type ProfileId, type Tier } from '../shared/manifest'
+import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
-import { detectCustomProfile, type CustomProfile } from './customProfile'
 import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
 import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
 import { deploymentHotkeys, deploymentKeyCodes, liveKeyBindings, liveKeyCodes, type KeyBinding } from './hotkeys'
@@ -27,8 +26,7 @@ import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount } from './format'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
-import { defaultFrameGenerationMode, effectiveFrameGenerationSettings, frameGenerationOptionsForGpu } from './frameGeneration'
-import { disableAutoHdr, latestAutoHdrDisableIndex, restoreAutoHdr } from './hdr'
+import { defaultFrameGenerationMode, frameGenerationOptionsForGpu } from './frameGeneration'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -93,14 +91,8 @@ export interface State {
   /** The last folder the player picked that turned out not to hold the game; null once a pick succeeds. */
   rejectedFolder: string | null
   graphics: GraphicsState
-  /** XIV's resolved monitor and current frame-cap calculation. */
+  /** XIV's resolved monitor and frame cap, read at Scan and before a deployment or update writes its configs; nothing else uses it. */
   screen: ResolvedScreen | null
-  /** Current mode read from OptiScaler's owned config; null is Custom or no declared option. */
-  frameGenerationMode: FrameGenerationId | null
-  /** Current mode read from OptiScaler's owned config; null is Custom or no declared option. */
-  hdrMode: HdrMode | null
-  /** Whether the last on-disk HDR mode is enabled, even when its combination is Custom. */
-  hdrActive: boolean
   manifest: ManifestState
   xivLauncher: XivLauncherState
   plan: Plan | null
@@ -123,8 +115,6 @@ export interface State {
   selectedProfile: ProfileId | null
   /** The card's first-run recommendation; null for legacy content without GPU recommendations. */
   recommendedProfile: ProfileId | null
-  /** Null unless a user change to one of the selected profile's settings shows the profile as Custom. */
-  customProfile: CustomProfile | null
   busy: boolean
   error: string | null
   notice: string | null
@@ -154,11 +144,8 @@ export interface Core {
   /** Find it: scans again for a missing game folder; if it's still gone, Scan offers the folder picker. */
   findGameFolder(): Promise<void>
   continueSetup(): Promise<void>
+  /** The Profile step's choice; once there is a deployment, its profile stays as it was deployed. */
   selectProfile(profile: ProfileId): Promise<void>
-  selectFrameGenerationMode(mode: FrameGenerationId): Promise<void>
-  selectHdrMode(mode: HdrMode): Promise<void>
-  /** Reads the current mode from OptiScaler.ini, including after returning from the game or another window. */
-  refreshFrameGenerationMode(): Promise<void>
   /** Profile's "Include ReShade"; Scan's list follows it. */
   setIncludeReShade(include: boolean): void
   review(includeReShade?: boolean): Promise<void>
@@ -241,14 +228,6 @@ export function pacedProgress<T extends { phase?: string; progress: number }>(ap
 export function createCore(platform: Platform): Core {
   const nativePlatform = platform
   let playerLocalAppData: string | null = null
-  let playerUserSid: string | null = null
-  let playerUserSidUnavailable = false
-  const readPlayerUserSid = async () => {
-    if (playerUserSid || playerUserSidUnavailable) return playerUserSid
-    try { playerUserSid = await nativePlatform.currentUserSid() }
-    catch { playerUserSidUnavailable = true }
-    return playerUserSid
-  }
   platform = new Proxy(nativePlatform, { get(target, key) {
     if (key === 'envFolder') return (folder: Parameters<Platform['envFolder']>[0]) => folder === 'LocalAppData' && playerLocalAppData
       ? Promise.resolve(playerLocalAppData) : target.envFolder(folder)
@@ -260,7 +239,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, customProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, frameGenerationMode: null, hdrMode: null, hdrActive: false, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -291,23 +270,13 @@ export function createCore(platform: Platform): Core {
     log.write('warning', `Drift in ${fileCount(drift.files.length)}${drift.patch ? ` after game patch ${drift.patch}` : ''}: ${drift.files.slice(0, 5).join(', ')}${more > 0 ? ` and ${more.toLocaleString('en')} more` : ''}`)
   }
   const profileNote = (profiles: PerformanceProfile[] | undefined, id: ProfileId | null | undefined) => id ? `, ${profiles?.find((p) => p.id === id)?.label ?? id} profile` : ''
+  /** What a deployment or an update plans its config values from: the card's frame generation options, and XIV's screen. */
   const frameGenerationSelection = (content: ContentVersion, tier: Tier, mode?: FrameGenerationId | null): PlanSelection => {
     const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : state.deployment?.graphics.name ?? ''
     const options = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], gpuName)
-    const currentHdr = state.deployment?.recipe.hdrOptions?.length
-      ? { hdrMode: state.hdrMode, hdrActive: state.hdrActive } : {}
     return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions: options, frameGenerationMode: mode === undefined
-      ? defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60) : mode, hdrOn: state.screen?.hdrOn ?? false,
-    ...currentHdr }
+      ? defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60) : mode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen }
   }
-  const currentFrameGenerationOptions = (record: DeploymentRecord) => {
-    const content = state.manifest.status === 'ready'
-      ? state.manifest.manifest.versions.find((version) => version.id === record.contentVersion)
-      : undefined
-    return content?.tiers[record.tier]?.frameGenerationOptions ?? record.recipe.frameGenerationOptions ?? []
-  }
-  const currentGpuName = (record: DeploymentRecord) => state.graphics.status === 'found'
-    ? state.graphics.adapter.name : record.graphics.name
   const elapsed = (since: number) => `${Math.max(1, Math.round((performance.now() - since) / 1000))} s`
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
   /** A cached version rolls back without the manifest; any other comes from the published manifest. */
@@ -323,18 +292,6 @@ export function createCore(platform: Platform): Core {
     if (request.kind === 'deploy') return state.plan?.steps.flatMap(stepWritePaths) ?? []
     const record = await readDeployment(platform, request.gameFolder)
     if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
-    if (request.kind === 'profile') {
-      const keys = profileOwnedElsewhereSettingKeys(record.recipe)
-      const profile = profilesForRecipe(record.recipe).find((p) => p.id === request.profile)
-      return profile ? profileSettingsForHeight(profile, state.screen?.height ?? 2160)
-        .filter((s) => Object.keys(record.ownedConfigs).some((p) => fileKey(p) === fileKey(s.file))
-          && !keys.has(`${fileKey(s.file)}|${s.section.toLowerCase()}|${s.key.toLowerCase()}`)).map((s) => s.file) : []
-    }
-    if (request.kind === 'frame-generation') {
-      const option = record.recipe.frameGenerationOptions?.find((candidate) => candidate.id === request.mode)
-      return option ? [...option.settings, ...(option.hdrSettings ?? [])].map((setting) => setting.file) : []
-    }
-    if (request.kind === 'hdr') return record.recipe.hdrOptions?.find((option) => option.id === request.mode)?.settings.map((setting) => setting.file) ?? []
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
     if (request.kind === 'update' || request.kind === 'tier') {
       const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
@@ -354,9 +311,6 @@ export function createCore(platform: Platform): Core {
     if (state.gameFolder.status === 'missing') throw new Error('The game folder is missing. Find it before changing your setup.')
     await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
     const writePaths = [...new Set(targets ?? await writeTargets(request))]
-    // A per-game registry-only HDR change uses the player's existing hive and never needs elevation
-    // merely because the game folder itself is read-only.
-    if (request.kind === 'hdr' && !writePaths.length) return true
     const ready = await access(request, writePaths)
     if (!ready) set({ notice: 'Lucent is reopening with administrator access to continue your change.' })
     return ready
@@ -425,97 +379,6 @@ export function createCore(platform: Platform): Core {
       return null
     }
   }
-  const screenSettings = async (record: DeploymentRecord, screen: ResolvedScreen, selectedMode?: HdrMode) => {
-    const currentHdr = await hdrStateOnDisk(platform, record)
-    const hdrMode = selectedMode === undefined ? currentHdr.mode : selectedMode
-    const hdrActive = selectedMode === undefined ? currentHdr.active : selectedMode !== 'off'
-    const settings = [...(record.recipe.hdrOptions?.find((option) => option.id === hdrMode)?.settings ?? [])]
-    const gpuName = currentGpuName(record)
-    const optionSource = currentFrameGenerationOptions(record)
-    const frameGenerationMode = await frameGenerationModeOnDisk(platform, record, gpuName, optionSource)
-    const frameOption = frameGenerationOptionsForGpu(optionSource, gpuName)
-      .find((option) => option.id === frameGenerationMode)
-    if (frameOption) settings.push(...effectiveFrameGenerationSettings(frameOption, screen.hdrOn && hdrActive && record.enabled))
-    return { hdrMode, hdrActive, frameGenerationMode, settings }
-  }
-  const autoHdrSideEffect = (gameFolder: string, disable: boolean): OwnedIniSideEffect => {
-    let prepared: JournalEntry | null | undefined
-    let executablePath: string | null = null
-    const getExecutablePath = async () => executablePath ??= await platform.resolveGamePath(joinPath(gameFolder, 'game'), 'ffxiv_dx11.exe')
-    return {
-      prepare: async (record) => {
-        if (prepared !== undefined) return prepared
-        const name = await getExecutablePath()
-        const transitions = record.journal.flatMap((entry) => entry.registry?.kind === 'user-gpu-preferences'
-          && fileKey(entry.registry.name) === fileKey(name)
-          ? [{ ...entry.registry, undone: entry.undone }] : [])
-        const ownedIndex = latestAutoHdrDisableIndex(transitions)
-        const latest = ownedIndex === null ? null : transitions[ownedIndex]
-        if (disable) {
-          const userSid = await readPlayerUserSid()
-          if (!userSid) throw new Error('Lucent could not identify the player account for the per-game Auto HDR setting. HDR settings were left unchanged.')
-          const before = await platform.readUserGpuPreferences(userSid, name)
-          const after = disableAutoHdr(before)
-          prepared = before === after ? null : { registry: { kind: 'user-gpu-preferences', userSid, name, before, after }, before: {}, after: {} }
-          return prepared
-        }
-        if (!latest) { prepared = null; return null }
-        const current = await platform.readUserGpuPreferences(latest.userSid, name)
-        const after = restoreAutoHdr(current, latest.before, latest.after)
-        prepared = current === after ? null : {
-          registry: { kind: 'user-gpu-preferences', userSid: latest.userSid, name, before: current, after }, before: {}, after: {},
-        }
-        return prepared
-      },
-      commit: (completed) => {
-        if (disable || !executablePath) return
-        completed.journal = completed.journal.filter((entry) => entry.registry?.kind !== 'user-gpu-preferences'
-          || fileKey(entry.registry.name) !== fileKey(executablePath!))
-      },
-      apply: async () => {
-        const intent = prepared
-        if (!intent?.registry) return
-        const { userSid, name, before, after } = intent.registry
-        await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
-        const current = await platform.readUserGpuPreferences(userSid, name)
-        if (current !== before) throw new Error('Windows per-game graphics preferences changed while Lucent was applying HDR. Try the change again.')
-        await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
-        if (await platform.readUserGpuPreferences(userSid, name) !== before) {
-          throw new Error('Windows per-game graphics preferences changed while Lucent was applying HDR. Try the change again.')
-        }
-        await platform.writeUserGpuPreferences(userSid, name, after)
-        if (await platform.readUserGpuPreferences(userSid, name) !== after) {
-          throw new Error('Windows did not save the per-game Auto HDR preference. Try the change again.')
-        }
-      },
-    }
-  }
-  const syncScreenSettings = async (gameFolder: string): Promise<{ record: DeploymentRecord | null; deferred: boolean }> => {
-    const screen = await refreshScreen()
-    if (!screen) return { record: null, deferred: false }
-    await readPlayerUserSid()
-    const record = await readDeployment(platform, gameFolder)
-    if (record?.status !== 'complete') return { record: null, deferred: false }
-    if (await platform.isGameRunning()) { set({ gameRunning: true }); return { record: null, deferred: true } }
-    const selected = await screenSettings(record, screen)
-    const sideEffect = autoHdrSideEffect(gameFolder, screen.hdrOn && selected.hdrActive && record.enabled)
-    const registryIntent = await sideEffect.prepare(record)
-    const targets = await screenDerivedWriteTargets(platform, gameFolder, screen, selected.settings)
-    if (targets.length && !await prepareWrite({ kind: 'repair', gameFolder }, targets)) return { record: null, deferred: true }
-    const applied = await applyScreenDerivedSettings(platform, gameFolder, screen, selected.settings, sideEffect)
-    const frameGenerationMode = await frameGenerationModeOnDisk(platform, applied.record, currentGpuName(applied.record), currentFrameGenerationOptions(applied.record))
-    const hdrState = await hdrStateOnDisk(platform, applied.record)
-    set({ deployment: applied.record, frameGenerationMode, hdrMode: hdrState.mode, hdrActive: hdrState.active })
-    const capChange = applied.changes.find((change) => change.section.toLowerCase() === 'framerate'
-      && change.key.toLowerCase() === 'frameratelimit')
-    if (capChange) {
-      const previousValue = capChange.previousValue ?? 'unset'
-      log.write('info', `Frame cap: ${screen.frameCap} fps for a ${screen.refreshHz} Hz screen, was ${previousValue}`)
-    }
-    if (registryIntent && targets.length === 0) log.write('info', selected.hdrActive && record.enabled && screen.hdrOn
-      ? 'Disabled Windows Auto HDR for XIV' : 'Restored Windows Auto HDR for XIV')
-    return { record: applied.record, deferred: false }
-  }
   const restoreDeployment = async (folder: GameFolder) => {
     await refreshLaunch(folder)
     let record = await readDeployment(platform, folder.path)
@@ -548,15 +411,7 @@ export function createCore(platform: Platform): Core {
       noteHealth(record, drift)
       if (update) log.write('info', `Content ${update.version} is available`)
       set({ deployment: record, profiles: profilesForRecipe(record.recipe), selectedProfile: record.profile ?? null, recommendedProfile: null, includeReShade: record.includeReShade, activity: deploymentActivity(record, drift, update) })
-      try { await syncScreenSettings(folder.path) }
-      catch (error) {
-        const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
-        set({ error: `Couldn’t update screen-derived settings. ${message(error)}`, recoveryRequired,
-          ...(recoveryRequired ? { deployment: null, activity: { kind: 'scan' as const } } : {}) })
-      }
-      await refreshCustomProfile()
       await refreshKeybinds()
-      await refreshFrameGeneration()
       await pruneCache(record)
       await refreshVersions()
     }
@@ -624,31 +479,6 @@ export function createCore(platform: Platform): Core {
     if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, drift } })
     return drift
   }
-  /** Shows the profile as Custom while the deployed configs hold a changed value of its settings. */
-  const refreshCustomProfile = async () => {
-    if (state.deployment?.status !== 'complete' || state.gameFolder.status !== 'found') return
-    try {
-      const customProfile = await detectCustomProfile(platform, state.deployment, state.screen?.height ?? 2160)
-      if (JSON.stringify(customProfile) !== JSON.stringify(state.customProfile)) set({ customProfile })
-    } catch { /* The last result keeps showing; configs that can't be read are the health check's concern. */ }
-  }
-  const refreshFrameGeneration = async () => {
-    await refreshScreen()
-    const record = state.deployment
-    if (state.activity.kind !== 'deployment' || record?.status !== 'complete') {
-      if (state.frameGenerationMode !== null) set({ frameGenerationMode: null })
-      if (state.hdrMode !== null || state.hdrActive) set({ hdrMode: null, hdrActive: false })
-      return
-    }
-    try {
-      const frameGenerationMode = await frameGenerationModeOnDisk(platform, record, currentGpuName(record), currentFrameGenerationOptions(record))
-      const hdrState = await hdrStateOnDisk(platform, record)
-      if (state.deployment?.gameFolder === record.gameFolder
-        && (state.frameGenerationMode !== frameGenerationMode || state.hdrMode !== hdrState.mode || state.hdrActive !== hdrState.active)) {
-        set({ frameGenerationMode, hdrMode: hdrState.mode, hdrActive: hdrState.active })
-      }
-    } catch { /* The last result stays visible; a failed health/read check reports the config problem separately. */ }
-  }
   /** The keys as OptiScaler.ini and ReShade.ini say now; a file that can't be read leaves that tool on its defaults. */
   const refreshKeybinds = async () => {
     const record = state.deployment
@@ -668,7 +498,7 @@ export function createCore(platform: Platform): Core {
     if (state.recoveryRequired || state.gameFolder.status !== 'found') return
     try {
       const record = await readDeployment(platform, state.gameFolder.path)
-      if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full); await refreshCustomProfile(); await refreshKeybinds() }
+      if (record?.status === 'complete') { set({ deployment: record }); await refreshHealth(record, full); await refreshKeybinds() }
     } catch { /* A failed check leaves the last result showing; the command's own error already explains. */ }
   }
   const refreshVersions = async () => {
@@ -795,13 +625,12 @@ export function createCore(platform: Platform): Core {
         : operation === 'tier' ? `Tier switch to ${tier.label}` : operation === 'rollback' ? 'Rollback' : 'Update'
       log.write('info', `${title}${content.id === deployment.contentVersion ? '' : `: content ${deployment.contentVersion} to ${content.id}`}`)
       const targetGraphics = graphics ?? (state.graphics.status === 'found' && state.graphics.tier?.id === tier.id ? state.graphics.adapter : undefined)
-      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, state.screen?.refreshHz ?? 60, state.screen?.height, state.screen?.hdrOn ?? false)
+      const record = await updateDeployment(platform, deployment.gameFolder, content, tier, manifest.status === 'ready' ? manifest.source : { kind: 'github' }, loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress }))), targetGraphics, await refreshScreen())
       applied = true
       log.write('success', `${title} finished in ${elapsed(since)}`)
       set({ deployment: record, profiles: profilesForRecipe(record.recipe), selectedProfile: record.profile ?? null, recommendedProfile: null, includeReShade: record.includeReShade })
       try { await finishSelection(record) }
       catch (error) { set({ notice: `Content ${record.contentVersion} is applied. Lucent will finish saving your version choice when you reopen it. ${message(error)}` }) }
-      await syncScreenSettings(record.gameFolder)
       await pruneCache(record)
     } catch (error) {
       set(error instanceof DeploymentError
@@ -913,21 +742,19 @@ export function createCore(platform: Platform): Core {
         if (state.gameRunning !== null && state.gameRunning !== gameRunning) log.write('info', gameRunning ? 'XIV started' : 'XIV closed')
         if (state.gameRunning !== gameRunning) set({ gameRunning })
         if (state.launching && (gameRunning || Date.now() > launchingUntil)) set({ launching: false })
-        if (closed) { await refreshCustomProfile(); await refreshKeybinds(); await refreshFrameGeneration() }
+        if (closed) await refreshKeybinds()
       } catch { if (state.gameRunning !== null) set({ gameRunning: null }) }
     },
-    async refreshFrameGenerationMode() { await refreshFrameGeneration() },
     async scan() {
       if (state.busy) return
       scanned = null
       reviewedPaths = null
       notedHealth = null
-      set({ busy: true, error: null, plan: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, customProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
         const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; playerUserSid = context.userSid; playerUserSidUnavailable = context.userSid === null; resume = context.request }
-        else { playerUserSid = null; playerUserSidUnavailable = false }
+        if (context) { playerLocalAppData = context.localAppData; resume = context.request }
         await openLog(!!context)
         await core.refreshGameRunning()
         if (!await recover()) return
@@ -954,7 +781,7 @@ export function createCore(platform: Platform): Core {
         else if (showLostDeployment && !resume) {
           const lost = await lostDeployment(platform)
           if (lost) log.write('warning', `Game folder missing: ${lost.gameFolder}`)
-          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: profilesForRecipe(lost.recipe), selectedProfile: lost.profile ?? null, recommendedProfile: null, customProfile: null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
+          if (lost) set({ gameFolder: { status: 'missing', path: lost.gameFolder }, deployment: lost, profiles: profilesForRecipe(lost.recipe), selectedProfile: lost.profile ?? null, recommendedProfile: null, includeReShade: lost.includeReShade, activity: deploymentActivity(lost, null, null) })
         }
         if (!state.deployment && manifest.status === 'ready' && graphics.status === 'found' && graphics.tier) {
           const content = newestContentForTier()
@@ -974,10 +801,7 @@ export function createCore(platform: Platform): Core {
             set({ selectedProfile: resume.profile, includeReShade: resume.includeReShade, addToStartMenu: false })
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
-          } else if (resume.kind === 'profile') await core.selectProfile(resume.profile)
-          else if (resume.kind === 'frame-generation') await core.selectFrameGenerationMode(resume.mode)
-          else if (resume.kind === 'hdr') await core.selectHdrMode(resume.mode)
-          else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
+          } else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall()
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
@@ -1002,7 +826,7 @@ export function createCore(platform: Platform): Core {
         // Remember the pick, so later Scans (channel changes, restarts, an uninstall) return to this folder.
         if (folder) await writeSettings(platform, { ...await readSettings(platform), gameFolder: folder.path })
         log.write(folder ? 'info' : 'warning', folder ? `Game folder chosen: ${folder.path}` : `Not a game folder: ${picked}`)
-        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, customProfile: null, plan: null, existingSetups: [], folderChanges: null } : { rejectedFolder: picked })
+        set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, plan: null, existingSetups: [], folderChanges: null } : { rejectedFolder: picked })
         if (folder) await restoreDeployment(folder)
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
@@ -1016,88 +840,8 @@ export function createCore(platform: Platform): Core {
       } catch (error) { set({ error: message(error) }) }
     },
     async selectProfile(profile) {
-      if (state.busy || state.recoveryRequired || !state.profiles.some((p) => p.id === profile)) return
-      if (state.activity.kind === 'profile') { set({ selectedProfile: profile, error: null }); return }
-      if (state.activity.kind !== 'deployment' || !state.deployment) return
-      set({ busy: true, error: null })
-      try {
-        if (!await prepareWrite({ kind: 'profile', gameFolder: state.deployment.gameFolder, profile })) return
-        await refreshHealth(state.deployment)
-        const selected = profilesForRecipe(state.deployment.recipe).find((candidate) => candidate.id === profile)
-        const profileKeys = profileOwnedElsewhereSettingKeys(state.deployment.recipe)
-        const settings = selected ? profileSettingsForHeight(selected, state.screen?.height ?? 2160).filter((setting) =>
-          !profileKeys.has(`${fileKey(setting.file)}|${setting.section.toLowerCase()}|${setting.key.toLowerCase()}`)) : []
-        const deployment = await changePerformanceProfile(platform, state.deployment.gameFolder, profile, settings)
-        set({ deployment, selectedProfile: profile })
-        await syncScreenSettings(deployment.gameFolder)
-        log.write('info', `Performance profile: ${state.profiles.find((p) => p.id === profile)?.label ?? profile}`)
-      } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
-      finally {
-        await refreshHealthAfter()
-        set({ busy: false })
-      }
-    },
-    async selectFrameGenerationMode(mode) {
-      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
-      const record = state.deployment
-      const gpuName = currentGpuName(record)
-      const options = frameGenerationOptionsForGpu(currentFrameGenerationOptions(record), gpuName)
-      const option = options.find((candidate) => candidate.id === mode)
-      if (!option || state.frameGenerationMode === mode) return
-      const gameFolder = record.gameFolder
-      set({ busy: true, error: null })
-      try {
-        const screen = await refreshScreen()
-        const hdrOn = !!screen?.hdrOn && state.hdrActive && state.deployment.enabled
-        if (!await prepareWrite({ kind: 'frame-generation', gameFolder, mode }, effectiveFrameGenerationSettings(option, hdrOn).map((setting) => setting.file))) return
-        await refreshHealth(state.deployment)
-        const deployment = await changeFrameGenerationMode(platform, gameFolder, mode, hdrOn, gpuName, currentFrameGenerationOptions(record))
-        set({ deployment, frameGenerationMode: mode })
-        await syncScreenSettings(gameFolder)
-        log.write('info', `Frame generation: ${mode === 'off' ? 'Off' : mode === 'dynamic' ? 'Dynamic' : `${mode.slice(0, -1)}×`}`)
-      } catch (error) {
-        set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired })
-      } finally {
-        await refreshHealthAfter()
-        set({ busy: false })
-      }
-    },
-    async selectHdrMode(mode) {
-      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
-      const record = state.deployment
-      const option = record.recipe.hdrOptions?.find((candidate) => candidate.id === mode)
-      if (!option) return
-      const currentHdr = await hdrStateOnDisk(platform, record)
-      if (currentHdr.mode === mode) {
-        set({ hdrMode: currentHdr.mode, hdrActive: currentHdr.active })
-        return
-      }
-      const gameFolder = record.gameFolder
-      set({ busy: true, error: null })
-      try {
-        const screen = await refreshScreen()
-        if (!screen?.hdrSupported) throw new Error('This monitor does not support HDR.')
-        const selected = await screenSettings(record, screen, mode)
-        const sideEffect = autoHdrSideEffect(gameFolder, screen.hdrOn && mode !== 'off' && record.enabled)
-        const registryIntent = await sideEffect.prepare(record)
-        const targets = await screenDerivedWriteTargets(platform, gameFolder, screen, selected.settings)
-        if (!targets.length && !registryIntent && mode !== 'off') {
-          set({ hdrMode: mode, hdrActive: true })
-          return
-        }
-        if (!await prepareWrite({ kind: 'hdr', gameFolder, mode }, targets)) return
-        await refreshHealth(record)
-        const applied = await applyScreenDerivedSettings(platform, gameFolder, screen, selected.settings, sideEffect)
-        const hdrState = await hdrStateOnDisk(platform, applied.record)
-        const frameGenerationMode = await frameGenerationModeOnDisk(platform, applied.record, currentGpuName(applied.record), currentFrameGenerationOptions(applied.record))
-        set({ deployment: applied.record, hdrMode: hdrState.mode, hdrActive: hdrState.active, frameGenerationMode })
-        log.write('info', `HDR mode: ${option.id === 'off' ? 'Off' : option.id === 'scene-hdr' ? 'Scene HDR' : 'HDR'}`)
-      } catch (error) {
-        set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired })
-      } finally {
-        await refreshHealthAfter()
-        set({ busy: false })
-      }
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'profile' || !state.profiles.some((p) => p.id === profile)) return
+      set({ selectedProfile: profile, error: null })
     },
     async setEnabled(enabled) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
@@ -1107,7 +851,6 @@ export function createCore(platform: Platform): Core {
         await refreshHealth(state.deployment)
         const deployment = await setDeploymentEnabled(platform, state.deployment.gameFolder, enabled)
         set({ deployment })
-        await syncScreenSettings(deployment.gameFolder)
         log.write('info', enabled ? 'Deployment enabled' : 'Deployment disabled')
       } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
       finally {
@@ -1134,8 +877,6 @@ export function createCore(platform: Platform): Core {
           set({ deployment: record })
           log.write('success', 'Repair finished')
         }
-        record = (await syncScreenSettings(record.gameFolder)).record ?? record
-        set({ deployment: record })
       } catch (error) {
         set(error instanceof DeploymentError
           ? { error: error.message, recoveryRequired: error.recoveryRequired }
@@ -1159,7 +900,6 @@ export function createCore(platform: Platform): Core {
         const drift = await refreshHealth(record, true, (done, total) => report({ phase: 'checking', progress: total ? done / total : 1, file: null, done, total }))
         set({ deployment: record })
         await refreshLaunch(gameFolder, false)
-        await refreshCustomProfile()
         await refreshKeybinds()
         const files = Object.keys(record.files).length
         if (!drift) set({ notice: `Scan checked ${files.toLocaleString('en')} ${files === 1 ? 'file' : 'files'}. Everything matches what Lucent deployed.` })
@@ -1262,6 +1002,7 @@ export function createCore(platform: Platform): Core {
         if (!await recover()) { set({ activity: { kind: 'review' } }); return }
         const content = contentForTier()
         if (state.gameFolder.status !== 'found' || state.graphics.status !== 'found' || !state.graphics.tier || state.manifest.status !== 'ready') throw new Error('Finish Scan before installing.')
+        await refreshScreen()
         const selection = frameGenerationSelection(content, state.graphics.tier, state.plan.frameGenerationMode)
         // As the player, before any admin prompt, so the shortcut and the entry are theirs.
         if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
@@ -1273,21 +1014,14 @@ export function createCore(platform: Platform): Core {
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source, acknowledged,
           loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version, selection)
         installed = record
-        let completedRecord = record
-        try { completedRecord = (await syncScreenSettings(record.gameFolder)).record ?? record }
-        catch (error) {
-          if (error instanceof DeploymentError && error.recoveryRequired) throw error
-          set({ notice: `The install finished, but Lucent couldn’t update the screen-derived settings. ${message(error)}` })
-        }
-        installed = completedRecord
         log.write('success', `Install finished in ${elapsed(since)}`)
         let names: Record<number, string> = {}
-        try { names = await platform.getKeyNames(deploymentKeyCodes(completedRecord)) } catch { /* The US labels remain available if Windows lookup fails. */ }
-        const hotkeys = deploymentHotkeys(completedRecord, names)
-        deployedDrift = await checkHealth(platform, completedRecord, state.gameFolder.version)
-        noteHealth(completedRecord, deployedDrift)
-        set({ deployment: completedRecord, activity: { kind: 'done' }, hotkeys })
-        await pruneCache(completedRecord)
+        try { names = await platform.getKeyNames(deploymentKeyCodes(record)) } catch { /* The US labels remain available if Windows lookup fails. */ }
+        const hotkeys = deploymentHotkeys(record, names)
+        deployedDrift = await checkHealth(platform, record, state.gameFolder.version)
+        noteHealth(record, deployedDrift)
+        set({ deployment: record, activity: { kind: 'done' }, hotkeys })
+        await pruneCache(record)
         await refreshVersions()
       } catch (error) {
         const recoveryRequired = state.recoveryRequired || (error instanceof DeploymentError && error.recoveryRequired)
@@ -1331,16 +1065,6 @@ export function createCore(platform: Platform): Core {
         const current = await readDeployment(platform, folder.path)
         if (current && current.status !== 'complete') throw new Error('Finish recovery before launching XIV.')
         if (current) set({ deployment: current })
-        try {
-          const sync = await syncScreenSettings(folder.path)
-          if (sync.deferred) { set({ launching: false }); return }
-        }
-        catch (error) {
-          const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
-          set({ recoveryRequired, error: `Couldn’t update screen-derived settings. ${message(error)}` })
-          throw error
-        }
-        if (state.recoveryRequired) throw new Error('Finish recovery before launching XIV.')
         const runningBeforeStart = await platform.isGameRunning()
         set({ gameRunning: runningBeforeStart })
         if (runningBeforeStart) { set({ launching: false }); return }
@@ -1374,10 +1098,10 @@ export function createCore(platform: Platform): Core {
       } catch (error) {
         const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
         // A half-undone deployment is no longer the one the main screen describes.
-        set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, customProfile: null, plan: null, activity: { kind: 'scan' } } : {}) })
+        set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, plan: null, activity: { kind: 'scan' } } : {}) })
         return
       }
-      set({ busy: false, deployment: null, customProfile: null, keybinds: null, existingSetups: [], folderChanges: null, hotkeys: [], notice: restored
+      set({ busy: false, deployment: null, keybinds: null, existingSetups: [], folderChanges: null, hotkeys: [], notice: restored
         ? `Lucent is uninstalled. It put back the ${restored === 1 ? 'file' : `${restored.toLocaleString('en')} files`} it had replaced, so your game folder is as it was before.`
         : 'Lucent is uninstalled. It removed everything it added; it hadn’t replaced any of your files.' })
       await core.scan()
@@ -1390,8 +1114,7 @@ export function createCore(platform: Platform): Core {
       let confirmed = false
       try {
         const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; playerUserSid = context.userSid; playerUserSidUnavailable = context.userSid === null; confirmed = context.request !== null }
-        else { playerUserSid = null; playerUserSidUnavailable = false }
+        if (context) { playerLocalAppData = context.localAppData; confirmed = context.request !== null }
         await openLog(!!context)
         await core.refreshGameRunning()
       } catch (error) { set({ error: message(error) }) }
@@ -1418,10 +1141,7 @@ export function createCore(platform: Platform): Core {
           // even when the player chooses to keep the deployed game files.
           for await (const record of deploymentRecords(platform)) {
             if (record.status !== 'complete') continue
-            const restoreAutoHdr = autoHdrSideEffect(record.gameFolder, false)
-            if (!await restoreAutoHdr.prepare(record)) continue
-            await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
-            await changeOwnedIniSettings(platform, record.gameFolder, [], undefined, restoreAutoHdr)
+            if (await restoreAutoHdrPreference(platform, record, (gameRunning) => set({ gameRunning }))) log.write('info', 'Restored Windows Auto HDR for XIV')
           }
         }
         // Only now: a failed restore keeps the journal and backups recovery needs.
@@ -1465,7 +1185,7 @@ export function createCore(platform: Platform): Core {
     ...core,
     scan: coordinated(core.scan, false), chooseGameFolder: coordinated(core.chooseGameFolder), findGameFolder: coordinated(core.findGameFolder, false),
     continueSetup: coordinated(core.continueSetup), review: coordinated(core.review), deploy: coordinated(core.deploy),
-    selectProfile: coordinated(core.selectProfile), selectFrameGenerationMode: coordinated(core.selectFrameGenerationMode), selectHdrMode: coordinated(core.selectHdrMode), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
+    selectProfile: coordinated(core.selectProfile), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
     update: coordinated(core.update), applyVersion: coordinated(core.applyVersion), switchTier: coordinated(core.switchTier),
     updateApp: coordinated(core.updateApp), skipAppUpdate: coordinated(core.skipAppUpdate), skipUpdate: coordinated(core.skipUpdate),
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),

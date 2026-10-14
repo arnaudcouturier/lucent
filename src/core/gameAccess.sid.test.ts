@@ -32,3 +32,13 @@ it('does not guess the player SID for a legacy resume without one', async () => 
   })
   await expect(takeElevationResume(platform)).resolves.toMatchObject({ userSid: null, request: { kind: 'repair', gameFolder } })
 })
+it.each(['profile', 'frame-generation', 'hdr'])('rejects a leftover %s request: Lucent no longer changes settings after deployment', async (kind) => {
+  const path = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\resume-123e4567-e89b-12d3-a456-426614174000.json'
+  const platform = createFakePlatform({
+    elevated: true,
+    userSid: playerSid,
+    elevationResumePath: path,
+    files: { [path]: JSON.stringify({ schemaVersion: 2, userSid: playerSid, request: { kind, gameFolder, profile: 'balanced', mode: 'off' } }) },
+  })
+  await expect(takeElevationResume(platform)).rejects.toThrow(/administrator resume request is invalid/)
+})

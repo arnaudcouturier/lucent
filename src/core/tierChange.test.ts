@@ -3,16 +3,21 @@ import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { statusCard } from './statusCard'
+import type { ProfileId } from '../shared/manifest'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
 const RADEON = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus!
 
-async function deployedOnRtx() {
+async function deployedOnRtx(profile?: ProfileId) {
   const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
   const platform = createFakePlatform(m)
   const core = createCore(platform)
   await core.scan()
+  if (profile) {
+    await core.continueSetup()
+    await core.selectProfile(profile)
+  }
   await core.review()
   await core.deploy()
   core.finish()
@@ -42,7 +47,6 @@ it('offers a GPU refresh when another card matches the same tier', async () => {
 
 it('Switch tier deploys the Radeon recipe, keeping Disabled and the player’s ReShade changes', async () => {
   const { platform, core: first, m } = await deployedOnRtx()
-  await first.selectProfile('performance')
   await first.setEnabled(false)
   await platform.writeText(`${GAME}\\ReShade.ini`, '[GENERAL]\nPresetPath=.\\reshade-presets\\Mine.ini\n')
   await platform.writeText(`${GAME}\\reshade-presets\\Mine.ini`, '[Mine]\n')
@@ -65,8 +69,7 @@ it('Switch tier deploys the Radeon recipe, keeping Disabled and the player’s R
 })
 
 it('keeps the profile when the new tier has it', async () => {
-  const { platform, core: first, m } = await deployedOnRtx()
-  await first.selectProfile('performance')
+  const { platform, m } = await deployedOnRtx('performance')
   m.gpus = graphicsCard('NVIDIA GeForce RTX 5090').gpus
   const core = await reopen(platform)
   expect(statusCard(core.getState())).toMatchObject({ kind: 'switch-tier', from: 'RTX 30/40', to: 'RTX 50' })

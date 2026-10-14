@@ -4,6 +4,7 @@ import { createFakePlatform, type FakePlatform, type Machine } from '../platform
 import { FRAME_GENERATION_MANIFEST, PROFILE_ASSETS, fixtureUrl } from '../platform/contentFixture'
 import { graphicsCard, MACHINES, machine } from '../platform/fixtures'
 import { MANIFEST_URL } from './manifest'
+import { dataPaths, readDeployment } from './deployment'
 import type { ContentVersion, HdrOption, IniSetting, Manifest } from '../shared/manifest'
 
 const ROOT = 'D:\\SteamLibrary\\steamapps\\common\\FINAL FANTASY XIV Online'
@@ -11,6 +12,7 @@ const GAME = `${ROOT}\\game`
 const EXE = `${GAME}\\ffxiv_dx11.exe`
 const TEST_SID = 'S-1-5-21-101-202-303-1004'
 const GPU_PREFERENCES = `HKU\\${TEST_SID}\\Software\\Microsoft\\DirectX\\UserGpuPreferences`
+const XIV_CONFIG = 'C:\\Users\\Player\\Documents\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg'
 
 const setting = (section: string, key: string, value: string): IniSetting => ({ file: 'OptiScaler.ini', section, key, value })
 
@@ -76,27 +78,12 @@ async function gpuPreferences(platform: FakePlatform) {
   return platform.readUserGpuPreferences(TEST_SID, EXE)
 }
 
-async function selectOffState() {
-  const { core, platform } = await deployed()
-  await core.selectHdrMode('off')
-  expect(core.getState()).toMatchObject({ error: null, hdrMode: 'off', hdrActive: false })
-  return { core, platform, beforeIni: await config(platform) }
-}
-
-function failFinalRegistryRecordSave(platform: FakePlatform) {
-  const writeText = platform.writeText.bind(platform)
-  let failed = false
-  platform.writeText = async (path, text) => {
-    if (!failed && path.toLowerCase().endsWith('\\record.json')) {
-      const record = JSON.parse(text)
-      if (record.status === 'complete' && record.journal.some((entry: { registry?: unknown }) => entry.registry)) {
-        failed = true
-        throw new Error('Simulated final deployment record save failure.')
-      }
-    }
-    await writeText(path, text)
-  }
-  return () => failed
+/** A deployment that turned Windows Auto HDR off for XIV, as its journal records it; the registry holds the disabled value. */
+async function journalAutoHdrOff(platform: FakePlatform, before: string, after: string) {
+  const record = (await readDeployment(platform, ROOT))!
+  record.journal.push({ registry: { kind: 'user-gpu-preferences', userSid: TEST_SID, name: EXE, before, after }, before: {}, after: {} })
+  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
+  await platform.writeUserGpuPreferences(TEST_SID, EXE, after)
 }
 
 function publishNextContent(m: Machine) {
@@ -105,140 +92,84 @@ function publishNextContent(m: Machine) {
   m.remoteText![MANIFEST_URL] = JSON.stringify({ ...HDR_MANIFEST, versions: [current, newer] })
 }
 
-it('starts in HDR by default even when the HDR control is hidden on an SDR monitor', async () => {
-  const { core, platform } = await deployed(MACHINES.screen60Sdr)
+it('deploys the default HDR settings on an SDR monitor, with the frame cap and peak brightness it reports', async () => {
+  const { platform } = await deployed(MACHINES.screen60Sdr)
 
-  expect(core.getState()).toMatchObject({ hdrMode: 'hdr', hdrActive: true, screen: { hdrSupported: false, hdrOn: false } })
   expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*true/i)
   expect(await config(platform)).toMatch(/PeakNits\s*=\s*1100/i)
   expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*59\.000000/i)
 })
 
-it('keeps an explicit Off selection through a content update', async () => {
-  const { core, platform, m } = await deployed()
-  await core.selectHdrMode('off')
-  expect(core.getState()).toMatchObject({ error: null, hdrMode: 'off', hdrActive: false })
-  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*false/i)
-  expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*fsr2/i)
+it('deploys XeFG frame generation in place of FSR when Windows HDR is on', async () => {
+  const { platform: hdr } = await deployed()
+  expect(await config(hdr)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
+
+  const [monitor] = MACHINES.screen144Hdr.monitors!
+  const { platform: sdr } = await deployed({ ...MACHINES.screen144Hdr, monitors: [{ ...monitor, hdrOn: false }] })
+  expect(await config(sdr)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*fsr2/i)
+})
+
+it('keeps a player’s HDR Off through a content update', async () => {
+  const { platform, m } = await deployed()
+  const off = (text: string) => text.replace(/FfxivHDR\s*=\s*true/i, 'FfxivHDR=false').replace(/Mode\s*=\s*xeFG2/i, 'Mode=fsr2')
+  await platform.writeText(`${GAME}\\OptiScaler.ini`, off(await config(platform)))
 
   publishNextContent(m)
   const update = await reopen(platform)
   await update.update()
 
-  expect(update.getState()).toMatchObject({ error: null, hdrMode: 'off', hdrActive: false, frameGenerationMode: '2x' })
-  expect(update.getState().deployment?.contentVersion).toBe('2026.10.20')
+  expect(update.getState()).toMatchObject({ error: null, deployment: { contentVersion: '2026.10.20' } })
   expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*false/i)
   expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*fsr2/i)
 })
 
-it('reads an unmatched, unlit on-disk HDR combination as Custom and preserves it through an update', async () => {
+it('keeps an unmatched, unlit on-disk HDR combination through an update', async () => {
   const { platform, m } = await deployed()
   const before = await config(platform)
   await platform.writeText(`${GAME}\\OptiScaler.ini`, before.replace(/FfxivHDR=true/i, 'FfxivHDR=false').replace(/Mode=0/i, 'Mode=77'))
 
+  publishNextContent(m)
   const custom = await reopen(platform)
-  expect(custom.getState()).toMatchObject({ error: null, hdrMode: null, hdrActive: false })
+  expect(custom.getState().error).toBeNull()
   expect(await config(platform)).toMatch(/FfxivHDR=false/i)
   expect(await config(platform)).toMatch(/Mode=77/i)
 
-  publishNextContent(m)
   await custom.update()
 
-  expect(custom.getState()).toMatchObject({ error: null, hdrMode: null, hdrActive: false, frameGenerationMode: '2x' })
+  expect(custom.getState()).toMatchObject({ error: null, deployment: { contentVersion: '2026.10.20', frameGenerationMode: '2x' } })
   expect(await config(platform)).toMatch(/FfxivHDR=false/i)
   expect(await config(platform)).toMatch(/Mode=77/i)
 })
 
-it('switches FSR frame generation to XeFG as Windows HDR changes across Launch and reopen', async () => {
-  const { core, platform, m } = await deployed()
-  const originalProfile = core.getState().selectedProfile
-  expect(core.getState()).toMatchObject({ hdrMode: 'hdr', hdrActive: true, frameGenerationMode: '2x' })
-  expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
+it('leaves the per-game Auto HDR value alone when it deploys, reopens and launches', async () => {
+  const original = 'GpuPreference=2;AutoHDREnable=1;'
+  const { core, platform } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  expect(await gpuPreferences(platform)).toBe(original)
 
-  m.monitors![0] = { ...m.monitors![0], hdrOn: false, refreshHz: 120, peakNits: 800 }
-  const xivConfig = 'C:\\Users\\Player\\Documents\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg'
-  await platform.writeText(xivConfig, (await platform.readText(xivConfig)).replace(/Refreshrate 144/i, 'Refreshrate 120'))
   await core.launchGame()
-  expect(core.getState()).toMatchObject({ error: null, hdrMode: 'hdr', hdrActive: true, frameGenerationMode: '2x', selectedProfile: originalProfile })
-  expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*fsr2/i)
-  expect(await config(platform)).toMatch(/PeakNits\s*=\s*800/i)
-  expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*116\.000000/i)
-
   const reopened = await reopen(platform)
-  expect(reopened.getState()).toMatchObject({ error: null, hdrMode: 'hdr', hdrActive: true, frameGenerationMode: '2x', selectedProfile: originalProfile })
-  m.monitors![0] = { ...m.monitors![0], hdrOn: true }
   await reopened.launchGame()
 
-  expect(reopened.getState()).toMatchObject({ error: null, hdrMode: 'hdr', hdrActive: true, frameGenerationMode: '2x', selectedProfile: originalProfile })
-  expect(await config(platform)).toMatch(/FrameGeneration\]\r?\nMode\s*=\s*xeFG2/i)
-})
-
-it('turns off only per-game Auto HDR, preserves GPU preference, and restores the exact value on Off', async () => {
-  const original = 'GpuPreference=2;AutoHDREnable=1;'
-  const { core, platform } = await deployed(MACHINES.screen144Hdr, {
-    registry: { [GPU_PREFERENCES]: { [EXE]: original } },
-  })
-
-  expect(await gpuPreferences(platform)).toBe('GpuPreference=2;AutoHDREnable=0;')
-  await core.selectHdrMode('off')
-
-  expect(core.getState()).toMatchObject({ error: null, hdrMode: 'off', hdrActive: false })
+  expect(reopened.getState().error).toBeNull()
   expect(await gpuPreferences(platform)).toBe(original)
-})
-
-it('removes Lucent’s Auto HDR value on Off when no per-game value existed before', async () => {
-  const { core, platform } = await deployed()
-
-  expect(await gpuPreferences(platform)).toBe('AutoHDREnable=2096;')
-  await core.selectHdrMode('off')
-
-  expect(await gpuPreferences(platform)).toBeNull()
-})
-
-it('restores Auto HDR while Disabled and applies it again when re-enabled', async () => {
-  const original = 'GpuPreference=2;AutoHDREnable=1;'
-  const { core, platform } = await deployed(MACHINES.screen144Hdr, {
-    registry: { [GPU_PREFERENCES]: { [EXE]: original } },
-  })
-
-  await core.setEnabled(false)
-  expect(core.getState()).toMatchObject({ error: null, deployment: { enabled: false } })
-  expect(await gpuPreferences(platform)).toBe(original)
-
-  await core.setEnabled(true)
-  expect(core.getState()).toMatchObject({ error: null, deployment: { enabled: true } })
-  expect(await gpuPreferences(platform)).toBe('GpuPreference=2;AutoHDREnable=0;')
-})
-
-it('leaves an external Auto HDR change alone after Off and reopen', async () => {
-  const { core, platform } = await deployed()
-  await core.selectHdrMode('off')
-  await platform.writeUserGpuPreferences(TEST_SID, EXE, 'AutoHDREnable=2096;')
-
-  const reopened = await reopen(platform)
-
-  expect(reopened.getState()).toMatchObject({ error: null, hdrMode: 'off', hdrActive: false })
-  expect(await gpuPreferences(platform)).toBe('AutoHDREnable=2096;')
 })
 
 it('restores the per-game Auto HDR value on deployment uninstall', async () => {
   const original = 'GpuPreference=2;AutoHDREnable=1;'
-  const { core, platform } = await deployed(MACHINES.screen144Hdr, {
-    registry: { [GPU_PREFERENCES]: { [EXE]: original } },
-  })
-  expect(await gpuPreferences(platform)).toBe('GpuPreference=2;AutoHDREnable=0;')
+  const { platform } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  await journalAutoHdrOff(platform, original, 'GpuPreference=2;AutoHDREnable=0;')
+  const reopened = await reopen(platform)
 
-  await core.uninstall()
+  await reopened.uninstall()
 
-  expect(core.getState()).toMatchObject({ error: null, deployment: null, activity: { kind: 'scan' } })
+  expect(reopened.getState()).toMatchObject({ error: null, deployment: null, activity: { kind: 'scan' } })
   expect(await gpuPreferences(platform)).toBe(original)
 })
 
 it('restores Auto HDR when Lucent is uninstalled from Settings → Apps and the deployment is kept', async () => {
   const original = 'GpuPreference=2;AutoHDREnable=1;'
-  const { platform, m } = await deployed(MACHINES.screen144Hdr, {
-    registry: { [GPU_PREFERENCES]: { [EXE]: original } },
-  })
+  const { platform, m } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  await journalAutoHdrOff(platform, original, 'GpuPreference=2;AutoHDREnable=0;')
   m.exePath = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\Lucent.exe'
   m.headlessMode = 'uninstall'
   const appUninstall = createCore(platform)
@@ -251,53 +182,31 @@ it('restores Auto HDR when Lucent is uninstalled from Settings → Apps and the 
   expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
 })
 
-it('rolls back HDR config, frame-generation variant and registry if the registry write fails after the INI write', async () => {
-  const { core, platform, beforeIni } = await selectOffState()
-  const writePreferences = platform.writeUserGpuPreferences.bind(platform)
-  platform.writeUserGpuPreferences = async () => { throw new Error('Simulated registry write failure.') }
+it('leaves a per-game Auto HDR value the player changed since alone when Lucent is uninstalled from Settings → Apps', async () => {
+  const original = 'GpuPreference=2;AutoHDREnable=1;'
+  const { platform, m } = await deployed(MACHINES.screen144Hdr, { registry: { [GPU_PREFERENCES]: { [EXE]: original } } })
+  await journalAutoHdrOff(platform, original, 'GpuPreference=2;AutoHDREnable=0;')
+  await platform.writeUserGpuPreferences(TEST_SID, EXE, 'GpuPreference=2;AutoHDREnable=1;NewFlag=7;')
+  m.exePath = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\Lucent.exe'
+  m.headlessMode = 'uninstall'
+  const appUninstall = createCore(platform)
+  await appUninstall.openAppUninstall()
 
-  await core.selectHdrMode('hdr')
+  await appUninstall.uninstallApp(false)
 
-  expect(core.getState()).toMatchObject({ recoveryRequired: false, hdrMode: 'off', hdrActive: false })
-  expect(core.getState().error).toMatch(/Simulated registry write failure/)
-  expect(await config(platform)).toBe(beforeIni)
-  expect(await gpuPreferences(platform)).toBeNull()
-  platform.writeUserGpuPreferences = writePreferences
+  expect(appUninstall.getState()).toMatchObject({ error: null, appUninstalled: true })
+  expect(await gpuPreferences(platform)).toBe('GpuPreference=2;AutoHDREnable=1;NewFlag=7;')
 })
 
-it('rolls back HDR config, frame-generation variant and registry after the final record save fails', async () => {
-  const { core, platform, beforeIni } = await selectOffState()
-  const failedFinalSave = failFinalRegistryRecordSave(platform)
+it('does not rewrite the HDR keys when Windows HDR or the refresh rate changes later', async () => {
+  const { platform, m } = await deployed()
+  const deployedConfig = await config(platform)
+  m.monitors![0] = { ...m.monitors![0], hdrOn: false, refreshHz: 120, peakNits: 800 }
+  await platform.writeText(XIV_CONFIG, (await platform.readText(XIV_CONFIG)).replace(/Refreshrate 144/i, 'Refreshrate 120'))
 
-  await core.selectHdrMode('hdr')
+  const reopened = await reopen(platform)
+  await reopened.launchGame()
 
-  expect(failedFinalSave()).toBe(true)
-  expect(core.getState()).toMatchObject({ recoveryRequired: false, hdrMode: 'off', hdrActive: false })
-  expect(core.getState().error).toMatch(/Simulated final deployment record save failure/)
-  expect(await config(platform)).toBe(beforeIni)
-  expect(await gpuPreferences(platform)).toBeNull()
-})
-
-it('recovers the whole HDR change on the next Scan when its first undo attempt fails', async () => {
-  const { core, platform, beforeIni } = await selectOffState()
-  const failedFinalSave = failFinalRegistryRecordSave(platform)
-  const writePreferences = platform.writeUserGpuPreferences.bind(platform)
-  let preferenceWrites = 0
-  platform.writeUserGpuPreferences = async (userSid, executablePath, value) => {
-    preferenceWrites++
-    if (preferenceWrites === 2) throw new Error('Simulated registry restore failure.')
-    await writePreferences(userSid, executablePath, value)
-  }
-
-  await core.selectHdrMode('hdr')
-
-  expect(failedFinalSave()).toBe(true)
-  expect(preferenceWrites).toBe(2)
-  expect(core.getState().recoveryRequired).toBe(true)
-  platform.writeUserGpuPreferences = writePreferences
-  const recovered = await reopen(platform)
-
-  expect(recovered.getState()).toMatchObject({ error: null, recoveryRequired: false, hdrMode: 'off', hdrActive: false })
-  expect(await config(platform)).toBe(beforeIni)
-  expect(await gpuPreferences(platform)).toBeNull()
+  expect(reopened.getState()).toMatchObject({ error: null, activity: { kind: 'deployment', drift: null } })
+  expect(await config(platform)).toBe(deployedConfig)
 })

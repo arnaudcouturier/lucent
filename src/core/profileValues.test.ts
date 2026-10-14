@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { profileOwnedElsewhereSettingKeys, profileResolutionSettingsForHeight, profileSettingsForHeight, profileSummaryForHeight, recommendedProfile, resolutionColumnForHeight, selectProfileForUpdate } from './profileValues'
+import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profileSummaryForHeight, recommendedProfile, resolutionColumnForHeight, selectProfileForUpdate } from './profileValues'
 import type { PerformanceProfile, TierRecipe } from '../shared/manifest'
 
 const profile = (id: PerformanceProfile['id'], value: PerformanceProfile['settings'][number]['value'], gpuNamePatterns?: string[]): PerformanceProfile => ({
@@ -29,32 +29,11 @@ it('resolves only the selected profile setting column for XIV output height', ()
   expect(profileSettingsForHeight(balanced, 2160)[0].value).toBe('1')
 })
 
-it('resolves a content-authored Home summary using the same output-height column', () => {
+it('resolves a content-authored summary using the same output-height column', () => {
   const balanced = { ...v2Profiles.find(({ id }) => id === 'balanced')!, summary: { '1080p': 'Quality upscaling', '1440p': 'Balanced upscaling', '4k+': 'Balanced upscaling' } }
   expect(profileSummaryForHeight(balanced, 1080)).toBe('Quality upscaling')
   expect(profileSummaryForHeight(balanced, 1440)).toBe('Balanced upscaling')
   expect(profileSummaryForHeight(balanced, 2160)).toBe('Balanced upscaling')
-})
-
-it('updates resolution values only while the disk still matches Lucent’s last-written baseline', () => {
-  const balanced = v2Profiles.find(({ id }) => id === 'balanced')!
-  const disk = new Map([['QualityOverrides|ForcePerfQuality', '2'], ['QualityOverrides|PlayerTuned', '9']])
-  const baseline = new Map(disk)
-  const read = (values: Map<string, string>) => (_file: string, section: string, key: string) => values.get(`${section}|${key}`)
-  const at1440 = profileResolutionSettingsForHeight(balanced, 1440, read(disk), read(baseline))
-  expect(at1440).toEqual([{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: '1' }])
-
-  // Lucent writes that managed value and advances its baseline; the later player edit then remains protected.
-  disk.set('QualityOverrides|ForcePerfQuality', '1')
-  baseline.set('QualityOverrides|ForcePerfQuality', '1')
-  disk.set('QualityOverrides|ForcePerfQuality', '0')
-  expect(profileResolutionSettingsForHeight(balanced, 2160, read(disk), read(baseline))).toEqual([])
-})
-
-it('does not change settings owned by another feature during resolution sync', () => {
-  const balanced = v2Profiles.find(({ id }) => id === 'balanced')!
-  const read = () => () => '2'
-  expect(profileResolutionSettingsForHeight(balanced, 1440, read(), read(), (_file, _section, key) => key === 'ForcePerfQuality')).toEqual([])
 })
 
 it('keeps frame-generation, screen-derived, and HDR keys out of profile ownership', () => {

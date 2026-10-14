@@ -229,7 +229,8 @@ describe('Uninstall', () => {
     const core = await deployed(platform)
     const carried = `${GAME}\\reshade-presets\\ReShadePreset.ini`
     await platform.writeText(carried, '[Root preset]\nTweaked=1\n')
-    await core.selectProfile('performance')
+    await core.setEnabled(false)
+    await core.setEnabled(true)
     await platform.writeText(`${GAME}\\winmm.dll`, 'Patched by the game')
     await core.repair()
     expect(core.getState()).toMatchObject({ error: null, activity: { drift: null } })

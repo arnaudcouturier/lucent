@@ -2,7 +2,7 @@
 // The check runs when the game launches; the repair runs once it closes and its files are no longer locked.
 import type { HeadlessMode, Platform } from './platform'
 import { checkHealth } from './health'
-import { applyScreenDerivedSettings, failureReason, readDeployment, repairDeployment, screenDerivedWriteTargets, type DeploymentRecord } from './deployment'
+import { failureReason, readDeployment, repairDeployment } from './deployment'
 import { checkPickedFolder } from './gameFolder'
 import { loadManifest } from './manifest'
 import { joinPath } from './paths'
@@ -11,7 +11,6 @@ import { xivLauncherGamePath } from './xivLauncher'
 import { withOperationLock } from './operation'
 import { fileCount } from './format'
 import { openActivityLog, type LogLevel } from './log'
-import { readResolvedScreen } from './screen'
 
 export type HeadlessOutcome =
   | { kind: 'no-deployment' | 'healthy' | 'repaired' }
@@ -72,7 +71,6 @@ async function check(platform: Platform): Promise<HeadlessOutcome> {
   const launched = await launchedDeployment(platform)
   if (!launched) return { kind: 'no-deployment' }
   const drift = await checkHealth(platform, launched.record, launched.folder.version)
-  if (!drift) await syncScreenSettings(platform, launched.folder.path, launched.record)
   return drift ? { kind: 'drift', files: drift.files } : { kind: 'healthy' }
 }
 
@@ -80,39 +78,17 @@ async function check(platform: Platform): Promise<HeadlessOutcome> {
 async function repair(platform: Platform): Promise<HeadlessOutcome> {
   const launched = await launchedDeployment(platform)
   if (!launched) return { kind: 'no-deployment' }
-  const { folder } = launched
-  const drift = await checkHealth(platform, launched.record, folder.version, true)
-  if (!drift) {
-    await syncScreenSettings(platform, folder.path, launched.record)
-    return { kind: 'healthy' }
-  }
+  const { folder, record } = launched
+  const drift = await checkHealth(platform, record, folder.version, true)
+  if (!drift) return { kind: 'healthy' }
   await requireGameStopped(platform)
   if (!await platform.isDirectoryWritable(joinPath(folder.path, 'game'), drift.files)) {
     return { kind: 'failed', reason: 'Windows needs administrator access to change the game folder.' }
   }
   const manifest = await loadManifest(platform)
-  const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === launched.record.contentVersion) ?? null : null
+  const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
   const repaired = await repairDeployment(platform, folder.path, drift.files, content, manifest.status === 'ready' ? manifest.source : null, () => {})
-  const screenUpdated = await syncScreenSettings(platform, folder.path, repaired)
   // The full check after the repair also saves the patched game version as healthy.
-  const remaining = await checkHealth(platform, screenUpdated, folder.version, true)
+  const remaining = await checkHealth(platform, repaired, folder.version, true)
   return remaining ? { kind: 'failed', reason: 'Some files still differ after the repair.' } : { kind: 'repaired' }
-}
-
-/** Headless check only writes before XIV has started; headless repair runs after it closes. */
-async function syncScreenSettings(platform: Platform, gameFolder: string, record: DeploymentRecord): Promise<DeploymentRecord> {
-  const screen = await readResolvedScreen(platform).catch(() => null)
-  if (!screen || await platform.isGameRunning()) return record
-  const targets = await screenDerivedWriteTargets(platform, gameFolder, screen)
-  if (targets.length && !await platform.isDirectoryWritable(joinPath(gameFolder, 'game'), targets)) {
-    throw new Error('Windows needs administrator access to change the game folder.')
-  }
-  const applied = await applyScreenDerivedSettings(platform, gameFolder, screen)
-  if (applied.changes.length) {
-    const log = openActivityLog(platform)
-    const previousValue = applied.changes[0].previousValue ?? 'unset'
-    log.write('info', `Frame cap: ${screen.frameCap} fps for a ${screen.refreshHz} Hz screen, was ${previousValue}`)
-    await log.flushed()
-  }
-  return applied.record
 }

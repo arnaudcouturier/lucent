@@ -48,7 +48,6 @@ async function publish(m: Machine, id: string, text: string, previous: ContentVe
 
 it('updates twice, then rolls back without downloads, pins the target, skips the version left behind, and announces a newer version', async () => {
   const { platform, core: first, m } = await deployed()
-  await first.selectProfile('balanced')
   await first.setEnabled(false)
   const second = await publish(m, '2026.11.02', 'Second OptiScaler')
   await (await reopen(platform)).update()
@@ -64,7 +63,7 @@ it('updates twice, then rolls back without downloads, pins the target, skips the
   expect(platform.downloads.length).toBe(downloads)
   expect(await platform.readText(`${GAME}\\winmm.dll.disabled`)).toBe('OptiScaler')
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toContain('PresetPath=reshade-presets/Example.ini')
-  expect(core.getState()).toMatchObject({ selectedProfile: 'balanced', deployment: { contentVersion: '2026.10.12', enabled: false } })
+  expect(core.getState()).toMatchObject({ selectedProfile: 'fidelity', deployment: { contentVersion: '2026.10.12', enabled: false } })
   expect(core.getState().versions.find((v) => v.current)).toMatchObject({ id: '2026.10.12', pinned: true })
   expect((await readSettings(platform)).skippedContent).toContain('2026.11.20')
   expect(statusCard(core.getState())).toMatchObject({ kind: 'update', version: '2026.12.01' })

@@ -10,7 +10,7 @@ export function frameGenerationSettingKeys(options: FrameGenerationOption[]): Se
     `${file.replace(/\\/g, '/').toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`)))
 }
 
-/** Returns one matching manifest variant per mode, in the Home control's fixed order. */
+/** Returns one matching manifest variant per mode, in the fixed Off, 2×–6×, Dynamic order. */
 export function frameGenerationOptionsForGpu(options: FrameGenerationOption[], gpuName: string): FrameGenerationOption[] {
   const matching = options.filter((option) => !option.gpuNamePatterns?.length
     || option.gpuNamePatterns.some((pattern) => new RegExp(pattern, 'i').test(gpuName)))
@@ -53,7 +53,7 @@ export function matchFrameGenerationMode(
   return matches.size === 1 ? [...matches][0] : null
 }
 
-/** The one-line Home explanation for the cap, multiplier or Dynamic mode. */
+/** The one-line explanation of the cap, multiplier or Dynamic mode. */
 export function frameGenerationDescription(mode: FrameGenerationId, frameCap: number, refreshHz: number): string {
   const cap = format(frameCap)
   const refresh = format(refreshHz)

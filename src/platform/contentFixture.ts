@@ -114,7 +114,7 @@ const FRAME_GENERATION_PROFILES = [
   },
 ] satisfies PerformanceProfile[]
 
-/** Illustrative mode variants for the Home gallery; these inert values are never published. */
+/** Illustrative frame generation variants for tests and the gallery; these inert values are never published. */
 export const FRAME_GENERATION_MANIFEST: Manifest = {
   ...PROFILE_MANIFEST,
   versions: PROFILE_MANIFEST.versions.map((content) => ({
@@ -137,7 +137,7 @@ export const HDR_OPTIONS: HdrOption[] = [
 ]
 const peakNitsSetting = { file: 'OptiScaler.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' as const }
 
-/** Gallery-only HDR choices; these inert values are never published. */
+/** Inert HDR choices for tests of the manifest schema; these values are never published. */
 export const HDR_FRAME_GENERATION_MANIFEST: Manifest = {
   ...FRAME_GENERATION_MANIFEST,
   versions: FRAME_GENERATION_MANIFEST.versions.map((content) => ({

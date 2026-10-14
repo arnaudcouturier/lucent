@@ -41,7 +41,6 @@ it('announces a newer Stable version with its changelog and the size of the file
 
 it('updates by downloading only the changed file, removing the dropped one, and keeping Disabled and the profile', async () => {
   const { platform, core: first, m } = await deployed()
-  await first.selectProfile('balanced')
   await first.setEnabled(false)
   publishNext(m)
   const core = await reopen(platform)
@@ -53,8 +52,8 @@ it('updates by downloading only the changed file, removing the dropped one, and 
   const files = await platform.listFiles(GAME)
   expect(files).not.toContain('winmm.dll')
   expect(files).not.toContain('reshade-shaders\\shaders\\example.fx')
-  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Passes = 1/)
-  expect(core.getState()).toMatchObject({ selectedProfile: 'balanced', deployment: { contentVersion: '2026.11.02', enabled: false, profile: 'balanced' } })
+  expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toMatch(/Passes = 2/)
+  expect(core.getState()).toMatchObject({ selectedProfile: 'fidelity', deployment: { contentVersion: '2026.11.02', enabled: false, profile: 'fidelity' } })
   expect(core.getState().activity).toMatchObject({ kind: 'deployment', enabled: false, drift: null, update: null })
   expect(statusCard(core.getState())).toEqual({ kind: 'disabled' })
   // The previous version's files stay cached for a rollback.

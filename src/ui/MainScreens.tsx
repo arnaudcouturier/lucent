@@ -5,7 +5,6 @@ import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, 
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard } from './DeploymentScreens'
-import { ProfileSelector } from './Profiles'
 import { KeysScreen } from './KeysScreen'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
@@ -13,14 +12,10 @@ import { Credits } from './CreditsScreen'
 import { Path } from './Path'
 import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
-import { defaultFrameGenerationMode, frameGenerationDescription, frameGenerationOptionsForGpu } from '../core/frameGeneration'
-import { replacedOriginals, resolvedPeakNits } from '../core/deployment'
+import { replacedOriginals } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
-import type { FrameGenerationId, HdrMode } from '../shared/manifest'
 import type { State } from '../core/core'
-import { SegmentedControl } from './SegmentedControl'
-import { observeWindowFocus } from './shell'
 
 export function MainScreen() {
   const { section } = useSection()
@@ -29,90 +24,11 @@ export function MainScreen() {
 }
 
 function HomeScreen() {
-  const [state, core] = useCore()
-  useEffect(() => {
-    void core.refreshFrameGenerationMode()
-    const stopWindowFocus = observeWindowFocus((focused) => {
-      if (focused) void core.refreshFrameGenerationMode()
-    })
-    const onFocus = () => void core.refreshFrameGenerationMode()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      stopWindowFocus()
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [core])
   return <Screen title="Your game" sub="What Lucent manages in your game folder." actions={<LaunchButton />}>
     <StatusCard />
     <FlowError />
-    <ProfileSelector />
-    <FrameGenerationSelector state={state} core={core} />
-    <HdrSelector state={state} core={core} />
     <EnabledRow />
   </Screen>
-}
-
-function HdrSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
-  const record = state.deployment
-  const screen = state.screen
-  const options = record?.recipe.hdrOptions
-  if (!record || state.activity.kind !== 'deployment' || !screen?.hdrSupported || !options?.length) return null
-  const mode = state.hdrMode
-  const labels: Record<HdrMode, string> = { off: 'Off', hdr: 'HDR', 'scene-hdr': 'Scene HDR' }
-  const peakNits = resolvedPeakNits(screen.peakNits)
-  const nvidia = record.graphics.vendorId === 0x10de || /NVIDIA/i.test(record.graphics.name)
-  const details = [
-    mode === null ? 'Custom HDR settings.' : '',
-    screen.hdrOn
-      ? peakNits.toLocaleString('en') + ' nits peak · Use Windows HDR Calibration if it looks wrong.'
-      : 'Turn on HDR in Windows to use it (Win+Alt+B).',
-    nvidia ? 'Turn off RTX HDR in the NVIDIA app.' : '',
-  ].filter(Boolean).join(' ')
-  return <section className="frame-generation-section hdr-section card" aria-label="HDR">
-    <div className="frame-generation-heading">
-      <div><h2>HDR</h2><p>{details}</p></div>
-      {mode === null && <span className="frame-generation-custom">Custom</span>}
-    </div>
-    <SegmentedControl
-      ariaLabel="HDR mode"
-      options={options.map((option) => ({ id: option.id, label: labels[option.id], experimental: option.experimental }))}
-      value={mode}
-      disabled={!gameActionsAvailable(state)}
-      onChange={(id) => void core.selectHdrMode(id as HdrMode)}
-    />
-    {mode === null && <p className="frame-generation-note">Select a mode to replace these custom settings.</p>}
-  </section>
-}
-function FrameGenerationSelector({ state, core }: { state: State; core: ReturnType<typeof useCore>[1] }) {
-  const record = state.deployment
-  if (!record || state.activity.kind !== 'deployment') return null
-  const content = state.manifest.status === 'ready'
-    ? state.manifest.manifest.versions.find((version) => version.id === record.contentVersion)
-    : undefined
-  const optionSource = content?.tiers[record.tier]?.frameGenerationOptions ?? record.recipe.frameGenerationOptions ?? []
-  const gpuName = state.graphics.status === 'found' ? state.graphics.adapter.name : record.graphics.name
-  const options = frameGenerationOptionsForGpu(optionSource, gpuName)
-  if (!options.length) return null
-  const labels: Record<FrameGenerationId, string> = { off: 'Off', '2x': '2×', '3x': '3×', '4x': '4×', '5x': '5×', '6x': '6×', dynamic: 'Dynamic' }
-  const mode = state.frameGenerationMode
-  const fallback = defaultFrameGenerationMode(options, state.screen?.refreshHz ?? 60)
-  const description = mode
-    ? state.screen ? frameGenerationDescription(mode, state.screen.frameCap, state.screen.refreshHz) : `Currently ${labels[mode]}`
-    : `Custom frame generation settings${state.screen ? ` · ${state.screen.frameCap} fps cap on your ${state.screen.refreshHz} Hz screen` : ''}`
-  return <section className="frame-generation-section card" aria-label="Frame generation">
-    <div className="frame-generation-heading">
-      <div><h2>Frame generation</h2><p>{description}</p></div>
-      {mode === null && <span className="frame-generation-custom">Custom</span>}
-    </div>
-    <SegmentedControl
-      ariaLabel="Frame generation mode"
-      options={options.map((option) => ({ id: option.id, label: labels[option.id], experimental: option.experimental }))}
-      value={mode ?? null}
-      disabled={!gameActionsAvailable(state)}
-      onChange={(id) => void core.selectFrameGenerationMode(id as FrameGenerationId)}
-    />
-    {mode === null && fallback && <p className="frame-generation-note">Select a mode to replace these custom settings.</p>}
-  </section>
 }
 
 /** Starts XIV the way the player does. While XIV runs it says so instead. */

@@ -1,3 +1,4 @@
+import type { ScreenDerivedSetting } from '../shared/manifest'
 import type { MonitorInfo, Platform } from './platform'
 
 /** A Windows display attached to the desktop. Bounds use desktop coordinates, including negative values. */
@@ -70,6 +71,19 @@ export function parseXivDisplaySettings(text: string | null): XivDisplaySettings
 export function frameCapForRefresh(refreshHz: number): number | null {
   if (!Number.isFinite(refreshHz) || refreshHz <= 0) return null
   return Math.floor(refreshHz - refreshHz * refreshHz / 3600)
+}
+
+/** The monitor's reported peak brightness, kept inside the range OptiScaler's HDR accepts; 1,100 when it reports none. */
+export function resolvedPeakNits(peakNits: number | null): number {
+  const measured = peakNits !== null && Number.isFinite(peakNits) ? peakNits : 1100
+  return Math.min(4000, Math.max(400, Math.round(measured)))
+}
+
+/** The value a screen-derived setting takes on this screen, as the config file writes it. */
+export function screenDerivedValue(setting: ScreenDerivedSetting, screen: Pick<ResolvedScreen, 'frameCap' | 'peakNits'>): string {
+  if (setting.value === 'frameCap') return screen.frameCap.toFixed(6)
+  if (setting.value === 'peakNits') return String(resolvedPeakNits(screen.peakNits))
+  throw new Error(`Unknown screen-derived setting: ${setting.value}`)
 }
 
 /** Resolves MainAdapter first, then XIV's stored window origin, then the Windows primary monitor. */

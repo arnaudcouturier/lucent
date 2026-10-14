@@ -4,7 +4,6 @@ import {
 } from '../shared/manifest'
 import type { IniSetting } from '../shared/manifest'
 import { frameGenerationSettingKeys } from './frameGeneration'
-import { sameIniValue } from './ini'
 
 /** Resolution columns use XIV's output height; 3440×1440 ultrawide therefore uses 1440p. */
 export function resolutionColumnForHeight(outputHeight: number): ResolutionColumn {
@@ -17,30 +16,13 @@ export function profileSettingsForHeight(profile: PerformanceProfile, outputHeig
   return profile.settings.map((setting) => ({ ...setting, value: profileValueAt(setting, column) }))
 }
 
-/** Uses a concise content-authored Home line when available, otherwise the full profile description. */
+/** Uses a concise content-authored line when available, otherwise the full profile description. */
 export function profileSummaryForHeight(profile: PerformanceProfile, outputHeight: number): string {
   if (profile.summary === undefined) return profile.description
   return typeof profile.summary === 'string' ? profile.summary : profile.summary[resolutionColumnForHeight(outputHeight)]
 }
 
-/** Settings that may follow a new monitor resolution without taking back a value the player changed. */
-export function profileResolutionSettingsForHeight(
-  profile: PerformanceProfile, outputHeight: number,
-  currentValue: (file: string, section: string, key: string) => string | undefined,
-  lastWrittenValue: (file: string, section: string, key: string) => string | undefined,
-  isOwnedByAnotherFeature: (file: string, section: string, key: string) => boolean = () => false,
-): IniSetting[] {
-  return profile.settings.flatMap((setting) => {
-    if (typeof setting.value === 'string' || isOwnedByAnotherFeature(setting.file, setting.section, setting.key)) return []
-    const { file, section, key } = setting
-    const current = currentValue(file, section, key)
-    const baseline = lastWrittenValue(file, section, key)
-    if (current === undefined || baseline === undefined || !sameIniValue(current, baseline)) return []
-    return [{ file, section, key, value: profileValueAt(setting, resolutionColumnForHeight(outputHeight)) }]
-  })
-}
-
-/** Setting keys whose values are managed by a screen-derived or frame-generation choice. */
+/** Setting keys whose values come from a screen-derived, frame-generation or HDR choice rather than the profile. */
 export function profileOwnedElsewhereSettingKeys(recipe: TierRecipe): Set<string> {
   return new Set([
     ...frameGenerationSettingKeys(recipe.frameGenerationOptions ?? []),

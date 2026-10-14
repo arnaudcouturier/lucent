@@ -1,36 +1,14 @@
 import { useCore } from './useCore'
 import { Screen } from './Window'
 import { FlowError } from './DeploymentScreens'
-import { gameActionsAvailable } from '../core/gameAccess'
-import { customProfileSummary } from '../core/customProfile'
 import { setupChoices } from '../core/core'
-import { profileSummaryForHeight } from '../core/profileValues'
-import { SegmentedControl } from './SegmentedControl'
 
-/** The Profile screen's title already names the choice, so only the main screen shows a legend. */
-export function ProfileSelector({ legend = true }: { legend?: boolean }) {
+/** The Profile step's rows. The screen's title already names the choice, so there is no legend. */
+function ProfileSelector() {
   const [state, core] = useCore()
-  const { profiles, selectedProfile, customProfile, busy, recoveryRequired, activity } = state
-  const custom = activity.kind === 'deployment' ? customProfile : null
+  const { profiles, selectedProfile, busy, recoveryRequired, activity } = state
   if (!profiles.length) return null
-  if (activity.kind === 'deployment') {
-    const selected = profiles.find((profile) => profile.id === selectedProfile)
-    const line = custom
-      ? `Custom · based on ${profiles.find((profile) => profile.id === custom.basedOn)?.label ?? custom.basedOn}: ${customProfileSummary(custom.changed)}`
-      : selected ? profileSummaryForHeight(selected, state.screen?.height ?? 2160) : ''
-    return <div className="profile-selector profile-home-selector">
-      <SegmentedControl
-        value={custom ? null : selectedProfile}
-        options={profiles.map(({ id, label }) => ({ id, label }))}
-        disabled={!gameActionsAvailable(state)}
-        ariaLabel="Performance profile"
-        onChange={(id) => { const profile = profiles.find((item) => item.id === id); if (profile) void core.selectProfile(profile.id) }}
-      />
-      <p className={`profile-home-description ${custom ? 'is-custom' : ''}`}>{line}</p>
-    </div>
-  }
-  return <fieldset className="profile-selector" disabled={busy || recoveryRequired} aria-label={legend ? undefined : 'Performance profile'}>
-    {legend && <legend>Performance profile</legend>}
+  return <fieldset className="profile-selector" disabled={busy || recoveryRequired} aria-label="Performance profile">
     <div className="card profile-rows">{profiles.map((profile) => {
       const selected = selectedProfile === profile.id
       const recommended = activity.kind === 'profile' && state.recommendedProfile === profile.id
@@ -53,8 +31,8 @@ export function ProfileScreen() {
   const [state, core] = useCore()
   const { busy, includeReShade, addToStartMenu } = state
   const choices = setupChoices(state)
-  return <Screen title={choices.profiles ? 'Performance profile' : 'Options'} sub={choices.profiles ? 'Choose how to balance detail and frame rate. You can change this later.' : 'Choose what Lucent sets up.'}>
-    <ProfileSelector legend={false} />
+  return <Screen title={choices.profiles ? 'Performance profile' : 'Options'} sub={choices.profiles ? 'Choose how to balance detail and frame rate.' : 'Choose what Lucent sets up.'}>
+    <ProfileSelector />
     {(choices.reShade || choices.startMenu) && <div className="card option-list">
       {choices.reShade && <label className="option-row">
         <input type="checkbox" checked={includeReShade} disabled={busy} onChange={(e) => core.setIncludeReShade(e.target.checked)} />

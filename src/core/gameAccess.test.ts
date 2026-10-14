@@ -14,7 +14,7 @@ const snapshot = async (platform: FakePlatform) => Object.fromEntries(await Prom
   (await platform.listFiles(GAME)).map(async (path) => [path, await platform.readText(`${GAME}\\${path}`)]),
 ))
 
-it('observes XIV starting and closing without rescanning or losing the selected profile', async () => {
+it('observes XIV starting and closing without rescanning', async () => {
   const m = fixture()
   const core = createCore(createFakePlatform(m))
   await core.scan()
@@ -27,11 +27,9 @@ it('observes XIV starting and closing without rescanning or losing the selected 
   m.gameRunning = false
   await core.refreshGameRunning()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
-  await core.selectProfile('balanced')
-  expect(core.getState().selectedProfile).toBe('balanced')
 })
 
-it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
+it.each(['deploy', 'repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('refuses %s while XIV runs without changing the game folder or downloading', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -49,8 +47,7 @@ it.each(['deploy', 'repair', 'profile', 'enabled', 'uninstall', 'update', 'switc
   const before = await snapshot(platform)
   const downloads = [...platform.downloads]
   m.gameRunning = true
-  if (command === 'profile') await core.selectProfile('balanced')
-  else if (command === 'enabled') await core.setEnabled(false)
+  if (command === 'enabled') await core.setEnabled(false)
   else await core[command]()
   expect(core.getState().error).toMatch(/Close XIV/)
   expect(await snapshot(platform)).toEqual(before)
@@ -129,7 +126,7 @@ it('keeps the reviewed takeover paths through elevation instead of authorizing f
   expect(platform.downloads).toHaveLength(0)
 })
 
-it.each(['repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
+it.each(['repair', 'enabled', 'uninstall', 'update', 'switchTier'] as const)('continues %s after elevation without repeating the administrator request', async (command) => {
   const m = fixture()
   const platform = createFakePlatform(m)
   let core = createCore(platform)
@@ -143,16 +140,14 @@ it.each(['repair', 'profile', 'enabled', 'uninstall', 'update', 'switchTier'] as
   core = createCore(platform)
   await core.scan()
   m.readOnlyDirectories = [GAME]
-  if (command === 'profile') await core.selectProfile('balanced')
-  else if (command === 'enabled') await core.setEnabled(false)
+  if (command === 'enabled') await core.setEnabled(false)
   else await core[command]()
   expect(platform.elevationRequests).toHaveLength(1)
   m.elevated = true
   const resumed = createCore(platform)
   await resumed.scan()
   expect(resumed.getState().error).toBeNull()
-  if (command === 'profile') expect(resumed.getState().selectedProfile).toBe('balanced')
-  else if (command === 'enabled') expect(resumed.getState().deployment?.enabled).toBe(false)
+  if (command === 'enabled') expect(resumed.getState().deployment?.enabled).toBe(false)
   else if (command === 'update') expect(resumed.getState().deployment?.contentVersion).toBe('2026.11.02')
   else if (command === 'switchTier') expect(resumed.getState().deployment?.tier).toBe('radeon')
   else if (command === 'repair') expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
@@ -228,7 +223,7 @@ it('keeps changes unavailable when the process check fails and recovers on the n
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
 })
 
-it('asks for elevation when the profile config is protected even though the game root is writable', async () => {
+it('asks for elevation when one of the files it writes is protected even though the game root is writable', async () => {
   const m = fixture()
   const platform = createFakePlatform(m)
   const core = createCore(platform)
@@ -236,14 +231,14 @@ it('asks for elevation when the profile config is protected even though the game
   await core.review()
   await core.deploy()
   core.finish()
-  m.readOnlyDirectories = [`${GAME}\\OptiScaler.ini`]
-  await core.selectProfile('balanced')
+  m.readOnlyDirectories = [`${GAME}\\winmm.dll`]
+  await core.setEnabled(false)
   expect(platform.elevationRequests).toHaveLength(1)
   expect(core.getState().recoveryRequired).toBe(false)
   m.elevated = true
   const resumed = createCore(platform)
   await resumed.scan()
-  expect(resumed.getState().selectedProfile).toBe('balanced')
+  expect(resumed.getState()).toMatchObject({ error: null, deployment: { enabled: false } })
 })
 
 it('keeps the player’s deployment data when UAC uses another administrator account', async () => {

@@ -22,6 +22,28 @@ it('keeps screen-derived settings only for configs included in the selected plan
   expect(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan).recipe.screenDerivedSettings).toEqual(content.tiers['rtx-30-40'].screenDerivedSettings)
 })
 
+it('writes the screen-derived settings last, from the screen it is given, and only for included configs', () => {
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
+    ...TEST_CONTENT.tiers['rtx-30-40'],
+    screenDerivedSettings: [
+      { file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: 'frameCap' as const },
+      { file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' as const },
+    ],
+  } } }
+  const scan = { files: [], ownedFiles: [], cachedFiles: [] }
+  const iniSteps = (plan: ReturnType<typeof planDeployment>) => plan.steps.filter((step) => step.kind === 'ini_set')
+  const screen = { frameCap: 224, peakNits: 1000 }
+
+  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan, null, true, { screen })).slice(-2)).toEqual([
+    { kind: 'ini_set', file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: '224.000000' },
+    { kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1000' },
+  ])
+  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan, null, true, { screen: { frameCap: 138, peakNits: null } })).slice(-1))
+    .toEqual([{ kind: 'ini_set', file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: '1100' }])
+  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], false, scan, null, true, { screen }))).toEqual([])
+  expect(iniSteps(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan))).toEqual([])
+})
+
 it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profile settings', () => {
   const base = TEST_CONTENT.tiers['rtx-30-40']
   const frameGenerationOptions: FrameGenerationOption[] = [{

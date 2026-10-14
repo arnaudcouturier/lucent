@@ -40,7 +40,6 @@ it.each([
   const platform = createFakePlatform(deploymentMachine(manifest, assets))
   const before = await snapshot(platform)
   const core = await deployed(platform)
-  if (core.getState().profiles.length) await core.selectProfile('performance')
   await core.uninstall()
   expect(await snapshot(platform)).toEqual(before)
   expect(core.getState()).toMatchObject({ error: null, busy: false, recoveryRequired: false, deployment: null, activity: { kind: 'scan' }, gameFolder: { status: 'found', path: ROOT } })

@@ -98,7 +98,7 @@ it('a second deployed window cannot uninstall while another window is repairing'
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
 })
 
-it('an idle window reloads the current journal before changing a profile after another window updates', async () => {
+it('an idle window reloads the current journal before switching Enabled after another window updates', async () => {
   const m = fixture()
   const platform = createFakePlatform(m)
   const first = createCore(platform)
@@ -115,10 +115,10 @@ it('an idle window reloads the current journal before changing a profile after a
   const updated = (await readDeployment(platform, ROOT))!
   expect(updated.contentVersion).toBe(next.id)
   platform.setModifiedTime(`${GAME}\\winmm.dll`, 1000)
-  await second.selectProfile('balanced')
+  await second.setEnabled(false)
   const changed = (await readDeployment(platform, ROOT))!
   expect(second.getState().error).toBeNull()
-  expect(changed).toMatchObject({ contentVersion: next.id, profile: 'balanced' })
+  expect(changed).toMatchObject({ contentVersion: next.id, enabled: false })
   expect(changed.journal.slice(0, updated.journal.length)).toEqual(updated.journal)
 })
 
@@ -133,7 +133,7 @@ it('an old idle window cannot resurrect a deployment that another window uninsta
   await second.scan()
   await first.uninstall()
   const uninstalled = await readDeployment(platform, ROOT)
-  await second.selectProfile('balanced')
+  await second.setEnabled(false)
   expect(second.getState()).toMatchObject({ activity: { kind: 'scan' }, deployment: null })
   expect(second.getState().error).toMatch(/changed in another Lucent window.*Run Scan again/)
   expect(await readDeployment(platform, ROOT)).toEqual(uninstalled)

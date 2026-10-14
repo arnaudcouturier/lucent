@@ -51,7 +51,7 @@ export interface IniSetting extends IniKey { value: string }
 export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
 export type HdrMode = 'off' | 'hdr' | 'scene-hdr'
 export interface HdrOption { id: HdrMode; experimental?: boolean; settings: IniSetting[] }
-/** Also the order of the Home frame-generation choices. */
+/** Also the order of the frame-generation choices. */
 export const FRAME_GENERATION_IDS = ['off', '2x', '3x', '4x', '5x', '6x', 'dynamic'] as const
 export type FrameGenerationId = typeof FRAME_GENERATION_IDS[number]
 export interface FrameGenerationOption {
@@ -86,7 +86,7 @@ export interface PerformanceProfile {
   id: ProfileId
   label: string
   description: string
-  /** Optional short Home line; resolution-aware content can describe the resolved upscaling mode. */
+  /** Optional short line; resolution-aware content can describe the resolved upscaling mode. */
   summary?: ResolutionProfileValue
   /** Case-insensitive regular expressions matched against the graphics card's name. */
   gpuNamePatterns?: string[]
