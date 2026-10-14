@@ -10,7 +10,19 @@ npm run prepare:candidate -- --source-root C:\LucentContent --output C:\LucentCo
 
 Both paths must be absolute. The output directory must not already exist. The helper copies the base OptiScaler INI and AMD/Intel files into new overlay folders, rewrites only that copied INI, and calls the publisher's offline dry-run validator. It writes the full `publish.json`, candidate `manifest.json`, source hashes and hash-named files beneath the output directory. It does not change the original `tested` sources or repository manifest, contact GitHub, launch Lucent/XIV, or write game/registry state. Use the resulting manifest and `files` folder only with a debug development build after the root task is ready.
 
-The content date is unused in the local manifest and public Beta content releases were checked before preparation. The candidate requires app `0.2.0-beta.1`. The app and content still need the maintainer's publication review and live QA before any release or tag.
+The content date is unused in the local manifest and public Beta content releases were checked before preparation. The candidate requires app `0.2.0-beta.1`, which is the version in `package.json` for the app release that carries the first-install choices, Reset and config update rules.
+
+## Config update rules
+
+The generated manifest gives every owned config an explicit rule for updates from the current content:
+
+| Config | Rule | Rationale |
+| --- | --- | --- |
+| `OptiScaler.ini` | `addMissingKeys` | Add frame-generation, HDR, screen-derived and profile keys that are absent while preserving the player's existing values and choices. Fresh deployment and **Reset setup…** write the complete tested baseline, including the new Delete hotkey. |
+| `ReShade.ini` | `keep` | No ReShade layout change; preserve the active preset, keybinds and overlay choices. |
+| `ReshadeEffectShaderToggler.ini` | `keep` | No Shader Toggler layout change; preserve effect groups and keybinds. |
+
+These rules are copied into `publish.json` by the candidate helper and validated by the offline publisher. The content changelog therefore does not claim that an update silently changes a player's existing OptiScaler values; use **Reset setup…** when the tested baseline and first-install choices should be applied again.
 
 ## Candidate choices
 
@@ -34,10 +46,28 @@ The Intel license allows redistribution of the unmodified binary with its notice
 
 ## 4090 QA before release
 
-- Start from the existing 2026.10.14 Balanced RTX 4090 deployment. In Lucent, change to the old two-pass Fidelity profile, then update through Lucent using the candidate. Before changing the profile again, verify that migration selected Ultra automatically and that its two-pass settings are active. Then select the new one-pass Fidelity profile and verify its settings. Do not edit the deployment record directly.
-- On the 240 Hz display in XIV's exclusive-fullscreen mode, launch from Lucent and verify `[Framerate] FramerateLimit=224.000000`. Change XIV's selected exclusive refresh rate to 144 Hz in XIV's display settings (changing only desktop Hz may leave exclusive XIV at 240 Hz), close the game, and relaunch it from Lucent; verify `138.000000`. Restore 240 Hz in XIV and relaunch to verify `224.000000` again. Do not edit `FFXIV.cfg` directly.
-- For each RTX 40 2×–6× option, verify the OptiScaler overlay multiplier and complete ten minutes of play without a crash. Verify Dynamic separately; omit it from public content if it fails.
-- Test HDR and Scene HDR with Windows HDR on, the SDR fallback with Windows HDR off, Auto HDR disable/restore around launches, the HDR frame-generation choice, and screen-derived peak nits.
-- Test each profile at the active resolution; confirm OptiScaler's last sizing response matches the profile table and Neural Rendering runs.
-- Confirm Delete toggles Neural Rendering, Page Up/Page Down continue XIV zoom, and End toggles frame generation.
-- Re-open Lucent and verify settings persist. Use Lucent deployment history to roll back to 2026.10.14 and verify that candidate content is removed and the prior content is restored. Uninstall is a separate operation that restores the pre-first-install baseline; it does not restore 2026.10.14.
+Run every case from a fresh deployment or from **Settings → Reset setup…** with the game closed. A Reset is required when changing the profile, frame-generation mode or HDR mode; do not switch these through Home or by editing the deployment record. Verify the selected values in the generated `OptiScaler.ini`, then launch XIV and confirm Neural Rendering is active.
+
+- RTX 40 frame generation: **Off**, **2×**, **3×**, **4×**, **5×**, **6×** and **Dynamic**. For each choice, verify the overlay mode and complete ten minutes of play without a crash.
+- HDR: **Off**, **HDR** and **Scene HDR** with Windows HDR on where supported; repeat the frame-generation choices that are offered with each HDR selection, and verify the screen-derived peak nits. Repeat with Windows HDR off to verify the SDR fallback.
+- Profiles: **Ultra**, **Fidelity**, **Balanced** and **Performance** at the active resolution. Confirm the profile's Neural Rendering pass count, quality column and compression/residual settings.
+- Screen-derived values: verify the frame cap and Dynamic targets for the active display, then use Reset after a display refresh-rate change to confirm the new baseline is computed from that display. Existing configs retain their values during ordinary update/launch.
+- Hotkeys: confirm Delete toggles Neural Rendering, Page Up/Page Down remain XIV zoom, and End toggles frame generation.
+- Re-open Lucent and verify the selected choices persist. Use deployment history to roll back to 2026.10.14 and verify that candidate content is removed and the prior content is restored. Uninstall remains a separate operation that restores the pre-first-deployment baseline.
+
+The maintainer attests that the complete matrix above was run on the RTX 4090 before this candidate handoff and passed. This repository preparation records that attestation; it does not claim agent-observed gameplay results.
+
+## Offline and live publication commands
+
+From the repository root, prepare the candidate and run the offline validation (the helper also invokes the same dry-run publisher):
+
+```powershell
+npm run prepare:candidate -- --source-root C:\LucentContent --output C:\LucentContent\candidate-2026.10.15
+npm run publish:content -- C:\LucentContent\candidate-2026.10.15\publish.json --dry-run --manifest manifest.json
+```
+
+After app `0.2.0-beta.1` is released and the attested QA is accepted, publish the immutable content version with the same input. The live command requires `gh auth login`; it is intentionally not run by this preparation:
+
+```powershell
+npm run publish:content -- C:\LucentContent\candidate-2026.10.15\publish.json --manifest manifest.json
+```

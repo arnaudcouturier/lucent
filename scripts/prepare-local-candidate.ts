@@ -3,7 +3,7 @@ import { copyFile, lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { publishContent, type PublishInput } from './publish-content'
-import type { Component, FrameGenerationOption, HdrOption, IniSetting, PerformanceProfile, ScreenDerivedSetting } from '../src/shared/manifest'
+import type { Component, ConfigUpdateRule, FrameGenerationOption, HdrOption, IniSetting, PerformanceProfile, ScreenDerivedSetting } from '../src/shared/manifest'
 
 interface VendorComponent extends Component {
   key: string
@@ -15,6 +15,12 @@ interface CandidateRecipe {
   id: string
   channel: 'stable' | 'beta'
   minAppVersion: string
+  configUpdateRules: Array<{
+    path: string
+    when?: 'reshade'
+    update: ConfigUpdateRule
+    rationale: string
+  }>
   changelog: string[]
   vendorComponents: VendorComponent[]
   hotkeys: Record<string, string>
@@ -122,6 +128,7 @@ async function prepareCandidate(sourceRoot: string, outputRoot: string): Promise
   tier.frameGenerationOptions = buildFrameGenerationOptions(recipe.frameGeneration)
   tier.screenDerivedSettings = recipe.screenDerivedSettings
   tier.hdrOptions = recipe.hdrOptions
+  applyConfigUpdateRules(tier.ownedConfigs, recipe.configUpdateRules)
   tier.sources.push({ folder: configOverlay, component: input.components.find((component) => component.name === 'OptiScaler')!.name })
 
   validateCandidateSettings(tier.frameGenerationOptions)
@@ -156,6 +163,23 @@ async function prepareCandidate(sourceRoot: string, outputRoot: string): Promise
   }, null, 2)}\n`, 'utf8')
   console.log(`Prepared local dry-run candidate ${recipe.id} at ${outputRoot}`)
   console.log(`Review ${join(outputRoot, 'manifest.json')}, ${publishInputPath}, ${join(outputRoot, 'source-provenance.json')} and ${join(outputRoot, 'files')}.`)
+}
+
+function applyConfigUpdateRules(configs: PublishInput['tiers'][string]['ownedConfigs'], rules: CandidateRecipe['configUpdateRules']): void {
+  const ruleFor = (config: typeof configs[number]) => rules.find((rule) =>
+    rule.path.replace(/\\/g, '/').toLowerCase() === config.path.replace(/\\/g, '/').toLowerCase()
+      && rule.when === config.when)
+  for (const config of configs) {
+    const rule = ruleFor(config)
+    if (!rule) throw new Error(`Candidate is missing an update rule for ${config.path}${config.when ? ` (${config.when})` : ''}.`)
+    config.update = rule.update
+  }
+  for (const rule of rules) {
+    if (!configs.some((config) => rule.path.replace(/\\/g, '/').toLowerCase() === config.path.replace(/\\/g, '/').toLowerCase()
+      && rule.when === config.when)) {
+      throw new Error(`Candidate update rule does not match an owned config: ${rule.path}${rule.when ? ` (${rule.when})` : ''}.`)
+    }
+  }
 }
 
 function buildFrameGenerationOptions(spec: CandidateRecipe['frameGeneration']): FrameGenerationOption[] {

@@ -3,6 +3,25 @@
   "id": "2026.10.15",
   "channel": "beta",
   "minAppVersion": "0.2.0-beta.1",
+  "configUpdateRules": [
+    {
+      "path": "OptiScaler.ini",
+      "update": "addMissingKeys",
+      "rationale": "The candidate adds frame-generation, HDR, screen-derived and profile keys. Add only keys absent from an existing OptiScaler.ini so player tuning and existing choices remain intact; a fresh deployment or Reset writes the tested baseline and new Delete hotkey."
+    },
+    {
+      "path": "ReShade.ini",
+      "when": "reshade",
+      "update": "keep",
+      "rationale": "The candidate does not change ReShade's layout. Keep the player's active preset, keybinds and other overlay choices."
+    },
+    {
+      "path": "ReshadeEffectShaderToggler.ini",
+      "when": "reshade",
+      "update": "keep",
+      "rationale": "The candidate does not change Shader Toggler settings. Keep the player's effect groups and keybinds."
+    }
+  ],
   "changelog": [
     "Neural Rendering now toggles with Delete; Page Up and Page Down remain XIV zoom keys, and End toggles frame generation.",
     "Frame generation choices now include tested RTX 40 multipliers, an experimental RTX 40 Dynamic mode pending 4090 verification, and experimental RTX 30 2× FSR frame generation.",
