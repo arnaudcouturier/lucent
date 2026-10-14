@@ -12809,13 +12809,6 @@
                 }
               ]
             }
-          ],
-          "resetKeys": [
-            {
-              "file": "OptiScaler.ini",
-              "section": "Log",
-              "key": "LogToFile"
-            }
           ]
         }
       }
@@ -15179,12 +15172,3296 @@
                 }
               ]
             }
+          ]
+        }
+      }
+    },
+    {
+      "id": "2026.10.15",
+      "channel": "beta",
+      "minAppVersion": "0.2.0-beta.1",
+      "changelog": [
+        "Neural Rendering now toggles with Delete; Page Up and Page Down remain XIV zoom keys, and End toggles frame generation.",
+        "Frame generation choices now include tested RTX 40 multipliers, an experimental RTX 40 Dynamic mode, and experimental RTX 30 2× FSR frame generation.",
+        "Fresh deployment, Reset and baseline rewrites compute the frame cap, Dynamic targets and HDR peak brightness from the active display.",
+        "Choose Off, HDR or experimental Scene HDR on supported displays; the selected HDR mode chooses the RTX 30 provider, with a Windows HDR activation warning when the display is not enabled.",
+        "Four resolution-aware Neural Rendering profiles now cover Ultra, Fidelity, Balanced and Performance.",
+        "RTX 30 multi-frame-generation unlocks are deferred pending Intel XeSS license clearance."
+      ],
+      "components": [
+        {
+          "name": "OptiScaler",
+          "upstream": "SirenBrink",
+          "licence": "GPL-3.0",
+          "source": "https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV/tree/v5.0"
+        },
+        {
+          "name": "OptiScaler winmm.dll",
+          "upstream": "SirenBrink",
+          "licence": "GPL-3.0",
+          "source": "https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV/tree/36c53a15f43544eb7fc32569e137a54eb0ac7639"
+        },
+        {
+          "name": "Neural Rendering compatibility runtime",
+          "upstream": "ShortFuse",
+          "licence": "MIT",
+          "source": "https://github.com/clshortfuse/renodx"
+        },
+        {
+          "name": "ReShade",
+          "upstream": "crosire",
+          "licence": "BSD-3-Clause",
+          "source": "https://github.com/crosire/reshade/tree/v6.8.0"
+        },
+        {
+          "name": "ReShade Effect Shader Toggler",
+          "upstream": "4lex4nder",
+          "licence": "MIT",
+          "source": "https://github.com/4lex4nder/ReshadeEffectShaderToggler"
+        },
+        {
+          "name": "Alive NEXT",
+          "upstream": "Alive NEXT authors",
+          "licence": "MIT",
+          "source": "https://www.xivmodarchive.com/modid/104473"
+        },
+        {
+          "name": "ipsuShade",
+          "upstream": "ipsusu",
+          "licence": "ipsuShade License 1.0",
+          "source": "https://github.com/ipsusu/ipsuShade"
+        },
+        {
+          "name": "AMD FidelityFX Frame Generation",
+          "upstream": "AMD",
+          "licence": "FidelityFX Software License",
+          "source": "https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/tree/v2.3.0"
+        },
+        {
+          "name": "Intel XeSS Frame Generation",
+          "upstream": "Intel",
+          "licence": "Intel Simplified Software License (October 2022)",
+          "source": "https://github.com/intel/xess/tree/v3.0.2"
+        }
+      ],
+      "files": [
+        {
+          "sha256": "005c372adba8c5d52a32f5e64199bb4925cfb26ebe698a64fa01f0c54ab70a42",
+          "size": 57,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "02297beedd285e822d3a64f314cf00faf378dcec0edc47ff0c4dd71b3a8c2f18",
+          "size": 40085776,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "026b9f4f9ea848f2f5aa0e2024fc6b1c885f57eea5d41078124dba14f873b86b",
+          "size": 437376,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "05a6bcd76fad07d2f2f0b652c7b833d1c1ea599fceb5976f90441c0f5eb7ef17",
+          "size": 71,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "073ebfb49af16844f84a8179254df91a54be64ce709e89d084cd7c3c8340e246",
+          "size": 24067,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "07c108f1229738dd43c8bb1b491839436a1c325a4945101592740084cb6fc2af",
+          "size": 28045,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "07d286c306f8117321422affd9e6388c12d0fb4be1c7fc689d9e899324feeb24",
+          "size": 3351064,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "07ee6a3072eefe4d1922b76e337c909501db3356618e48db1948ffcf922007ca",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0844817686ff9e91c02e85ca2e141f7bc7a70f3953db48956f54e16ad7945f8b",
+          "size": 4927,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0b781553f3fe3ba74ab6dad8d759f3c2a07da67371a7a1355e6ba738864b53b0",
+          "size": 190174,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0b99059084f938cb0286f290d6dee969303d0b31adf351978c72725939caae89",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0bbb4128258348202248bdcb4d157faeb727a5469368a0308b50bc570c4e63e5",
+          "size": 67737,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0c3edea3716a21aeb5750a4e7b4b6b2449fcbce1d9dfffcdbf19a111c93e3bb3",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0ce9725e3e03ea9e7f81d008b57f33ee365973d2e349131c8b1c3e3378fe2db0",
+          "size": 388736,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0cee63f9c9f13f3ac909c5b4903f4dbb4b719a7ab3b4f13b0deaf83c814b94f7",
+          "size": 5592064,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0d2c6f3421d21537d1960c5647912b3212a6ae7575832ea5cff7a514d5feba2f",
+          "size": 49058,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "0db79e882774ebf5554cf56a309a2f7db9de470977da37c6a54c882c80b38d2a",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "112710e9f53f9d10f387783246c43ad53281186add928e223454079d0249e838",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "11592d4212eda4dea5c31dc7b1ac990d892cd825d83e6fb8d879d024fc74f653",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "14d747980ff5d0e7197be4e1196361eb51716fd813684ead0fefac23d7ec3dca",
+          "size": 4174,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "17a7db931016a789aa5fcfe17f43b241b5c8523210fe0df3b44a5196fd561adf",
+          "size": 3433,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "19bc0cd0336cce72f3e8d3c774b3e7e439f45660d7b7aa5f2109aec42d9ef947",
+          "size": 888,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1a4380dcba3b365ca53e52f6130b89e8c4ec71f772a06c00d433d4bc0a831734",
+          "size": 33299,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1a6bc956ccee4732cb5a42600cba9ab25ebaea54e880f51589f6b99936112012",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1b215f44fea53157db411dc61e333054d43c76b5774d54912459acb076a5aaee",
+          "size": 23860,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1c38ac05c511c0da4bba27f147cb705f02ffd74496696a7103895c92e2613d82",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1d2f2b2f8cf5c9acfe2eaaa2d2c22face87bd19f7df85453079a28e7123ae727",
+          "size": 2976,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "1dd3a2c720c9f532663ca162c8911c9a74fb24e4cb692a7f5615046767ed052e",
+          "size": 28045,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "237ded5b8344f820113efab1e65e91e1f159d9202c5b4856606a0590d3ffdab0",
+          "size": 1481,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "251659dd84a3e84de67c886a4186e01f3eca49b00641906fe38bb6b807e5d5b7",
+          "size": 77795704,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "260a0285d5a807059e690b23b2b61bca2c7bf26a5323050aad190240296ad781",
+          "size": 6132,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "2a434c667a461cb10a0e59248731ba4ee00ee91a0c0b3bd8b33095bb577738c3",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "2c1f88fa627dc9fc1b85f53a26182e1dcd900584787b7324635405887f64aa66",
+          "size": 5147,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "2cce3740ddc1a727676e18bc02c994261824566701c237c4d046a40a2cb37f7f",
+          "size": 51,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "2db6b108fa77805b4db2419ecf2e2633353de52852a20232498baa434e580418",
+          "size": 611328,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "2e900da40737283f31a5df357c7c548d15800770a6c67f340093a8f640b50399",
+          "size": 18401,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3027f23ca5a46dd9cb8183fbd522983a86f64d7daac5982912bf9f214671f294",
+          "size": 26727,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "30cf03a1869e33e9b92f09f79ac9217c001472d014ab91ef3e87e0d41e3f55ec",
+          "size": 7053,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "313b608eec12f33cab7dbe35c553ddf5d638caa097af296a5284ddd92b88317c",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "31d007b93dad2c71339afef4d781df81e4fd363cf4c161d1d6dab16b96eeafc8",
+          "size": 18401,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "324f10f41aa8ff6dcb09ac731a5ec4bebd2e28966138661f5dd1b44edc523dde",
+          "size": 8589,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "34efa062ffb5819ae89855e18060872ab8c50e8c13cf32127e1d49a4b62057e5",
+          "size": 3951,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "37fc49afe596266afe759ab0fb2fa8c34e843f2ab8c68477f8ae09aa1789dd8c",
+          "size": 28045,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "37fc6bacc507eb6cd06378914c8742370ad1435c2537380ce3755e5a422b25f8",
+          "size": 659968,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983",
+          "size": 58956912,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "398116fb70360f8330481fbcc5c994d8d0c60123b7b7620088f5b24939cc6b3f",
+          "size": 24560,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "39f098bf2edc84aced80c444095f22f3929510fc1c87b6208156baa07e0cf3c5",
+          "size": 768137,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3ac268e3581a5057fdb45d40ae63a9190174da06e3d3e9c8c50acc86b4a2c46f",
+          "size": 3606,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3b5d853fbffd63f1bec2b56f55fcc0152cc99484516a9ad08ffc0e3dbd8fc0db",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3bf9233d822b3c4e08017ed0e5a07a8b97ad0805bedb9aa9494da0b06e23173b",
+          "size": 227985,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "3f36c39b0d4392257d7c26ab2c5c3336fbf7e9118901f3dc9a08e2c3d1639c00",
+          "size": 108306,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "40d931b945835bd04dc406d984cf3faeb30e16a8a846f490bc297e390a6a666d",
+          "size": 24897,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "43ec8f7f397648775dc3e5ab6fab879d056298fa7509cbd3a2640c4da29747b2",
+          "size": 41836,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "45a161606bc6f5243ed3b15d3f24b147e960293c6d40412ae2d9e3f4b53c0b99",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "45e1ae201d7c41dcaf74ed10bd40184d9b9d60afeae9e0946a3a8cfeb06516e4",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "45ff42f6a8133a0fce26f6080116a809264ad3d7a469f3aa0a1dd094f76e4ce9",
+          "size": 18692,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "460e52412b70b96bfe2adf6ad058733b2504fa450cf2a3f2db391611642dd7a1",
+          "size": 25663,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "46c6ef25c69fc298d8a7fcedabc5ea53536f704f17497dfe94e6f0bd08bf94c1",
+          "size": 8821,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4a7903d5ee47c744dfc0124d25ba89d050c65f92f681cc90d5e2248de7a11623",
+          "size": 20714,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4b2c0c90195c3a9991b4e0b59004113511a90802c85d81fc7faa7c7c75f53927",
+          "size": 369792,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4bc7ea5fcb2f32cf86bc2cb072e8d2860914a0be511cbdcb2fc206c1d9d83b80",
+          "size": 48343664,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4c1bf89bb3881434aeffca4e7afa03355bf7e461e7438569fda5af9c45e8237d",
+          "size": 2365,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4d55492fdebec366c18dd513c8d3427c8e5555f72f124d219bf63cc0685abdd8",
+          "size": 7377,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4db68f41531322b98998d67c1aec47dee00338a65a8c82b80a8ea946340ed97e",
+          "size": 80283,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "4f11ba182d9929b2d221ae7f7c7575dd9d6ac61f6d50bf3dd8b7e42a44d8126e",
+          "size": 3456,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "5239850894610071566f7ecee0b751fde43c862032d92b99d7d0f596b3433ebd",
+          "size": 13147,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "556870e456d268601188919927b3b122f76b25f9b221cc4b15d3ef649f0ad27b",
+          "size": 1155712,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "57c4627aeb05e8efe16f5f1116c06cd12afbe527a772be9d3c02f3df7ff154ac",
+          "size": 116,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "58dac456c2ed37f3f79b58432fc71769b2c8a2ca637671998597cbb2131f362b",
+          "size": 6365,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "5999c0b61221959b1c6e94d9867f3818fecaa0584e85563e6552078237b5baad",
+          "size": 6980,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "59c9da127ef3feb56939632004ed0921621dcb6be5f8630c00e7ac89f7763a04",
+          "size": 55808,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "5a677dfe2b52d1e78a197ec10931297879f4728211a683c5a32e279b2cc1b298",
+          "size": 28045,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "5b5a8902dd856aae752bafc3ea30db9a69beb348a0f50fb79bf1377f690ff4fb",
+          "size": 55296,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "60156fb14e8139b9ea1399431b28c4d8c33d487a4ba0cd2b6f96410027418290",
+          "size": 31668,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "6045b0bb04c334284594cdcdcaf44c109f51088566986f130bd8801db856f1ce",
+          "size": 24897,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "619fc48ba05c59a509652503f88890509076b1f9588741ecc62fa8e617c00ce2",
+          "size": 12085,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "663cf31060cf151a65101d3928599a6fb24532c9e7cb5d64f8934dbcd18426e2",
+          "size": 5017,
+          "release": "content-2026.10.14"
+        },
+        {
+          "sha256": "671e9269e4f72b9c2130a949447c2a5e603e717243f30ed43b9e2463e7badfa6",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "6dabfbbaf968c3871905d2ea17f96572ff7b1cec01310b5d0e5252b66b30174f",
+          "size": 4250,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "70f200a55be9f83829b26a1420470c53c595c959bdfff6e501dcdf433e4f6ebd",
+          "size": 666017,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "714efc0f5527cb6ccbb0f5bb69541d6fa9a95fe99a371bdc3174706a93dd771a",
+          "size": 18401,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "73410332438f57d50f8f5fbf499cf6db9acd9fad6a53f1318cd01301e0bb7b13",
+          "size": 5775,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "735f0a04a156dcf625097ae34222827bb9cbab8c4c69d09418a7e577034a0371",
+          "size": 37765120,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "73bf52c0cfaa5900a8f3f4a91306e4625e7cca696dfb305aae44c9f97b582e1f",
+          "size": 422016,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "742f65b37c015ceb54cb8abaf522055203885ca3838a0cae0a13a25d30af05d2",
+          "size": 78183,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "775014fcb7e37a1c60311c817ee3fc517346e19721cd131b3d3f644f755ef034",
+          "size": 11756,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "784be42c39a4a4d03cf85d88e15e59d75828fca773ce45b8dbfffbd7eaf208df",
+          "size": 4194,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "78adf672df47460297eb9fe6dd238d2aafa24510b52b84feb1a745dff70eb901",
+          "size": 9930,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "791f785ef6c94c872cff4a51a4286a8ea7d5480986d959ed8b55b3b9d31c0295",
+          "size": 1663,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "7b9e1f4920befe998061f8445599a4fbdaf8cc27506933d2a5c17b2dea0b9b2d",
+          "size": 23199,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "801ea7844603b33eb02913d1ad2186756657b0ddb8f3f449e300814371452850",
+          "size": 150,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "82924a8954dd671e09351c5de0eb87ad0eb25b944cc9f9ab955ca1d9950de15d",
+          "size": 843392,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "865a3606b5d99a10a5615881f190bb4dca1c837df4198d18183a3bb5f03c00ca",
+          "size": 18401,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8837e1d7dbffcac96fba5af63cb07277254372899646a7154c488039b4b0a2c8",
+          "size": 27207680,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8959ca995090bc89762cc0bf4ba3bb1ffcffdf143e9e0ddaf84f0e004b53dd29",
+          "size": 9551,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8a06a66eaae5aee461638d54a44cf7cfefb08fc1f5b875f545f1bd4362d5a1d1",
+          "size": 1112,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8be5be5d5a4efb0737fe9fef26a72d1f11436c974eddade2cac3219c6f9dd58e",
+          "size": 1723,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8c87c9499461da561edd529aa9bf7831d67d7b94ebb1c1a5ed54ef4934e1ea4c",
+          "size": 652928,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8ef6322b5361e10cba0409e72847eddc5b4c4ab4c15eeae4bd9431d6fd9ad8a7",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "8f0984ddc577c41d51264c5a783d88c4871e9b36ec9ef6eb3e7212628c519f46",
+          "size": 24897,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "928907d65a5c714799b78f002a610837c264a2a00b0aae3aba838d25a05b2551",
+          "size": 3456,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "943406ad855adae2aeffffd256706738e97472439214d6624abdb5a942067e6c",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "95edeb962b41c2368ab10d9fa9dce4fcdd3d639e59a502925b885f2a9a22a50e",
+          "size": 4271,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "99a0d6ffadca4ab8af74415580a1810dc9d28031ddac942936137ea2c114c53c",
+          "size": 31564,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "9d18c0e1316970011e0c6fd3ab13fb50fe8d3af064a38e86e0f3954fa943e96f",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "9def9af8e5ebf6a17cd8dc2f8ca36d6bd5bdc1eb8c927f9d9a890e38fde0890e",
+          "size": 82712,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "9f18293bb05a46780d8aeb2fdfe55858e30daa3705c921df667663f73fc694e5",
+          "size": 4277,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "9f6672e5e0170dc118a3188d21bda187e1fc1aa3502895b21ab846d23165c11d",
+          "size": 401024,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a1624cc4238fef046f30c4d80ce3f47be63fc5f5373f49e3ee9edb9960f54c78",
+          "size": 9332432,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a30c47d1dfed1259f592feb26d9efb07d5b0e7be312a8580c671d4dac350f9cb",
+          "size": 24897,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a4aee0d181a389d474e850df6e3424c41638edf4fd6fa0a58ce70e4382392a61",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a7975175d144e8292afcea9ad6e4ac2c64f5579f41ee4171335d59eabbf67830",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a9038cd74bbc2bf1a033451d757a92bb0608771325abd7b1f35b73b6e232a18d",
+          "size": 24438,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "a9c5058e3ff8bb052ae9c6d10ce67b1b8848f388a9339941523b88e6529c9238",
+          "size": 1219,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "aa3c8eb4286c7f59be4caab6443634485669cccc83cc5c2853cd2fad785fd61f",
+          "size": 60,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "ab4194eccfa5c5f74c0e8206ea66e2530e06e0c2cee2f3e0a5427ee1b18d1a43",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "abcf05832c8f42cdab6f0911d277e706e1fb9d9966253b919ec33bfbf0e84c11",
+          "size": 16997,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "ad9882fc03524c66882ef2f58d91df14f8c15ec2bae4dd5dc80d113abe0a7f8e",
+          "size": 18401,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "b263d2d9c1c97d642547036cf1a0cd6d80c2230c8709f4582aff017fb2f73248",
+          "size": 5271,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "b4ca8f8eeba653446f27d20e8b394cdaae5d518c1292b440a4b97652e0f0376b",
+          "size": 761472,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "b635b5028174911d20a33eecfddd0be2539c342d4c45d16bae37011e6930e7b7",
+          "size": 1115,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "ba6c9b232ebe7e168b5eb19ca4802740f93f03ae1706a3e4a52548e6a7f5f195",
+          "size": 193226,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "bc754b73614115ddd600e61931c1e949d6300d4260ccf9f29ea5c71faa8c9223",
+          "size": 108621,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "bc9b2d6e1381663164172e209e4db22053ef45e7ae85fd089cd0e141be716b57",
+          "size": 151552,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "bd3d807188400e76e19be41b0f536627d4ac2ee35a06479e729f20927ba0fb73",
+          "size": 24470,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "bedb21e946bfa48b837baeebc0c63231c8d5a59ad067d31d59910aaeb3e172aa",
+          "size": 24897,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "c6a75d1f6bec660b991795d449e48dd92b664832f9eeeef0401d328a4e35821d",
+          "size": 9064,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "c7cfe86f0c9d94e4fb3696d3cd5035e2bbb6a8b1b0572f8b7395a4cdfd0c625e",
+          "size": 156016,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "c81d61b0c7caa5cb8ff77b10183f2a00ffc5b4601ef328f7b9368e625fa9a214",
+          "size": 273,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "cb3360c64913ea09c731dcfed84137abbd44abfcfade3b1e721f2a4cc704d692",
+          "size": 68305,
+          "release": "content-2026.10.15"
+        },
+        {
+          "sha256": "d0dcccc74a43c44ba435b7a369b456e0970d8a4464e4bd683119b374f2c9fb46",
+          "size": 28761864,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7",
+          "size": 415368,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d516fe1ac387d59f83b097214ca9b89fcebc86f26367f9ddc7e8cb692e776659",
+          "size": 5013480,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d59bec69f2aa19f93cc4972fc67da257b94db69675bf730bb1d0ed4c6c029566",
+          "size": 2436,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d891b4619b3645f6d640d58ae5aa788db2c68f7ba1391715e6d9548f79350ba8",
+          "size": 17098,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d8c898f08d01d32d621c0456653967c597307e5376906dbba6dc539fab5cfb04",
+          "size": 28045,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d8e419384af22cd0b44de235e88a20882b1933e5f2519fd14e01f48153065c8e",
+          "size": 9966,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "d938dd57f1ddc9c21156a31465ad85334f54d81ca149d2b4ab64fe4d0fcf0ae5",
+          "size": 5429,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "da0cd6180a8a4d739c3bd94ade55cbafc4246039a4f7c3dc8cc1a93ddd79df31",
+          "size": 2706504,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "dc15da940164cd71eb619ae24d85f9c3ddf3e84ca332445fa9ee6fed00b444ab",
+          "size": 636,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "dd24ea36cb3bf8b788773de002af21960b01bf38d9ede18df8aa87b0366eea80",
+          "size": 2183,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "dd27edc7d9bfe4bdc1c237bfafa10e738432abaf4832a9d65c6b9418f079aa0b",
+          "size": 9873,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "df2dc0edd290972d06a3e3b8ef56e35f43d1aeb9127932f8a8063454a53cfd8f",
+          "size": 1091,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "dfe120acd4dcd485bf2b21f7e59e8407072f7940be53ec1ee14abe4ebaa4beba",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "e19897f8174aaf4fac22db6c7e9ac52b0bd4af6b17a283be07280da697667698",
+          "size": 3456,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "e2d85aa05a9bd9ed8b38935fdf5199372cca6f74c12015143bb6f945ee1608aa",
+          "size": 26376,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "e4b7e83c9e67eab7023222af13de239241e8a09bdb63faf26f803e9fd0f3e9c9",
+          "size": 376448,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "e67dee209320cdafe0e93e45675d7aa34323a53acc57a72b2e40a181581c989a",
+          "size": 165840496,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "e852659a6554fc42e97ba2bdbd754fba83cbd90287c49bb82ebef45dd839d50c",
+          "size": 17186,
+          "release": "content-2026.10.13"
+        },
+        {
+          "sha256": "ebf83c07fb3b2939908c3795d887afde3161c89a28ba391724efc784ce1bdabe",
+          "size": 20504,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "ec5e0c65e075570c6ede72618bb666d0be0c2e10b2ea9762c0fe8cb8e375ab27",
+          "size": 22957432,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "ecbff2770f0c3aa72442c4f42512c23a23c14759794c71c2f5787f24688f9d30",
+          "size": 11304,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "ecd5272c74efcebb3ae823fb92a6051b3df4e3e9ca2a414e9b607f9a2b4b6353",
+          "size": 24897,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "ed54cd01ea222c1e50ea069572926b5f2eff83c79db43ea202298ab5b51c32db",
+          "size": 317573,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "edcb8ccb3ced721a267540bea916fc6cba0ddd3b0f1a8ba75cccf501276555db",
+          "size": 18401,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f0da09d71ad5c82759a179e774535d4a829e5c96c49294167c1152402b2cb400",
+          "size": 61784,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f11afd6affb0b438313367d885e5bd33fae01a77a7c370dd3f31822530be7717",
+          "size": 591,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f13d51cfa05f4cd514df2026049e2db8adf359221713170ad386fd499915b582",
+          "size": 360064,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f1a99b945af37379846a75653d744e151cee8a3e0c3bb45f4ec33cc0793c1f7a",
+          "size": 24438,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f1dcf1d01126f9c70264720c72f10d2bb598ed80ee19a24476fc80c773e3c907",
+          "size": 24897,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f37a469b587bd0ed254fcb04d99f6b7ad791a27204ecb03a2a4988254be8e203",
+          "size": 591,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f4a6b2b14dcc0b1485989e430d3b4e3a44ac1800b92ba1ad74f476e64fb2b09c",
+          "size": 636032,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f67734fc11e4e8306ea24f9db420b13ae811fa9f5f457c817e59a011f4827838",
+          "size": 17186,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f7e18e5a454abaaa61faf56040a8c44a25661f98ada48e7f4358ba022c9067b4",
+          "size": 590,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f7fda81d4dfc480767db55c0cedb98b14fb23d34c395b68ba57438bce0a4e2b5",
+          "size": 24542,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f80ecfbce8a84a5b4c1c59dc5a9f0ee9cf5a989c9fba3a9486ee874f7595a454",
+          "size": 1199,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "f9ca9f8f23e4556467f4564e2c2984221a3a3d97faba94999a91d69522bdc6b2",
+          "size": 28045,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fadcfa4085ad2f1c3f9acb40e73764989b6354d205adc055069e88f0b3c86dcc",
+          "size": 18401,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fbe62772ad6782f5c8126f73470ae586f5395455719ad90b1287e8bb57b7b033",
+          "size": 64226,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fc32b4d55e2f0dc74490f9b507b35133a267e725bc299bf8a3e4ae3b19669c3b",
+          "size": 29012,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fd9eeb195a2a60e276f2ab7d051a4de3e0f527161b9227d56f68d6e45b052a89",
+          "size": 18653,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fdb2350bdc9fd61afda5c80687144699610bbc837c7f17355a6839930b21b484",
+          "size": 17098,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fdd84443706a92753ac255d9912ceb5f8e03a4bba88ddfb06a85b5654a9590e1",
+          "size": 26449,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fe2a72cb5ddcfa2843b48f6732c97b5bc9cde133a714905df6aadff12d325ede",
+          "size": 28045,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "fe7f5700ac5e6d5a2fe6571d0f369c9432fabcb29120fdfa33f1ec1c05727ee1",
+          "size": 4960880,
+          "release": "content-2026.10.13-2"
+        },
+        {
+          "sha256": "ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82",
+          "size": 7460976,
+          "release": "content-2026.10.13-2"
+        }
+      ],
+      "tiers": {
+        "rtx-30-40": {
+          "recipe": [
+            {
+              "kind": "copy",
+              "file": "5239850894610071566f7ecee0b751fde43c862032d92b99d7d0f596b3433ebd",
+              "to": "licenses/DirectX_LICENSE.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "f0da09d71ad5c82759a179e774535d4a829e5c96c49294167c1152402b2cb400",
+              "to": "licenses/FidelityFX_v2_LICENSE.md"
+            },
+            {
+              "kind": "copy",
+              "file": "b635b5028174911d20a33eecfddd0be2539c342d4c45d16bae37011e6930e7b7",
+              "to": "licenses/glamarye fast effects/LICENSE",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "791f785ef6c94c872cff4a51a4286a8ea7d5480986d959ed8b55b3b9d31c0295",
+              "to": "licenses/jakob-drme/LICENSE.md",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "8be5be5d5a4efb0737fe9fef26a72d1f11436c974eddade2cac3219c6f9dd58e",
+              "to": "licenses/jakob-linearmotionblur/LICENSE.md",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1d2f2b2f8cf5c9acfe2eaaa2d2c22face87bd19f7df85453079a28e7123ae727",
+              "to": "licenses/RenoDX_ATTRIBUTION.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "8a06a66eaae5aee461638d54a44cf7cfefb08fc1f5b875f545f1bd4362d5a1d1",
+              "to": "licenses/REST/LICENSE",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "784be42c39a4a4d03cf85d88e15e59d75828fca773ce45b8dbfffbd7eaf208df",
+              "to": "licenses/XeSS_LICENSE.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983",
+              "to": "nvngx_dlss.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "bc9b2d6e1381663164172e209e4db22053ef45e7ae85fd089cd0e141be716b57",
+              "to": "nvngx.dll_dlssnr.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "02297beedd285e822d3a64f314cf00faf378dcec0edc47ff0c4dd71b3a8c2f18",
+              "to": "OptiScaler/amd_fidelityfx_framegeneration_dx12.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "e2d85aa05a9bd9ed8b38935fdf5199372cca6f74c12015143bb6f945ee1608aa",
+              "to": "OptiScaler/amd_fidelityfx_loader_dx12.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "d0dcccc74a43c44ba435b7a369b456e0970d8a4464e4bd683119b374f2c9fb46",
+              "to": "OptiScaler/amd_fidelityfx_upscaler_dx12.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "a1624cc4238fef046f30c4d80ce3f47be63fc5f5373f49e3ee9edb9960f54c78",
+              "to": "OptiScaler/amd_fidelityfx_vk.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "07d286c306f8117321422affd9e6388c12d0fb4be1c7fc689d9e899324feeb24",
+              "to": "OptiScaler/D3D12_OptiScaler/D3D12Core.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "d2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7",
+              "to": "OptiScaler/libxell.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "c7cfe86f0c9d94e4fb3696d3cd5035e2bbb6a8b1b0572f8b7395a4cdfd0c625e",
+              "to": "OptiScaler/libxess_dx11.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "ec5e0c65e075570c6ede72618bb666d0be0c2e10b2ea9762c0fe8cb8e375ab27",
+              "to": "OptiScaler/libxess_fg.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "251659dd84a3e84de67c886a4186e01f3eca49b00641906fe38bb6b807e5d5b7",
+              "to": "OptiScaler/libxess.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "d516fe1ac387d59f83b097214ca9b89fcebc86f26367f9ddc7e8cb692e776659",
+              "to": "OptiScaler/nvfp4/hybrid/candidate/split-half/fused_expand.cubin"
+            },
+            {
+              "kind": "copy",
+              "file": "59c9da127ef3feb56939632004ed0921621dcb6be5f8630c00e7ac89f7763a04",
+              "to": "OptiScaler/nvfp4/hybrid/candidate/split-half/params_builder.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "f7e18e5a454abaaa61faf56040a8c44a25661f98ada48e7f4358ba022c9067b4",
+              "to": "OptiScaler/nvfp4/hybrid/contract/manifest.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "928907d65a5c714799b78f002a610837c264a2a00b0aae3aba838d25a05b2551",
+              "to": "OptiScaler/nvfp4/hybrid/contract/params.bin"
+            },
+            {
+              "kind": "copy",
+              "file": "f37a469b587bd0ed254fcb04d99f6b7ad791a27204ecb03a2a4988254be8e203",
+              "to": "OptiScaler/nvfp4/hybrid/contract_m2160/manifest.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "4f11ba182d9929b2d221ae7f7c7575dd9d6ac61f6d50bf3dd8b7e42a44d8126e",
+              "to": "OptiScaler/nvfp4/hybrid/contract_m2160/params.bin"
+            },
+            {
+              "kind": "copy",
+              "file": "f11afd6affb0b438313367d885e5bd33fae01a77a7c370dd3f31822530be7717",
+              "to": "OptiScaler/nvfp4/hybrid/contract_m3840/manifest.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "e19897f8174aaf4fac22db6c7e9ac52b0bd4af6b17a283be07280da697667698",
+              "to": "OptiScaler/nvfp4/hybrid/contract_m3840/params.bin"
+            },
+            {
+              "kind": "copy",
+              "file": "57c4627aeb05e8efe16f5f1116c06cd12afbe527a772be9d3c02f3df7ff154ac",
+              "to": "OptiScaler/nvfp4/hybrid/contracts.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "fe7f5700ac5e6d5a2fe6571d0f369c9432fabcb29120fdfa33f1ec1c05727ee1",
+              "to": "OptiScaler/nvfp4/hybrid/expansion/fused_expand.cubin"
+            },
+            {
+              "kind": "copy",
+              "file": "5b5a8902dd856aae752bafc3ea30db9a69beb348a0f50fb79bf1377f690ff4fb",
+              "to": "OptiScaler/nvfp4/hybrid/expansion/params_builder.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "9def9af8e5ebf6a17cd8dc2f8ca36d6bd5bdc1eb8c927f9d9a890e38fde0890e",
+              "to": "OptiScaler/nvfp4/hybrid/original_io.cubin"
+            },
+            {
+              "kind": "copy",
+              "file": "da0cd6180a8a4d739c3bd94ade55cbafc4246039a4f7c3dc8cc1a93ddd79df31",
+              "to": "OptiScaler/nvfp4/hybrid/sm120_16255890_da0cd6180a8a.cubin"
+            },
+            {
+              "kind": "copy",
+              "file": "735f0a04a156dcf625097ae34222827bb9cbab8c4c69d09418a7e577034a0371",
+              "to": "OptiScaler/nvfp4/hybrid/weights.bin"
+            },
+            {
+              "kind": "copy",
+              "file": "dc15da940164cd71eb619ae24d85f9c3ddf3e84ca332445fa9ee6fed00b444ab",
+              "to": "OptiScaler/nvfp4/hybrid/weights.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983",
+              "to": "OptiScaler/nvngx_dlss.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "4bc7ea5fcb2f32cf86bc2cb072e8d2860914a0be511cbdcb2fc206c1d9d83b80",
+              "to": "OptiScaler/nvngx_dlssd.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82",
+              "to": "OptiScaler/nvngx_dlssg.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "f80ecfbce8a84a5b4c1c59dc5a9f0ee9cf5a989c9fba3a9486ee874f7595a454",
+              "to": "OptiScaler/streamline/nis.license.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "3027f23ca5a46dd9cb8183fbd522983a86f64d7daac5982912bf9f214671f294",
+              "to": "OptiScaler/streamline/nvngx_dlss.license.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "ebf83c07fb3b2939908c3795d887afde3161c89a28ba391724efc784ce1bdabe",
+              "to": "OptiScaler/streamline/reflex.license.txt"
+            },
+            {
+              "kind": "copy",
+              "file": "82924a8954dd671e09351c5de0eb87ad0eb25b944cc9f9ab955ca1d9950de15d",
+              "to": "OptiScaler/streamline/sl.common.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "e4b7e83c9e67eab7023222af13de239241e8a09bdb63faf26f803e9fd0f3e9c9",
+              "to": "OptiScaler/streamline/sl.deepdvc.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "4b2c0c90195c3a9991b4e0b59004113511a90802c85d81fc7faa7c7c75f53927",
+              "to": "OptiScaler/streamline/sl.directsr.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "026b9f4f9ea848f2f5aa0e2024fc6b1c885f57eea5d41078124dba14f873b86b",
+              "to": "OptiScaler/streamline/sl.dlss_d.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "f4a6b2b14dcc0b1485989e430d3b4e3a44ac1800b92ba1ad74f476e64fb2b09c",
+              "to": "OptiScaler/streamline/sl.dlss_g.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "9f6672e5e0170dc118a3188d21bda187e1fc1aa3502895b21ab846d23165c11d",
+              "to": "OptiScaler/streamline/sl.dlss_nr.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "73bf52c0cfaa5900a8f3f4a91306e4625e7cca696dfb305aae44c9f97b582e1f",
+              "to": "OptiScaler/streamline/sl.dlss.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "8c87c9499461da561edd529aa9bf7831d67d7b94ebb1c1a5ed54ef4934e1ea4c",
+              "to": "OptiScaler/streamline/sl.interposer.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "556870e456d268601188919927b3b122f76b25f9b221cc4b15d3ef649f0ad27b",
+              "to": "OptiScaler/streamline/sl.nis.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "b4ca8f8eeba653446f27d20e8b394cdaae5d518c1292b440a4b97652e0f0376b",
+              "to": "OptiScaler/streamline/sl.nvperf.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "f13d51cfa05f4cd514df2026049e2db8adf359221713170ad386fd499915b582",
+              "to": "OptiScaler/streamline/sl.pcl.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "0ce9725e3e03ea9e7f81d008b57f33ee365973d2e349131c8b1c3e3378fe2db0",
+              "to": "OptiScaler/streamline/sl.reflex.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "cb3360c64913ea09c731dcfed84137abbd44abfcfade3b1e721f2a4cc704d692",
+              "to": "OptiScaler.ini"
+            },
+            {
+              "kind": "copy",
+              "file": "8837e1d7dbffcac96fba5af63cb07277254372899646a7154c488039b4b0a2c8",
+              "to": "winmm.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "e67dee209320cdafe0e93e45675d7aa34323a53acc57a72b2e40a181581c989a",
+              "to": "nvngx_dlssnr.dll"
+            },
+            {
+              "kind": "copy",
+              "file": "237ded5b8344f820113efab1e65e91e1f159d9202c5b4856606a0590d3ffdab0",
+              "to": "licenses/ReShade/LICENSE.md",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "663cf31060cf151a65101d3928599a6fb24532c9e7cb5d64f8934dbcd18426e2",
+              "to": "ReShade.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0cee63f9c9f13f3ac909c5b4903f4dbb4b719a7ab3b4f13b0deaf83c814b94f7",
+              "to": "ReShade64.dll",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "df2dc0edd290972d06a3e3b8ef56e35f43d1aeb9127932f8a8063454a53cfd8f",
+              "to": "licenses/ReshadeEffectShaderToggler/LICENSE",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "2db6b108fa77805b4db2419ecf2e2633353de52852a20232498baa434e580418",
+              "to": "ReshadeEffectShaderToggler.addon32",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "37fc6bacc507eb6cd06378914c8742370ad1435c2537380ce3755e5a422b25f8",
+              "to": "ReshadeEffectShaderToggler.addon64",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "4d55492fdebec366c18dd513c8d3427c8e5555f72f124d219bf63cc0685abdd8",
+              "to": "ReshadeEffectShaderToggler.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "bd3d807188400e76e19be41b0f536627d4ac2ee35a06479e729f20927ba0fb73",
+              "to": "reshade-presets/Alive NEXT WIP/Alive 7.0 Performance.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "073ebfb49af16844f84a8179254df91a54be64ce709e89d084cd7c3c8340e246",
+              "to": "reshade-presets/Alive NEXT WIP/Alive 7.0 Ultra.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1b215f44fea53157db411dc61e333054d43c76b5774d54912459acb076a5aaee",
+              "to": "reshade-presets/Alive NEXT WIP/Alive 7.0 Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "45ff42f6a8133a0fce26f6080116a809264ad3d7a469f3aa0a1dd094f76e4ce9",
+              "to": "reshade-presets/Alive NEXT WIP/Alive NEXT Stable 4K.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fd9eeb195a2a60e276f2ab7d051a4de3e0f527161b9227d56f68d6e45b052a89",
+              "to": "reshade-presets/Alive NEXT WIP/Alive NEXT Stable.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "a9c5058e3ff8bb052ae9c6d10ce67b1b8848f388a9339941523b88e6529c9238",
+              "to": "licenses/ipsuShade/LICENSE.md",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "671e9269e4f72b9c2130a949447c2a5e603e717243f30ed43b9e2463e7badfa6",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "abcf05832c8f42cdab6f0911d277e706e1fb9d9966253b919ec33bfbf0e84c11",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "2a434c667a461cb10a0e59248731ba4ee00ee91a0c0b3bd8b33095bb577738c3",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "112710e9f53f9d10f387783246c43ad53281186add928e223454079d0249e838",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ab4194eccfa5c5f74c0e8206ea66e2530e06e0c2cee2f3e0a5427ee1b18d1a43",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "07ee6a3072eefe4d1922b76e337c909501db3356618e48db1948ffcf922007ca",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0c3edea3716a21aeb5750a4e7b4b6b2449fcbce1d9dfffcdbf19a111c93e3bb3",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "005c372adba8c5d52a32f5e64199bb4925cfb26ebe698a64fa01f0c54ab70a42",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/- Note -  Disable Glamarye_Fast_Effects for even more FPS.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fadcfa4085ad2f1c3f9acb40e73764989b6354d205adc055069e88f0b3c86dcc",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "2e900da40737283f31a5df357c7c548d15800770a6c67f340093a8f640b50399",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "31d007b93dad2c71339afef4d781df81e4fd363cf4c161d1d6dab16b96eeafc8",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ad9882fc03524c66882ef2f58d91df14f8c15ec2bae4dd5dc80d113abe0a7f8e",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "865a3606b5d99a10a5615881f190bb4dca1c837df4198d18183a3bb5f03c00ca",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "edcb8ccb3ced721a267540bea916fc6cba0ddd3b0f1a8ba75cccf501276555db",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "714efc0f5527cb6ccbb0f5bb69541d6fa9a95fe99a371bdc3174706a93dd771a",
+              "to": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "05a6bcd76fad07d2f2f0b652c7b833d1c1ea599fceb5976f90441c0f5eb7ef17",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/- Note -  Enable Fast AO under Glamarye_Fast_Effects for better quality.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "45a161606bc6f5243ed3b15d3f24b147e960293c6d40412ae2d9e3f4b53c0b99",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "8ef6322b5361e10cba0409e72847eddc5b4c4ab4c15eeae4bd9431d6fd9ad8a7",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "3b5d853fbffd63f1bec2b56f55fcc0152cc99484516a9ad08ffc0e3dbd8fc0db",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "9d18c0e1316970011e0c6fd3ab13fb50fe8d3af064a38e86e0f3954fa943e96f",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d891b4619b3645f6d640d58ae5aa788db2c68f7ba1391715e6d9548f79350ba8",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fdb2350bdc9fd61afda5c80687144699610bbc837c7f17355a6839930b21b484",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1a6bc956ccee4732cb5a42600cba9ab25ebaea54e880f51589f6b99936112012",
+              "to": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "45e1ae201d7c41dcaf74ed10bd40184d9b9d60afeae9e0946a3a8cfeb06516e4",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1c38ac05c511c0da4bba27f147cb705f02ffd74496696a7103895c92e2613d82",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "e852659a6554fc42e97ba2bdbd754fba83cbd90287c49bb82ebef45dd839d50c",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "dfe120acd4dcd485bf2b21f7e59e8407072f7940be53ec1ee14abe4ebaa4beba",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "a7975175d144e8292afcea9ad6e4ac2c64f5579f41ee4171335d59eabbf67830",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "f67734fc11e4e8306ea24f9db420b13ae811fa9f5f457c817e59a011f4827838",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "943406ad855adae2aeffffd256706738e97472439214d6624abdb5a942067e6c",
+              "to": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "11592d4212eda4dea5c31dc7b1ac990d892cd825d83e6fb8d879d024fc74f653",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "313b608eec12f33cab7dbe35c553ddf5d638caa097af296a5284ddd92b88317c",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "a4aee0d181a389d474e850df6e3424c41638edf4fd6fa0a58ce70e4382392a61",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0db79e882774ebf5554cf56a309a2f7db9de470977da37c6a54c882c80b38d2a",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0b99059084f938cb0286f290d6dee969303d0b31adf351978c72725939caae89",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "a9038cd74bbc2bf1a033451d757a92bb0608771325abd7b1f35b73b6e232a18d",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "f1a99b945af37379846a75653d744e151cee8a3e0c3bb45f4ec33cc0793c1f7a",
+              "to": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "aa3c8eb4286c7f59be4caab6443634485669cccc83cc5c2853cd2fad785fd61f",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/- Note - Enable 'DAMP RT' for Raytraced Global Illumination.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "f1dcf1d01126f9c70264720c72f10d2bb598ed80ee19a24476fc80c773e3c907",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "a30c47d1dfed1259f592feb26d9efb07d5b0e7be312a8580c671d4dac350f9cb",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "6045b0bb04c334284594cdcdcaf44c109f51088566986f130bd8801db856f1ce",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "bedb21e946bfa48b837baeebc0c63231c8d5a59ad067d31d59910aaeb3e172aa",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "40d931b945835bd04dc406d984cf3faeb30e16a8a846f490bc297e390a6a666d",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ecd5272c74efcebb3ae823fb92a6051b3df4e3e9ca2a414e9b607f9a2b4b6353",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "8f0984ddc577c41d51264c5a783d88c4871e9b36ec9ef6eb3e7212628c519f46",
+              "to": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "2cce3740ddc1a727676e18bc02c994261824566701c237c4d046a40a2cb37f7f",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/- Note -  Check README for list of required shaders.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fe2a72cb5ddcfa2843b48f6732c97b5bc9cde133a714905df6aadff12d325ede",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "f9ca9f8f23e4556467f4564e2c2984221a3a3d97faba94999a91d69522bdc6b2",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "07c108f1229738dd43c8bb1b491839436a1c325a4945101592740084cb6fc2af",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1dd3a2c720c9f532663ca162c8911c9a74fb24e4cb692a7f5615046767ed052e",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "37fc49afe596266afe759ab0fb2fa8c34e843f2ab8c68477f8ae09aa1789dd8c",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d8c898f08d01d32d621c0456653967c597307e5376906dbba6dc539fab5cfb04",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "5a677dfe2b52d1e78a197ec10931297879f4728211a683c5a32e279b2cc1b298",
+              "to": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "dd24ea36cb3bf8b788773de002af21960b01bf38d9ede18df8aa87b0366eea80",
+              "to": "reshade-shaders/LICENSE",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0d2c6f3421d21537d1960c5647912b3212a6ae7575832ea5cff7a514d5feba2f",
+              "to": "reshade-shaders/README.md",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0844817686ff9e91c02e85ca2e141f7bc7a70f3953db48956f54e16ad7945f8b",
+              "to": "reshade-shaders/Shaders/AliveLUT.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "4a7903d5ee47c744dfc0124d25ba89d050c65f92f681cc90d5e2248de7a11623",
+              "to": "reshade-shaders/Shaders/AstrayFX/Clarity.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d938dd57f1ddc9c21156a31465ad85334f54d81ca149d2b4ab64fe4d0fcf0ae5",
+              "to": "reshade-shaders/Shaders/BX-Shade/ffxiv_common_dt.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "260a0285d5a807059e690b23b2b61bca2c7bf26a5323050aad190240296ad781",
+              "to": "reshade-shaders/Shaders/BX-Shade/ffxiv_common_ew.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "801ea7844603b33eb02913d1ad2186756657b0ddb8f3f449e300814371452850",
+              "to": "reshade-shaders/Shaders/BX-Shade/ffxiv_common.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "324f10f41aa8ff6dcb09ac731a5ec4bebd2e28966138661f5dd1b44edc523dde",
+              "to": "reshade-shaders/Shaders/CorgiFX/StageDepthPlus with depth buffer modification/ReShade.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "19bc0cd0336cce72f3e8d3c774b3e7e439f45660d7b7aa5f2109aec42d9ef947",
+              "to": "reshade-shaders/Shaders/CorgiFX/StageDepthPlus with depth buffer modification/StageDepthPlusMap.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "8959ca995090bc89762cc0bf4ba3bb1ffcffdf143e9e0ddaf84f0e004b53dd29",
+              "to": "reshade-shaders/Shaders/Deband.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "73410332438f57d50f8f5fbf499cf6db9acd9fad6a53f1318cd01301e0bb7b13",
+              "to": "reshade-shaders/Shaders/ffxiv_common_4K.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "2c1f88fa627dc9fc1b85f53a26182e1dcd900584787b7324635405887f64aa66",
+              "to": "reshade-shaders/Shaders/ffxiv_common.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "9f18293bb05a46780d8aeb2fdfe55858e30daa3705c921df667663f73fc694e5",
+              "to": "reshade-shaders/Shaders/ffxiv_crashpad_4K.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "95edeb962b41c2368ab10d9fa9dce4fcdd3d639e59a502925b885f2a9a22a50e",
+              "to": "reshade-shaders/Shaders/ffxiv_crashpad.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "3f36c39b0d4392257d7c26ab2c5c3336fbf7e9118901f3dc9a08e2c3d1639c00",
+              "to": "reshade-shaders/Shaders/Glamayre_Fast_Effects.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "7b9e1f4920befe998061f8445599a4fbdaf8cc27506933d2a5c17b2dea0b9b2d",
+              "to": "reshade-shaders/Shaders/GShade-Shaders/Clarity2.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d8e419384af22cd0b44de235e88a20882b1933e5f2519fd14e01f48153065c8e",
+              "to": "reshade-shaders/Shaders/GShade-Shaders/KeepUI.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d59bec69f2aa19f93cc4972fc67da257b94db69675bf730bb1d0ed4c6c029566",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_camera.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "34efa062ffb5819ae89855e18060872ab8c50e8c13cf32127e1d49a4b62057e5",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_deferred.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "14d747980ff5d0e7197be4e1196361eb51716fd813684ead0fefac23d7ec3dca",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_depth.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ecbff2770f0c3aa72442c4f42512c23a23c14759794c71c2f5787f24688f9d30",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_global.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "4c1bf89bb3881434aeffca4e7afa03355bf7e461e7438569fda5af9c45e8237d",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_hash.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "775014fcb7e37a1c60311c817ee3fc517346e19721cd131b3d3f644f755ef034",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_math.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "58dac456c2ed37f3f79b58432fc71769b2c8a2ca637671998597cbb2131f362b",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_qmc.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "3ac268e3581a5057fdb45d40ae63a9190174da06e3d3e9c8c50acc86b4a2c46f",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_sfc.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "b263d2d9c1c97d642547036cf1a0cd6d80c2230c8709f4582aff017fb2f73248",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods/mmx_texture.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fbe62772ad6782f5c8126f73470ae586f5395455719ad90b1287e8bb57b7b033",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods_LAUNCHPAD.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "1a4380dcba3b365ca53e52f6130b89e8c4ec71f772a06c00d433d4bc0a831734",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods_MXAO.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "c6a75d1f6bec660b991795d449e48dd92b664832f9eeeef0401d328a4e35821d",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods_SHARPEN.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "43ec8f7f397648775dc3e5ab6fab879d056298fa7509cbd3a2640c4da29747b2",
+              "to": "reshade-shaders/Shaders/iMMERSE/MartysMods_SMAA.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "d59bec69f2aa19f93cc4972fc67da257b94db69675bf730bb1d0ed4c6c029566",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_camera.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "34efa062ffb5819ae89855e18060872ab8c50e8c13cf32127e1d49a4b62057e5",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_deferred.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "14d747980ff5d0e7197be4e1196361eb51716fd813684ead0fefac23d7ec3dca",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_depth.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ecbff2770f0c3aa72442c4f42512c23a23c14759794c71c2f5787f24688f9d30",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_global.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "4c1bf89bb3881434aeffca4e7afa03355bf7e461e7438569fda5af9c45e8237d",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_hash.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "775014fcb7e37a1c60311c817ee3fc517346e19721cd131b3d3f644f755ef034",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_math.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "58dac456c2ed37f3f79b58432fc71769b2c8a2ca637671998597cbb2131f362b",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_qmc.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "3ac268e3581a5057fdb45d40ae63a9190174da06e3d3e9c8c50acc86b4a2c46f",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_sfc.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "b263d2d9c1c97d642547036cf1a0cd6d80c2230c8709f4582aff017fb2f73248",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods/mmx_texture.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "f7fda81d4dfc480767db55c0cedb98b14fb23d34c395b68ba57438bce0a4e2b5",
+              "to": "reshade-shaders/Shaders/METEOR/MartysMods_LOCALLAPLACIAN.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "742f65b37c015ceb54cb8abaf522055203885ca3838a0cae0a13a25d30af05d2",
+              "to": "reshade-shaders/Shaders/OtisFX/CinematicDOF.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "17a7db931016a789aa5fcfe17f43b241b5c8523210fe0df3b44a5196fd561adf",
+              "to": "reshade-shaders/Shaders/OtisFX/MultiLUT.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "5999c0b61221959b1c6e94d9867f3818fecaa0584e85563e6552078237b5baad",
+              "to": "reshade-shaders/Shaders/PD80/PD80_03_Filmic_Adaptation.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "30cf03a1869e33e9b92f09f79ac9217c001472d014ab91ef3e87e0d41e3f55ec",
+              "to": "reshade-shaders/Shaders/qUINT/qUINT_common.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "460e52412b70b96bfe2adf6ad058733b2504fa450cf2a3f2db391611642dd7a1",
+              "to": "reshade-shaders/Shaders/qUINT/qUINT_dof.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "99a0d6ffadca4ab8af74415580a1810dc9d28031ddac942936137ea2c114c53c",
+              "to": "reshade-shaders/Shaders/qUINT/qUINT_lightroom.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fdd84443706a92753ac255d9912ceb5f8e03a4bba88ddfb06a85b5654a9590e1",
+              "to": "reshade-shaders/Shaders/qUINT/qUINT_mxao.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "46c6ef25c69fc298d8a7fcedabc5ea53536f704f17497dfe94e6f0bd08bf94c1",
+              "to": "reshade-shaders/Shaders/ReBlur.fx",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "6dabfbbaf968c3871905d2ea17f96572ff7b1cec01310b5d0e5252b66b30174f",
+              "to": "reshade-shaders/Shaders/ReShade.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "78adf672df47460297eb9fe6dd238d2aafa24510b52b84feb1a745dff70eb901",
+              "to": "reshade-shaders/Shaders/ReShadeUI.fxh",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "398116fb70360f8330481fbcc5c994d8d0c60123b7b7620088f5b24939cc6b3f",
+              "to": "reshade-shaders/Textures/AliveReColor.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "dd27edc7d9bfe4bdc1c237bfafa10e738432abaf4832a9d65c6b9418f079aa0b",
+              "to": "reshade-shaders/Textures/CorgiFX/StageDepthmap.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "dd27edc7d9bfe4bdc1c237bfafa10e738432abaf4832a9d65c6b9418f079aa0b",
+              "to": "reshade-shaders/Textures/CorgiFX/StageMask.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "fc32b4d55e2f0dc74490f9b507b35133a267e725bc299bf8a3e4ae3b19669c3b",
+              "to": "reshade-shaders/Textures/iMMERSE/AreaLUT.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0b781553f3fe3ba74ab6dad8d759f3c2a07da67371a7a1355e6ba738864b53b0",
+              "to": "reshade-shaders/Textures/iMMERSE/iMMERSE_bluenoise_opt.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "39f098bf2edc84aced80c444095f22f3929510fc1c87b6208156baa07e0cf3c5",
+              "to": "reshade-shaders/Textures/iMMERSE/iMMERSE_bluenoise_temporal.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "c81d61b0c7caa5cb8ff77b10183f2a00ffc5b4601ef328f7b9368e625fa9a214",
+              "to": "reshade-shaders/Textures/lut.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ed54cd01ea222c1e50ea069572926b5f2eff83c79db43ea202298ab5b51c32db",
+              "to": "reshade-shaders/Textures/MultiLut_Ipsusu.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "bc754b73614115ddd600e61931c1e949d6300d4260ccf9f29ea5c71faa8c9223",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/cutestar.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "0bbb4128258348202248bdcb4d157faeb727a5469368a0308b50bc570c4e63e5",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/fringy_soft_chr_rb.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "60156fb14e8139b9ea1399431b28c4d8c33d487a4ba0cd2b6f96410027418290",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/hex_fringy_soft.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "619fc48ba05c59a509652503f88890509076b1f9588741ecc62fa8e617c00ce2",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/hex.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "3bf9233d822b3c4e08017ed0e5a07a8b97ad0805bedb9aa9494da0b06e23173b",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/moyheart.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "4db68f41531322b98998d67c1aec47dee00338a65a8c82b80a8ea946340ed97e",
+              "to": "reshade-shaders/Textures/OtisFX/bokehshapes/square.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "70f200a55be9f83829b26a1420470c53c595c959bdfff6e501dcdf433e4f6ebd",
+              "to": "reshade-shaders/Textures/OtisFX/monochrome_gaussnoise.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "ba6c9b232ebe7e168b5eb19ca4802740f93f03ae1706a3e4a52548e6a7f5f195",
+              "to": "reshade-shaders/Textures/OtisFX/MultiLut_atlas1.png",
+              "when": "reshade"
+            },
+            {
+              "kind": "copy",
+              "file": "c81d61b0c7caa5cb8ff77b10183f2a00ffc5b4601ef328f7b9368e625fa9a214",
+              "to": "reshade-shaders/Textures/VRToolkit/lut.png",
+              "when": "reshade"
+            }
           ],
-          "resetKeys": [
+          "entryFiles": [
+            {
+              "path": "winmm.dll"
+            }
+          ],
+          "ownedConfigs": [
+            {
+              "path": "OptiScaler.ini",
+              "update": "addMissingKeys"
+            },
+            {
+              "path": "ReShade.ini",
+              "when": "reshade",
+              "update": "keep"
+            },
+            {
+              "path": "ReshadeEffectShaderToggler.ini",
+              "when": "reshade",
+              "update": "keep"
+            }
+          ],
+          "shippedPresets": [
+            {
+              "path": "reshade-presets/Alive NEXT WIP/Alive 7.0 Performance.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/Alive NEXT WIP/Alive 7.0 Ultra.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/Alive NEXT WIP/Alive 7.0 Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/Alive NEXT WIP/Alive NEXT Stable 4K.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/Alive NEXT WIP/Alive NEXT Stable.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p1. gameplayLite (MAX FPS)/ipsusuGameplayLite - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/- Note -  Disable Glamarye_Fast_Effects for even more FPS.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g1. ipsusuLite (Max FPS)/p2. questingLite (Max Quality for FPS)/ipsusuQuestingLite - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/- Note -  Enable Fast AO under Glamarye_Fast_Effects for better quality.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g2. ipsusuGameplay (FPS and Quality)/ipsusuGameplay - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/g3. ipsusuQuesting (Max Quality)/ipsusuQuesting - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s1. ipsusuScreenie (Simple Screenshots)/ipsusuScreenie - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/- Note - Enable 'DAMP RT' for Raytraced Global Illumination.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s2. ipsusuUltimate (Advanced Screenshots)/ipsusuUltimate - Warm.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/- Note -  Check README for list of required shaders.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Amber.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Cool.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Crystal.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Melon.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Pastel.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Vanilla.ini",
+              "when": "reshade"
+            },
+            {
+              "path": "reshade-presets/ipsuShade/s3. ipsusuProSuite (Requires Paid Shaders)/ipsusuProSuite - Warm.ini",
+              "when": "reshade"
+            }
+          ],
+          "generatedFiles": [
+            {
+              "path": "OptiScaler.log"
+            },
+            {
+              "path": "ReShade.log",
+              "when": "reshade"
+            },
+            {
+              "path": "ReShadePreset.ini",
+              "when": "reshade"
+            }
+          ],
+          "overlay": "neural-rendering",
+          "performanceProfilesV2": [
+            {
+              "id": "ultra",
+              "label": "Ultra",
+              "description": "Two Neural Rendering passes with Quality upscaling.",
+              "summary": "Two Neural Rendering passes, Quality upscaling.",
+              "gpuNamePatterns": [
+                "RTX\\s?4090",
+                "RTX\\s?4080",
+                "RTX\\s?5090",
+                "RTX\\s?5080"
+              ],
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "Passes",
+                  "value": "2"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "SpatialCompression",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "ResidualFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "QualityOverrides",
+                  "key": "ForcePerfQuality",
+                  "value": {
+                    "1080p": "2",
+                    "1440p": "2",
+                    "4k+": "2"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "fidelity",
+              "label": "Fidelity",
+              "description": "One Neural Rendering pass with Quality upscaling.",
+              "summary": "One Neural Rendering pass, Quality upscaling.",
+              "gpuNamePatterns": [
+                "RTX\\s?4070\\s?Ti",
+                "RTX\\s?4080",
+                "RTX\\s?4090",
+                "RTX\\s?5070\\s?Ti",
+                "RTX\\s?5080",
+                "RTX\\s?5090",
+                "RTX\\s?3090",
+                "RTX\\s?3080\\s?Ti"
+              ],
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "Passes",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "SpatialCompression",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "ResidualFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "QualityOverrides",
+                  "key": "ForcePerfQuality",
+                  "value": {
+                    "1080p": "2",
+                    "1440p": "2",
+                    "4k+": "2"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "balanced",
+              "label": "Balanced",
+              "description": "One Neural Rendering pass with resolution-aware upscaling.",
+              "summary": {
+                "1080p": "One Neural Rendering pass, Quality upscaling.",
+                "1440p": "One Neural Rendering pass, Balanced upscaling.",
+                "4k+": "One Neural Rendering pass, Balanced upscaling."
+              },
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "Passes",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "SpatialCompression",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "ResidualFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "QualityOverrides",
+                  "key": "ForcePerfQuality",
+                  "value": {
+                    "1080p": "2",
+                    "1440p": "1",
+                    "4k+": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "performance",
+              "label": "Performance",
+              "description": "One Neural Rendering pass with spatial compression and residual frame generation.",
+              "summary": {
+                "1080p": "One pass, compression and residual frame generation, Balanced upscaling.",
+                "1440p": "One pass, compression and residual frame generation, Balanced upscaling.",
+                "4k+": "One pass, compression and residual frame generation, Performance upscaling."
+              },
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "Passes",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "SpatialCompression",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DlssNr",
+                  "key": "ResidualFG",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "QualityOverrides",
+                  "key": "ForcePerfQuality",
+                  "value": {
+                    "1080p": "1",
+                    "1440p": "1",
+                    "4k+": "0"
+                  }
+                }
+              ]
+            }
+          ],
+          "frameGenerationOptions": [
+            {
+              "id": "off",
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "nofg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "nofg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "2x",
+              "gpuNamePatterns": [
+                "RTX\\s?30[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "fsrfg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ],
+              "hdrSettings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "xefg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                }
+              ]
+            },
+            {
+              "id": "2x",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": false,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "3x",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "2"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "4x",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "3"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "5x",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "4"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "6x",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "5"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            },
+            {
+              "id": "dynamic",
+              "gpuNamePatterns": [
+                "RTX\\s?40[0-9]{2}"
+              ],
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "Enabled",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGInput",
+                  "value": "Upscaler"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGOutput",
+                  "value": "dlssg"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "FrameGen",
+                  "key": "FGNvngxReplacement",
+                  "value": "None"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "UnlockMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "MaxInterpolatedFrames",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "XeFG",
+                  "key": "DynamicMFG",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AdaMfgUnlock",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "InterpolationCount",
+                  "value": "1"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "ForceDMFG",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgUnlock",
+                  "value": "false"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "DLSSG",
+                  "key": "AmpereMfgMaxFrames",
+                  "value": "1"
+                }
+              ]
+            }
+          ],
+          "screenDerivedSettings": [
             {
               "file": "OptiScaler.ini",
-              "section": "Log",
-              "key": "LogToFile"
+              "section": "Framerate",
+              "key": "FramerateLimit",
+              "value": "frameCap"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSSG",
+              "key": "FramerateTargetDMFG",
+              "value": "frameCap"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "XeFG",
+              "key": "DynamicTargetFPS",
+              "value": "frameCap"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "HDR",
+              "key": "PeakNits",
+              "value": "peakNits"
+            }
+          ],
+          "hdrOptions": [
+            {
+              "id": "off",
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "HDR",
+                  "key": "FfxivHDR",
+                  "value": "false"
+                }
+              ]
+            },
+            {
+              "id": "hdr",
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "HDR",
+                  "key": "FfxivHDR",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "HDR",
+                  "key": "Mode",
+                  "value": "0"
+                }
+              ]
+            },
+            {
+              "id": "scene-hdr",
+              "experimental": true,
+              "settings": [
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "HDR",
+                  "key": "FfxivHDR",
+                  "value": "true"
+                },
+                {
+                  "file": "OptiScaler.ini",
+                  "section": "HDR",
+                  "key": "Mode",
+                  "value": "1"
+                }
+              ]
             }
           ]
         }
