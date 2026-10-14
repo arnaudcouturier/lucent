@@ -2,7 +2,7 @@ mod files;
 mod operation_lock;
 mod platform;
 
-use platform::{ErrorKind, FileStat, GpuAdapter, LocalContent, PlatformError};
+use platform::{ErrorKind, FileStat, GpuAdapter, LocalContent, MonitorInfo, PlatformError};
 use std::path::PathBuf;
 
 // Async so the primitives run off the main thread and never stall the window.
@@ -38,6 +38,11 @@ async fn platform_env_folder(folder: String) -> Result<String, PlatformError> {
 #[tauri::command]
 async fn platform_gpu_adapters() -> Result<Vec<GpuAdapter>, PlatformError> {
     platform::gpu_adapters()
+}
+
+#[tauri::command]
+async fn platform_monitors() -> Result<Vec<MonitorInfo>, PlatformError> {
+    platform::monitors()
 }
 
 #[tauri::command]
@@ -351,6 +356,7 @@ pub fn run() {
             platform_read_registry,
             platform_env_folder,
             platform_gpu_adapters,
+            platform_monitors,
             platform_windows_version,
             platform_key_names,
             platform_copy_text,

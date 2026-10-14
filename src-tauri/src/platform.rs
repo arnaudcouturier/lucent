@@ -9,10 +9,26 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use windows::core::{Interface, HSTRING};
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
+use windows::Win32::Devices::Display::{
+    DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
+    DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+    DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO,
+    DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
+};
+use windows::Win32::Foundation::{
+    GlobalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE, HWND, LPARAM, RPC_E_CHANGED_MODE,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+    DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
+};
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, IDXGIDevice, IDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE,
+    CreateDXGIFactory1, IDXGIDevice, IDXGIFactory1, IDXGIOutput6, DXGI_ADAPTER_FLAG_SOFTWARE,
     DXGI_ERROR_NOT_FOUND,
+};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, DEVMODEW, ENUM_CURRENT_SETTINGS,
+    HDC, HMONITOR, MONITORINFOEXW,
 };
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
@@ -24,12 +40,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ActivateKeyboardLayout, GetKeyNameTextW, GetKeyboardLayout, MapVirtualKeyExW,
     ACTIVATE_KEYBOARD_LAYOUT_FLAGS, HKL, MAPVK_VK_TO_VSC_EX,
 };
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{
+    FOLDERID_Documents, SHGetKnownFolderPath, ShellExecuteW, KNOWN_FOLDER_FLAG,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SW_SHOWNORMAL,
 };
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
 use winreg::RegKey;
+
+const MONITORINFOF_PRIMARY: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -218,6 +238,9 @@ pub fn read_registry(hive: &str, key: &str, value: &str) -> Result<String> {
 
 /// Well-known folders, as Windows resolves them for the current user.
 pub fn env_folder(folder: &str) -> Result<String> {
+    if folder == "Documents" {
+        return documents_folder();
+    }
     let var = match folder {
         "AppData" => "APPDATA",
         "LocalAppData" => "LOCALAPPDATA",
@@ -233,6 +256,373 @@ pub fn env_folder(folder: &str) -> Result<String> {
     };
     std::env::var(var)
         .map_err(|_| PlatformError::new(ErrorKind::NotFound, format!("{var} is not set"), None))
+}
+
+fn documents_folder() -> Result<String> {
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
+    };
+
+    // SHGetKnownFolderPath resolves the current user's redirected Documents location.
+    // SAFETY: COM is initialized for this synchronous call; the returned CoTaskMem string
+    // is converted and freed before returning. An existing apartment is left untouched.
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_MULTITHREADED);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                initialized.to_string(),
+                None,
+            ));
+        }
+
+        let path = SHGetKnownFolderPath(&FOLDERID_Documents, KNOWN_FOLDER_FLAG(0), None);
+        if initialized.is_ok() {
+            CoUninitialize();
+        }
+        let path =
+            path.map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))?;
+        let text = path.to_string();
+        CoTaskMemFree(Some(path.0 as *const _));
+        text.map_err(|error| PlatformError::new(ErrorKind::Unknown, error.to_string(), None))
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorBounds {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorInfo {
+    pub device_name: String,
+    pub bounds: MonitorBounds,
+    pub primary: bool,
+    pub refresh_hz: f64,
+    pub width: u32,
+    pub height: u32,
+    pub hdr_supported: bool,
+    pub hdr_on: bool,
+    pub peak_nits: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct AdvancedColorMetadata {
+    supported: bool,
+    enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct DxgiColorMetadata {
+    hdr_color_space: bool,
+    peak_nits: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct MonitorColorMetadata {
+    hdr_supported: bool,
+    hdr_on: bool,
+    peak_nits: Option<f32>,
+}
+
+fn combine_monitor_color(
+    advanced: Option<AdvancedColorMetadata>,
+    dxgi: Option<DxgiColorMetadata>,
+) -> MonitorColorMetadata {
+    let advanced = advanced.unwrap_or_default();
+    let dxgi_color = dxgi.unwrap_or_default();
+    MonitorColorMetadata {
+        hdr_supported: advanced.supported || dxgi_color.hdr_color_space,
+        // Prefer DXGI's current color space when available: advanced color can also be WCG.
+        hdr_on: dxgi.map_or(advanced.enabled, |color| color.hdr_color_space),
+        peak_nits: dxgi_color
+            .peak_nits
+            .filter(|value| value.is_finite() && *value > 0.0),
+    }
+}
+
+#[derive(Debug)]
+struct NativeMonitor {
+    handle: HMONITOR,
+    bounds: MonitorBounds,
+    device_name: [u16; 32],
+    primary: bool,
+}
+
+fn wide_string(value: &[u16]) -> String {
+    let end = value
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(value.len());
+    String::from_utf16_lossy(&value[..end])
+}
+
+unsafe extern "system" fn collect_monitor(
+    handle: HMONITOR,
+    _dc: HDC,
+    _clip: *mut windows::Win32::Foundation::RECT,
+    data: LPARAM,
+) -> windows::core::BOOL {
+    let monitors = &mut *(data.0 as *mut Vec<NativeMonitor>);
+    let mut info = MONITORINFOEXW::default();
+    info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+    if !GetMonitorInfoW(handle, &mut info.monitorInfo).as_bool() {
+        return windows::core::BOOL(1);
+    }
+    let bounds = info.monitorInfo.rcMonitor;
+    monitors.push(NativeMonitor {
+        handle,
+        bounds: MonitorBounds {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+        },
+        device_name: info.szDevice,
+        primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
+    });
+    windows::core::BOOL(1)
+}
+
+fn enumerate_native_monitors() -> Result<Vec<NativeMonitor>> {
+    let mut monitors = Vec::new();
+    // SAFETY: EnumDisplayMonitors invokes the callback synchronously and the LPARAM points
+    // to the live vector for that call. The callback only reads monitor metadata.
+    let enumerated = unsafe {
+        EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect_monitor),
+            LPARAM(&mut monitors as *mut Vec<NativeMonitor> as isize),
+        )
+    };
+    if !enumerated.as_bool() {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "Windows could not enumerate display monitors.",
+            None,
+        ));
+    }
+    Ok(monitors)
+}
+
+fn current_display_mode(device_name: &str) -> Option<DEVMODEW> {
+    let mut mode = DEVMODEW::default();
+    mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+    let device_name: Vec<u16> = device_name.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: the NUL-terminated device name and initialized DEVMODEW stay alive for the call.
+    unsafe {
+        EnumDisplaySettingsW(
+            windows::core::PCWSTR(device_name.as_ptr()),
+            ENUM_CURRENT_SETTINGS,
+            &mut mode,
+        )
+        .as_bool()
+        .then_some(mode)
+    }
+}
+
+fn dxgi_reports_hdr_color_space(
+    color_space: windows::Win32::Graphics::Dxgi::Common::DXGI_COLOR_SPACE_TYPE,
+) -> bool {
+    matches!(
+        color_space,
+        DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+            | DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+            | DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020
+    )
+}
+
+fn dxgi_monitor_colors() -> Vec<(HMONITOR, DxgiColorMetadata)> {
+    // DXGI is supplementary: GDI monitor enumeration remains useful on drivers that do not
+    // expose output6 or fail a color-description query.
+    let factory: IDXGIFactory1 = match unsafe { CreateDXGIFactory1() } {
+        Ok(factory) => factory,
+        Err(_) => return Vec::new(),
+    };
+    let mut result = Vec::new();
+    unsafe {
+        for adapter_index in 0.. {
+            let adapter = match factory.EnumAdapters1(adapter_index) {
+                Ok(adapter) => adapter,
+                Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+                // Keep the GDI facts already collected, and stop if a driver reports an
+                // unexpected adapter error. Continuing could otherwise scan to u32 exhaustion.
+                Err(_) => break,
+            };
+            for output_index in 0.. {
+                let output = match adapter.EnumOutputs(output_index) {
+                    Ok(output) => output,
+                    Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+                    // DXGI is supplemental; stop this adapter's output scan on unexpected
+                    // errors rather than potentially looping through every u32 index.
+                    Err(_) => break,
+                };
+                let Ok(output6) = output.cast::<IDXGIOutput6>() else {
+                    continue;
+                };
+                let Ok(desc) = output6.GetDesc1() else {
+                    continue;
+                };
+                if !desc.AttachedToDesktop.as_bool() {
+                    continue;
+                }
+                result.push((
+                    desc.Monitor,
+                    DxgiColorMetadata {
+                        hdr_color_space: dxgi_reports_hdr_color_space(desc.ColorSpace),
+                        peak_nits: (desc.MaxLuminance.is_finite() && desc.MaxLuminance > 0.0)
+                            .then_some(desc.MaxLuminance),
+                    },
+                ));
+            }
+        }
+    }
+    result
+}
+
+fn display_config_monitor_colors() -> HashMap<String, AdvancedColorMetadata> {
+    let mut path_count = 0;
+    let mut mode_count = 0;
+    let mut result = HashMap::new();
+    // SAFETY: query buffers are sized by GetDisplayConfigBufferSizes and remain alive through
+    // both query calls. Device-info headers point at properly sized Windows API structs.
+    unsafe {
+        for _ in 0..3 {
+            if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
+                .0
+                != 0
+                || path_count == 0
+            {
+                return result;
+            }
+            let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); path_count as usize];
+            let mut modes = vec![
+                windows::Win32::Devices::Display::DISPLAYCONFIG_MODE_INFO::default(
+                );
+                mode_count.max(1) as usize
+            ];
+            let query_result = QueryDisplayConfig(
+                QDC_ONLY_ACTIVE_PATHS,
+                &mut path_count,
+                paths.as_mut_ptr(),
+                &mut mode_count,
+                modes.as_mut_ptr(),
+                None,
+            );
+            if query_result == ERROR_INSUFFICIENT_BUFFER {
+                continue;
+            }
+            if query_result.0 != 0 {
+                return result;
+            }
+            paths.truncate(path_count as usize);
+
+            for path in paths {
+                let mut source = DISPLAYCONFIG_SOURCE_DEVICE_NAME {
+                    header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                        r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+                        size: std::mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32,
+                        adapterId: path.sourceInfo.adapterId,
+                        id: path.sourceInfo.id,
+                    },
+                    ..Default::default()
+                };
+                if DisplayConfigGetDeviceInfo(&mut source.header) != 0 {
+                    continue;
+                }
+                let device_name = wide_string(&source.viewGdiDeviceName);
+                let mut color = DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO {
+                    header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                        r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                        size: std::mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
+                        adapterId: path.targetInfo.adapterId,
+                        id: path.targetInfo.id,
+                    },
+                    ..Default::default()
+                };
+                if DisplayConfigGetDeviceInfo(&mut color.header) != 0 {
+                    continue;
+                }
+                // DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO packs supported and enabled into
+                // bits 0 and 1; bit 3 is force-disabled. Keep support independent of enabled.
+                let value = color.Anonymous.value;
+                let metadata = AdvancedColorMetadata {
+                    supported: value & 0x1 != 0,
+                    enabled: value & 0x2 != 0,
+                };
+                let current = result.entry(device_name).or_default();
+                current.supported |= metadata.supported;
+                current.enabled |= metadata.enabled;
+            }
+            return result;
+        }
+    }
+    result
+}
+
+/// Enumerates physical desktop monitors and current color metadata for the TypeScript core.
+pub fn monitors() -> Result<Vec<MonitorInfo>> {
+    let native_monitors = enumerate_native_monitors()?;
+    let display_config = display_config_monitor_colors();
+    let dxgi = dxgi_monitor_colors();
+    Ok(native_monitors
+        .into_iter()
+        .map(|native| {
+            let device_name = wide_string(&native.device_name);
+            let mode = current_display_mode(&device_name);
+            let bounds_width = native
+                .bounds
+                .right
+                .saturating_sub(native.bounds.left)
+                .max(0) as u32;
+            let bounds_height = native
+                .bounds
+                .bottom
+                .saturating_sub(native.bounds.top)
+                .max(0) as u32;
+            let width = mode.as_ref().map_or(bounds_width, |mode| {
+                if mode.dmPelsWidth > 0 {
+                    mode.dmPelsWidth
+                } else {
+                    bounds_width
+                }
+            });
+            let height = mode.as_ref().map_or(bounds_height, |mode| {
+                if mode.dmPelsHeight > 0 {
+                    mode.dmPelsHeight
+                } else {
+                    bounds_height
+                }
+            });
+            let refresh_hz = mode
+                .as_ref()
+                .map_or(0.0, |mode| mode.dmDisplayFrequency as f64)
+                .max(0.0);
+            let advanced = display_config.get(&device_name).copied();
+            let dxgi_color = dxgi
+                .iter()
+                .find(|(handle, _)| *handle == native.handle)
+                .map(|(_, color)| *color);
+            let color = combine_monitor_color(advanced, dxgi_color);
+            MonitorInfo {
+                device_name,
+                bounds: native.bounds,
+                primary: native.primary,
+                refresh_hz,
+                width,
+                height,
+                hdr_supported: color.hdr_supported,
+                hdr_on: color.hdr_on,
+                peak_nits: color.peak_nits,
+            }
+        })
+        .collect())
 }
 
 #[derive(Debug, Serialize)]
@@ -1159,6 +1549,87 @@ mod tests {
     }
 
     #[test]
+    fn monitor_metadata_serializes_the_public_camel_case_shape() {
+        let mut monitor = MonitorInfo {
+            device_name: r"\\.\DISPLAY1".into(),
+            bounds: MonitorBounds {
+                left: 0,
+                top: 0,
+                right: 2560,
+                bottom: 1440,
+            },
+            primary: true,
+            refresh_hz: 240.0,
+            width: 2560,
+            height: 1440,
+            hdr_supported: true,
+            hdr_on: false,
+            peak_nits: Some(1000.0),
+        };
+
+        assert_eq!(
+            serde_json::to_value(&monitor).unwrap(),
+            serde_json::json!({
+                "deviceName": r"\\.\DISPLAY1",
+                "bounds": { "left": 0, "top": 0, "right": 2560, "bottom": 1440 },
+                "primary": true,
+                "refreshHz": 240.0,
+                "width": 2560,
+                "height": 1440,
+                "hdrSupported": true,
+                "hdrOn": false,
+                "peakNits": 1000.0
+            })
+        );
+        monitor.peak_nits = None;
+        assert_eq!(
+            serde_json::to_value(monitor).unwrap()["peakNits"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn advanced_color_capability_survives_hdr_being_off() {
+        let color = combine_monitor_color(
+            Some(AdvancedColorMetadata {
+                supported: true,
+                enabled: true,
+            }),
+            Some(DxgiColorMetadata {
+                hdr_color_space: false,
+                peak_nits: Some(600.0),
+            }),
+        );
+
+        assert_eq!(
+            color,
+            MonitorColorMetadata {
+                hdr_supported: true,
+                hdr_on: false,
+                peak_nits: Some(600.0),
+            }
+        );
+    }
+
+    #[test]
+    fn dxgi_hdr_color_space_reports_hdr_active_without_display_config() {
+        assert_eq!(
+            combine_monitor_color(
+                None,
+                Some(DxgiColorMetadata {
+                    hdr_color_space: true,
+                    peak_nits: None,
+                }),
+            ),
+            MonitorColorMetadata {
+                hdr_supported: true,
+                hdr_on: true,
+                peak_nits: None,
+            }
+        );
+    }
+
+    #[test]
     fn writable_folder_probe_leaves_no_files() {
         let dir = tempfile::tempdir().unwrap();
         assert!(is_directory_writable(dir.path()).unwrap());
@@ -1491,6 +1962,7 @@ mod tests {
             let path = env_folder(folder).unwrap();
             assert!(Path::new(&path).is_dir(), "{folder} → {path}");
         }
+        assert!(Path::new(&env_folder("Documents").unwrap()).is_absolute());
         assert_eq!(env_folder("Desktop").unwrap_err().kind, ErrorKind::Unknown);
     }
 
