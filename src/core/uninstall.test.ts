@@ -4,7 +4,7 @@ import { createFakePlatform, type FakePlatform } from '../platform/fake'
 import { MACHINES, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
-import { readDeployment, replacedOriginals } from './deployment'
+import { readableBackupPath, readDeployment, replacedOriginals } from './deployment'
 import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -179,4 +179,49 @@ it('says whether uninstall put back files it had replaced', async () => {
   expect(replaced.length).toBeGreaterThan(0)
   await existing.uninstall()
   expect(existing.getState().notice).toMatch(new RegExp(`put back the ${replaced.length === 1 ? 'file' : `${replaced.length} files`} it had replaced`))
+})
+
+const EXISTING_ROOT = 'C:\\Games\\FFXIV'
+const existingFiles = async (platform: FakePlatform) => Object.fromEntries(await Promise.all((await platform.listFiles(`${EXISTING_ROOT}\\game`)).sort().map(async (path) => [path, await platform.hashFile(`${EXISTING_ROOT}\\game\\${path}`)])))
+const sameFile = (a: string, b: string) => a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase()
+
+async function deployedOverExisting() {
+  const platform = createFakePlatform(MACHINES.existing)
+  const before = await existingFiles(platform)
+  const core = createCore(platform)
+  await core.scan()
+  await core.continueSetup()
+  await core.review(true)
+  await core.deploy()
+  core.finish()
+  return { platform, core, before }
+}
+
+it('restores the game to vanilla when asked, leaving the files it replaced out and their copies in the readable backup', async () => {
+  const { platform, core, before } = await deployedOverExisting()
+  const replaced = replacedOriginals(core.getState().deployment!)
+  expect(replaced.length).toBeGreaterThan(0)
+  const folder = core.getState().deployment!.backupFolder!
+  await core.uninstall(false)
+  expect(core.getState()).toMatchObject({ error: null, busy: false, deployment: null, activity: { kind: 'scan' } })
+  expect(core.getState().notice).toMatch(/vanilla/)
+  expect(core.getState().notice).toMatch(/copies are in/)
+  const after = await existingFiles(platform)
+  // Every replaced original stays out; nothing else changed.
+  for (const path of replaced) expect(Object.keys(after).some((p) => sameFile(p, path))).toBe(false)
+  const left = Object.entries(before).filter(([path]) => !replaced.some((r) => sameFile(r, path)))
+  for (const [path, hash] of left) expect(after[path]).toBe(hash)
+  // Only presets carried over from the old setup are new; they are the player’s files.
+  expect(Object.keys(after).filter((path) => !(path in before)).every((path) => /^reshade-presets[\\/]/i.test(path))).toBe(true)
+  // The player's copies are still there, readable.
+  const readable = await readableBackupPath(platform, EXISTING_ROOT, folder)
+  expect((await platform.listFiles(readable)).length).toBeGreaterThan(0)
+})
+
+it('puts the replaced files back by default and removes the readable backup', async () => {
+  const { platform, core, before } = await deployedOverExisting()
+  await core.uninstall(true)
+  const after = await existingFiles(platform)
+  for (const [path, hash] of Object.entries(before)) expect(after[path]).toBe(hash)
+  expect(core.getState().notice).toMatch(/put back/)
 })

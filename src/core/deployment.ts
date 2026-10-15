@@ -53,6 +53,8 @@ export interface DeploymentRecord {
   changeDirectoryStart?: number
   /** An uninstall in progress: recovery finishes it rather than protecting what the mods changed in Lucent's own files. */
   uninstalling?: boolean
+  /** An uninstall that leaves the files the deployment replaced out, so the game folder ends vanilla; their copies stay in the readable backup folder. */
+  leaveOriginals?: boolean
   recipe: Plan['recipe']
   journal: JournalEntry[]
   /** Directories absent before the deployment, recorded before any step can create them. */
@@ -235,6 +237,7 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
     for (const path of value.generatedFiles) assertGamePath(path)
   }
   if (value.uninstalling !== undefined && typeof value.uninstalling !== 'boolean') throw new Error('The uninstall journal is damaged.')
+  if (value.leaveOriginals !== undefined && typeof value.leaveOriginals !== 'boolean') throw new Error('The uninstall journal is damaged.')
   if (value.backupFolder !== undefined && (typeof value.backupFolder !== 'string' || !BACKUP_FOLDER_NAME.test(value.backupFolder))) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.pinned !== undefined && typeof value.pinned !== 'boolean') throw new Error('The content pin is damaged.')
   if (value.pendingSelection !== undefined && (!value.pendingSelection || (value.pendingSelection.skip !== null && !/^\d{4}\.\d{2}\.\d{2}$/.test(value.pendingSelection.skip)))) throw new Error('The content selection is damaged.')
@@ -359,7 +362,12 @@ const FILE_BATCH = 96
  * removed if the step created it, or restored from its verified backup. The checks are the sequential undo's.
  */
 async function undoEntries(platform: Platform, record: DeploymentRecord, backups: string, indices: number[]) {
-  const work: { relative: string; before: string | null; after: string | null | undefined }[] = []
+  const work: { relative: string; before: string | null; after: string | null | undefined; dropped: boolean }[] = []
+  // A vanilla uninstall puts nothing back where the deployment replaced a file: that step's backup is the original.
+  const firstEntry = new Map<string, number>()
+  if (record.uninstalling && record.leaveOriginals) {
+    record.journal.forEach((entry, i) => { for (const relative of Object.keys(entry.before)) if (!firstEntry.has(fileKey(relative))) firstEntry.set(fileKey(relative), i) })
+  }
   for (const index of indices) {
     const entry = record.journal[index]
     // A carried-over preset is a user file once the deployment is complete; only a failed deployment takes it back.
@@ -382,7 +390,10 @@ async function undoEntries(platform: Platform, record: DeploymentRecord, backups
     }
     if (record.uninstalling && entry.step?.kind === 'carry') continue
     if (!entry.step) throw new Error('The deployment journal is damaged.')
-    for (const [relative, before] of Object.entries(entry.before).reverse()) work.push({ relative, before, after: entry.after[relative] })
+    for (const [relative, before] of Object.entries(entry.before).reverse()) {
+      const dropped = before !== null && firstEntry.get(fileKey(relative)) === index
+      work.push({ relative, before: dropped ? null : before, after: entry.after[relative], dropped })
+    }
   }
   if (!work.length) return
   const targets = await platform.resolveGamePaths(joinPath(record.gameFolder, 'game'), work.map((w) => w.relative))
@@ -391,13 +402,13 @@ async function undoEntries(platform: Platform, record: DeploymentRecord, backups
   let hashed = 0
   const removals: string[] = []
   const restores: { relative: string; target: string; backup: string; replace: boolean }[] = []
-  work.forEach(({ relative, before, after }, k) => {
+  work.forEach(({ relative, before, after, dropped }, k) => {
     const current = stats[k] ? hashes[hashed++] : null
     if (current === before) return
     if (current !== after) {
       if (!record.uninstalling) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
       // A file Lucent added stays Lucent's even after a mod rewrites it; a replaced original is newer than the deployment.
-      if (before !== null && current !== null) return
+      if ((before !== null || dropped) && current !== null) return
     }
     if (before === null) removals.push(targets[k])
     else restores.push({ relative, target: targets[k], backup: before, replace: current !== null })
@@ -466,7 +477,8 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
   } else { await undoDirectories(platform, record.gameFolder, record.createdDirectories ?? []); record.status = 'rolled-back' }
   await checkpoint('all')
   // Every original is back in the game folder, so the player's copy has served its purpose.
-  if (record.status === 'rolled-back') await removeReadableBackup(platform, record)
+  // A vanilla uninstall keeps the player's copy: it is all that is left of the files it did not put back.
+  if (record.status === 'rolled-back' && !record.leaveOriginals) await removeReadableBackup(platform, record)
 }
 
 /** Every asset is verified before a journal or game-folder mutation; each intent is durable before its step. */
@@ -1262,13 +1274,14 @@ export function replacedOriginals(record: Pick<DeploymentRecord, 'journal'>): st
 }
 
 /** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */
-export async function uninstallDeployment(platform: Platform, gameFolder: string): Promise<void> {
+export async function uninstallDeployment(platform: Platform, gameFolder: string, options: { restoreOriginals?: boolean } = {}): Promise<void> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('There is no deployment to uninstall.')
   const { record: path } = await dataPaths(platform, gameFolder)
   record.status = 'applying'
   record.uninstalling = true
+  if (options.restoreOriginals === false) record.leaveOriginals = true
   // From here on, an interrupted uninstall is finished by recovery at the next start.
   await platform.writeText(path, JSON.stringify(record, null, 2))
   try { await undoDeployment(platform, record) } catch (error) {

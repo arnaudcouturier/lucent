@@ -44,7 +44,8 @@ export async function guardGameWrites(platform: Platform, gameFolder: string): P
 export type GameWriteRequest = { gameFolder: string } & (
   | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[] }
   | { kind: 'reset'; contentVersion: string; tier: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[]; backupPath: string }
-  | { kind: 'repair' | 'uninstall' | 'recover' }
+  | { kind: 'uninstall'; restoreOriginals?: boolean }
+  | { kind: 'repair' | 'recover' }
   | { kind: 'update'; contentVersion: string }
   | { kind: 'tier'; tier: string; contentVersion: string }
   | { kind: 'enabled'; enabled: boolean }
@@ -88,6 +89,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
       || (request.hdrMode !== null && !(HDR_MODES as readonly string[]).includes(request.hdrMode as string))
       || (request.mfgUnlocked !== undefined && typeof request.mfgUnlocked !== 'boolean')
       || (request.neuralRendering !== undefined && request.neuralRendering !== null && !validNeuralRendering(request.neuralRendering))))
+    || (request.kind === 'uninstall' && request.restoreOriginals !== undefined && typeof request.restoreOriginals !== 'boolean')
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')
   if (request.kind === 'deploy' || request.kind === 'reset') {
     if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')

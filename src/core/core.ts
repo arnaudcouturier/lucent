@@ -212,7 +212,8 @@ export interface Core {
   /** Stops announcing the announced content version. */
   skipUpdate(): Promise<void>
   /** Undoes the deployment, leaving the game folder vanilla, then returns to Scan. */
-  uninstall(): Promise<void>
+  /** Undoes the deployment, leaving the game folder vanilla. With `restoreOriginals` (the default) the files it replaced are put back; without, they stay out and only their copies remain. Then returns to Scan. */
+  uninstall(restoreOriginals?: boolean): Promise<void>
   /** Adds or removes XIVLauncher's add-on entries that check on game launch and repair on game close. */
   setAutoRepair(enabled: boolean): Promise<void>
   /** Switches between Stable and Beta for app and content versions, then announces again. Never touches the game folder, so XIV may be running. */
@@ -962,7 +963,7 @@ export function createCore(platform: Platform): Core {
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
           else if (resume.kind === 'repair') await core.repair()
-          else if (resume.kind === 'uninstall') await core.uninstall()
+          else if (resume.kind === 'uninstall') await core.uninstall(resume.restoreOriginals !== false)
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
           else if (resume.kind === 'tier') await core.switchTier()
         } catch (error) { set({ error: message(error) }) }
@@ -1330,24 +1331,30 @@ export function createCore(platform: Platform): Core {
     async refreshKeybinds() {
       try { await refreshKeybinds() } catch { /* The last keys read keep showing. */ }
     },
-    async uninstall() {
+    async uninstall(restoreOriginals = true) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
       const folder = state.gameFolder
       const restored = replacedOriginals(state.deployment).length
+      const backupFolder = state.deployment.backupFolder
+      const deployedFolder = state.deployment.gameFolder
       set({ busy: true, error: null, notice: null })
       try {
-        if (!await prepareWrite({ kind: 'uninstall', gameFolder: state.deployment.gameFolder })) { set({ busy: false }); return }
-        log.write('info', `Uninstall: ${state.deployment.gameFolder}`)
-        await uninstallDeployment(platform, state.deployment.gameFolder)
+        if (!await prepareWrite({ kind: 'uninstall', gameFolder: state.deployment.gameFolder, restoreOriginals })) { set({ busy: false }); return }
+        log.write('info', `Uninstall: ${state.deployment.gameFolder}${restored ? restoreOriginals ? ', putting back the files it replaced' : ', leaving the files it replaced out (vanilla)' : ''}`)
+        await uninstallDeployment(platform, state.deployment.gameFolder, { restoreOriginals })
       } catch (error) {
         const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
         // A half-undone deployment is no longer the one the main screen describes.
         set({ busy: false, error: message(error), recoveryRequired, ...(recoveryRequired ? { deployment: null, plan: null, activity: { kind: 'scan' } } : {}) })
         return
       }
-      set({ busy: false, deployment: null, keybinds: null, existingSetups: [], folderChanges: null, hotkeys: [], notice: restored
-        ? `Lucent is uninstalled. It put back the ${restored === 1 ? 'file' : `${restored.toLocaleString('en')} files`} it had replaced, so your game folder is as it was before.`
-        : 'Lucent is uninstalled. It removed everything it added; it hadn’t replaced any of your files.' })
+      const readable = restored && !restoreOriginals && backupFolder ? await readableBackupPath(platform, deployedFolder, backupFolder).catch(() => null) : null
+      const files = restored === 1 ? 'file' : `${restored.toLocaleString('en')} files`
+      set({ busy: false, deployment: null, keybinds: null, existingSetups: [], folderChanges: null, hotkeys: [], notice: !restored
+        ? 'Lucent is uninstalled. It removed everything it added; it hadn’t replaced any of your files.'
+        : restoreOriginals
+          ? `Lucent is uninstalled. It put back the ${files} it had replaced, so your game folder is as it was before.`
+          : `Lucent is uninstalled and your game folder is vanilla. It left the ${files} it had replaced out${readable ? `; copies are in ${readable}` : ''}.` })
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })

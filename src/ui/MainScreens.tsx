@@ -115,7 +115,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
-  const restored = deployment ? replacedOriginals(deployment).length : 0
+  const originals = deployment ? replacedOriginals(deployment) : []
   return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
     <FlowError />
     {launchOptions.length === 1 && <SettingsGroup title="Launch XIV with">
@@ -165,13 +165,13 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={() => setResetConfirming(true)}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
       </div>
       <div className="card settings-danger">
-        <span><strong>Uninstall from this game</strong><small>{restored
-          ? `Removes everything Lucent added and puts back the ${restored === 1 ? 'file' : `${restored.toLocaleString('en')} files`} it replaced.`
+        <span><strong>Uninstall from this game</strong><small>{originals.length
+          ? `Removes everything Lucent added. You choose whether the ${originals.length === 1 ? 'file' : `${originals.length.toLocaleString('en')} files`} it replaced come back.`
           : 'Removes everything Lucent added. It didn’t replace any of your files.'}</small></span>
         <button className="btn is-danger-outline" disabled={!gameActionsAvailable(state)} onClick={() => setConfirming(true)}><Trash2 size={14} strokeWidth={1.75} />Uninstall…</button>
       </div>
     </SettingsGroup>}
-    {confirming && <UninstallDialog restored={restored} onClose={() => setConfirming(false)} />}
+    {confirming && <UninstallDialog originals={originals} onClose={() => setConfirming(false)} />}
     {resetConfirming && resetBackupPath && <ResetDialog backupPath={resetBackupPath} onClose={() => setResetConfirming(false)} />}
   </Screen>
 }
@@ -199,22 +199,39 @@ function ResetDialog({ backupPath, onClose }: { backupPath: string; onClose: () 
   )
 }
 
-function UninstallDialog({ restored, onClose }: { restored: number; onClose: () => void }) {
+function UninstallDialog({ originals, onClose }: { originals: string[]; onClose: () => void }) {
   const [state, core] = useCore()
   const { busy } = state
   const ref = useRef<HTMLDialogElement>(null)
+  const [restore, setRestore] = useState(true)
+  const name = useId()
   useEffect(() => { ref.current?.showModal() }, [])
   const uninstall = async () => {
-    await core.uninstall()
+    await core.uninstall(restore)
     onClose()
   }
+  const count = originals.length
+  const files = count === 1 ? 'file' : `${count.toLocaleString('en')} files`
+  const shown = originals.slice(0, 3).map((path) => path.split(/[\\/]/).at(-1))
   return (
     <dialog ref={ref} className="confirm" aria-labelledby="uninstall-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
       <h2 id="uninstall-title">Uninstall from this game?</h2>
-      <p>{restored
-        ? <>Lucent removes everything it added and puts back the {restored === 1 ? 'file' : <>{restored.toLocaleString('en')} files</>} it replaced from your earlier setup.</>
-        : <>Lucent removes everything it added, including the logs the mods wrote. It didn’t replace any of your files, so there’s nothing to restore.</>}{' '}
-        Your own presets and shaders stay.</p>
+      {count > 0 ? <>
+        <p>Lucent removes everything it added. When you installed, it backed up {count === 1 ? 'a file' : <>{files}</>} from your game folder and replaced {count === 1 ? 'it' : 'them'}. What should happen to {count === 1 ? 'it' : 'them'}?</p>
+        <fieldset className="uninstall-choices" disabled={busy} aria-label="What to do with the backed-up files">
+          <label className={`card option-row ${restore ? 'is-selected' : ''}`}>
+            <input type="radio" name={name} checked={restore} onChange={() => setRestore(true)} />
+            <span><strong>Put my earlier {count === 1 ? 'file' : 'files'} back</strong>
+              <small>Restores {shown.join(', ')}{count > shown.length ? ` and ${count - shown.length} more` : ''} exactly as they were before Lucent.</small></span>
+          </label>
+          <label className={`card option-row ${restore ? '' : 'is-selected'}`}>
+            <input type="radio" name={name} checked={!restore} onChange={() => setRestore(false)} />
+            <span><strong>Restore the game to vanilla</strong>
+              <small>Leaves {count === 1 ? 'that file' : 'those files'} out, so the game folder has no mods. Copies stay in Lucent’s backup folder.</small></span>
+          </label>
+        </fieldset>
+        <p className="uninstall-note">Your own presets and shaders stay either way.</p>
+      </> : <p>Lucent removes everything it added, including the logs the mods wrote. It didn’t replace any of your files, so there’s nothing to restore. Your own presets and shaders stay.</p>}
       <footer className="confirm-actions">
         <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
         <button className="btn is-danger" disabled={!gameActionsAvailable(state)} onClick={() => void uninstall()}>

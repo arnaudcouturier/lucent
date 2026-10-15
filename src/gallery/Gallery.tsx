@@ -416,6 +416,7 @@ const STATES: GalleryState[] = [
   { key: 'done-radeon', label: 'Done · FSR and ReShade', setup: workflow('done', machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'done-other', label: 'Done · ReShade only', setup: workflow('done', machine(MACHINES.steam, graphicsCard('Intel Arc A770', 0x8086))) },
   { key: 'healthy', label: 'Main · Healthy', setup: workflow('healthy') },
+  { key: 'healthy-existing', label: 'Main · Healthy over an existing setup (Uninstall asks what to do with its files)', setup: workflow('healthy', MACHINES.existing) },
   { key: 'healthy-launchers', label: 'Main · Choose XIVLauncher or Steam', setup: multipleLaunchers },
   { key: 'healthy-official', label: 'Main · Square Enix launcher', setup: workflow('healthy', MACHINES.squareenix) },
   ...([
