@@ -514,6 +514,13 @@
 .health-card .update-size { color: var(--ink-3); font-size: var(--text-label); }
 .update-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
 
+/* An update the primary status card is hiding (behind drift, or while the game runs): a slim row instead
+   of the full changelog card, so it stays visible without competing with the primary card. */
+.update-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); }
+.update-row > svg { color: var(--accent); flex: none; }
+.update-row span { flex: 1; min-width: 0; color: var(--ink); font-size: var(--text-secondary); }
+.update-row .btn { flex: none; }
+
 /* ---------- Backups: Scan's list of the files a deployment backs up ---------- */
 .row-toggle {
   grid-column: 2; width: fit-content; margin-top: 2px; padding: 0; display: inline-flex; align-items: center; gap: 4px;

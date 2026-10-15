@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { Activity, State } from './core'
-import { statusCard } from './statusCard'
+import { secondaryUpdates, statusCard } from './statusCard'
 import { PROFILE_MANIFEST } from '../platform/contentFixture'
 
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>>): State =>
@@ -68,4 +68,30 @@ it('offers Switch tier below drift but ahead of updates and Disabled', () => {
   expect(statusCard(deployment({ drift, tierChange }))).toMatchObject({ kind: 'drift' })
   expect(statusCard({ ...deployment({ enabled: false, update, tierChange }), appUpdate } as State)).toEqual({ kind: 'switch-tier', ...tierChange })
   expect(statusCard({ ...deployment({ tierChange, operation: 'tier' }), deploymentProgress: { phase: 'applying', progress: 0.5, file: null } })).toEqual({ kind: 'busy', operation: 'tier', progress: 0.5 })
+})
+
+const update = { version: '2026.11.02', changelog: ['Sharper Neural Rendering.'], downloadSize: 12 }
+
+it('surfaces an app and a content update that drift would otherwise hide outright', () => {
+  expect(secondaryUpdates({ ...deployment({ drift, update }), appUpdate })).toEqual([{ kind: 'app-update', ...appUpdate }, { kind: 'update', ...update }])
+})
+
+it('surfaces updates the same way while the game is running, since Lucent can still update itself', () => {
+  expect(secondaryUpdates({ ...deployment({ update }), appUpdate, gameRunning: true } as State)).toEqual([{ kind: 'app-update', ...appUpdate }, { kind: 'update', ...update }])
+})
+
+it('suppresses every secondary update while busy, the folder is missing, or a tier switch is pending', () => {
+  expect(secondaryUpdates({ ...deployment({ update, operation: 'repair' }), appUpdate, deploymentProgress: { phase: 'applying', progress: 0.5, file: null } })).toEqual([])
+  expect(secondaryUpdates({ ...deployment({ update }), appUpdate, gameFolder: { status: 'missing', path: 'D:\\XIV' } } as State)).toEqual([])
+  expect(secondaryUpdates({ ...deployment({ update, tierChange }), appUpdate } as State)).toEqual([])
+})
+
+it('does not repeat an update that is already the primary card', () => {
+  expect(secondaryUpdates({ ...deployment({ update }), appUpdate })).toEqual([{ kind: 'update', ...update }])
+  expect(secondaryUpdates(deployment({ update }))).toEqual([])
+})
+
+it('shows nothing when there is no update to hide', () => {
+  expect(secondaryUpdates(deployment({ drift }))).toEqual([])
+  expect(secondaryUpdates(deployment({}))).toEqual([])
 })

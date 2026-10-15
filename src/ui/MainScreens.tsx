@@ -1,10 +1,10 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
-import { EnabledRow, FlowError, StatusCard } from './DeploymentScreens'
+import { EnabledRow, FlowError, StatusCard, UpdateCard } from './DeploymentScreens'
 import { KeysScreen } from './KeysScreen'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
@@ -15,6 +15,7 @@ import { gameActionsAvailable } from '../core/gameAccess'
 import { replacedOriginals } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
+import { secondaryUpdates, type UpdateCardState } from '../core/statusCard'
 import type { State } from '../core/core'
 
 export function MainScreen() {
@@ -24,11 +25,26 @@ export function MainScreen() {
 }
 
 function HomeScreen() {
+  const [state] = useCore()
   return <Screen title="Your game" sub="What Lucent manages in your game folder." actions={<LaunchButton />}>
     <StatusCard />
+    {secondaryUpdates(state).map((card) => <SecondaryUpdateRow key={card.kind} card={card} />)}
     <FlowError />
     <EnabledRow />
   </Screen>
+}
+
+/** An update the primary status card would otherwise hide entirely (behind drift, or while the game is
+    running): a slim row naming it, one Update button, no changelog — the full card is still what Settings
+    (for an app update) or the primary card (once nothing outranks it) shows. */
+function SecondaryUpdateRow({ card }: { card: UpdateCardState }) {
+  const [state, core] = useCore()
+  const app = card.kind === 'app-update'
+  return <div className="card update-row" role="status">
+    <ArrowDownToLine size={16} strokeWidth={1.75} />
+    <span>{app ? 'Lucent' : 'Content'} {card.version} is available</span>
+    <button className="btn is-primary" disabled={app ? state.busy || state.recoveryRequired : !gameActionsAvailable(state)} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
+  </div>
 }
 
 /** Starts XIV the way the player does. While XIV runs it says so instead. */
@@ -139,6 +155,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         </span>
         <button className="btn" disabled={busy} onClick={() => void core.checkForUpdates()}><RefreshCw size={14} strokeWidth={1.75} />Check now</button>
       </div>}
+      {state.appUpdate && <UpdateCard card={{ kind: 'app-update', ...state.appUpdate }} />}
       <label className="card option-row settings-switch">
         <span><strong>Beta channel</strong><small>Get beta versions of Lucent and its content first. Leaving Beta changes nothing installed.</small></span>
         <input type="checkbox" role="switch" checked={channel === 'beta'} disabled={busy} onChange={(e) => void core.setChannel(e.target.checked ? 'beta' : 'stable')} />
@@ -268,7 +285,9 @@ function updateStatusLine(state: State, now: number) {
   const available = [appUpdate && `Lucent ${appUpdate.version}`, contentUpdate && `content ${contentUpdate.version}`].filter((item): item is string => !!item)
   if (available.length) {
     const label = available.join(' and ')
-    return `${label[0].toUpperCase()}${label.slice(1)} ${available.length > 1 ? 'are' : 'is'} available · update from Home`
+    // The app update is actionable right below; a content update still has to be applied from Versions.
+    const note = contentUpdate ? ' · update content from Versions' : ''
+    return `${label[0].toUpperCase()}${label.slice(1)} ${available.length > 1 ? 'are' : 'is'} available${note}`
   }
   if (!updateCheck.checkedAt) return 'Not checked yet'
   return `Up to date · checked ${relativeCheckTime(updateCheck.checkedAt, now)}`

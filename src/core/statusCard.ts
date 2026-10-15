@@ -14,6 +14,8 @@ type CardState =
   | { kind: 'healthy' }
 
 export type StatusCard = CardState & { caution?: string }
+/** An available app or content update: what `UpdateCard` and the Home's secondary update rows render. */
+export type UpdateCardState = Extract<CardState, { kind: 'update' | 'app-update' }>
 
 /** The first match wins. Scan can announce app releases; deployment cards also cover content and health. */
 export function statusCard(state: Readonly<State>): StatusCard | null {
@@ -25,6 +27,20 @@ export function statusCard(state: Readonly<State>): StatusCard | null {
   const knownBroken = content ? content.knownBrokenGameVersions : state.deployment.cachedVersions?.find((v) => v.content.id === id)?.content.knownBrokenGameVersions
   return knownBroken?.includes(state.gameFolder.version)
     ? { ...card, caution: `Content ${id} is known broken on game ${state.gameFolder.version}. You can choose another version in Versions.` } : card
+}
+
+/** An update the primary card (drift, game-running...) would otherwise hide outright. Home shows each as a
+    slim row beside the primary card instead; Review and Versions are unaffected, and keep the one card
+    `statusCard` returns. Suppressed the same way `statusCard` suppresses updates: while something is busy, the
+    game folder is missing, or a tier switch is pending, acting on anything else isn't safe yet. */
+export function secondaryUpdates(state: Readonly<State>): UpdateCardState[] {
+  const primary = cardState(state)
+  if (!primary || primary.kind === 'busy' || primary.kind === 'folder-missing' || primary.kind === 'switch-tier') return []
+  const contentUpdate = state.activity.kind === 'deployment' ? state.activity.update : null
+  const items: UpdateCardState[] = []
+  if (state.appUpdate && primary.kind !== 'app-update') items.push({ kind: 'app-update', ...state.appUpdate })
+  if (contentUpdate && primary.kind !== 'update') items.push({ kind: 'update', ...contentUpdate })
+  return items
 }
 
 function cardState(state: Readonly<State>): CardState | null {

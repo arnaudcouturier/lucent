@@ -27,12 +27,14 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'help', label: 'Help', icon: LifeBuoy },
 ]
 
-/** A dot beside a section that needs the player: drift on Home, an update in Versions. */
+/** A dot beside a section that needs the player: drift on Home, a content update in Versions, an app update
+    in Settings (where it's actioned, not Versions — Versions only ever lists content versions). */
 function attention(state: State, section: Section): 'caution' | 'accent' | null {
   const { activity } = state
   if (activity.kind !== 'deployment') return null
   if (section === 'home') return activity.drift || state.gameFolder.status === 'missing' ? 'caution' : null
-  if (section === 'versions') return activity.update || state.appUpdate ? 'accent' : null
+  if (section === 'versions') return activity.update ? 'accent' : null
+  if (section === 'settings') return state.appUpdate ? 'accent' : null
   return null
 }
 

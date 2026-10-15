@@ -164,6 +164,26 @@ const patched = (stage: 'drift' | 'repairing') => async () => {
   return reopened
 }
 
+/** Drift no longer hides a pending update outright: both show, drift as the primary card, the app and
+    content updates as slim secondary rows beneath it. */
+const driftWithUpdates = async () => {
+  const m = machine(MACHINES.steam, { remoteText: { [APP_RELEASES_URL]: '[]' } })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  await platform.writeText(`${folder.path}\\game\\winmm.dll`, 'Patched')
+  await platform.writeText(`${folder.path}\\game\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  Object.assign(m.remoteText!, appReleaseHost().remoteText)
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
 /** The next content version is published after a deployment, optionally holding the update midway. */
 const updateAvailable = (stage: 'update' | 'updating') => async () => {
   const m = machine(MACHINES.steam)
@@ -439,6 +459,7 @@ const STATES: GalleryState[] = [
   { key: 'reset-confirmation', label: 'Settings · Reset setup confirmation', setup: resetFlow('confirmation'), settingsPreview: true, openReset: true },
   { key: 'reset-profile', label: 'Profile · Reset setup prefilled', setup: resetFlow('profile') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
+  { key: 'drift-with-updates', label: 'Main · Drift, with an app and content update pending', setup: driftWithUpdates },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'new-gpu', label: 'Main · New graphics card', setup: newGraphicsCard },
   { key: 'folder-missing', label: 'Main · Game folder missing', setup: missingGameFolder },

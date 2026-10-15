@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from 'react'
 import { ArrowDownToLine, BookOpen, Check, CircleCheck, Cpu, Download, ExternalLink, FolderX, LoaderCircle, ScanSearch, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import { GUIDE_URL, type KeyBinding } from '../core/hotkeys'
 import type { DeploymentPhase } from '../core/deployment'
-import { statusCard, type StatusCard as Card } from '../core/statusCard'
+import { statusCard, type StatusCard as Card, type UpdateCardState } from '../core/statusCard'
 import { Screen } from './Window'
 import { useCore } from './useCore'
 import { Path } from './Path'
@@ -188,6 +188,25 @@ export function StatusCard() {
   </div>
 }
 
+/** An available app or content update, with its changelog and Skip/Update actions. Shown as the primary status
+    card (via `StatusCard`), and reused standalone in Settings for an app update (Versions covers content there). */
+export function UpdateCard({ card }: { card: UpdateCardState }) {
+  const [state, core] = useCore()
+  const app = card.kind === 'app-update'
+  const notes = app ? card.notes : card.changelog
+  const size = app ? card.size : card.downloadSize
+  return <div className="health-card is-update" role="status">
+    <ArrowDownToLine size={20} />
+    <div className="health-body"><h2>{app ? 'Lucent' : 'Content'} {card.version} is available</h2>
+      <ul className="changelog">{notes.map((line, index) => <li key={index}>{line}</li>)}</ul>
+      <p className="update-size">{size ? `${sizeLabel(size)} to download` : 'Nothing to download'}. {app ? 'Lucent will reopen when the update is ready.' : 'Your profile and Enabled stay as they are.'}</p>
+      <footer className="update-actions">
+        <button className="btn is-ghost" disabled={state.busy} onClick={() => void (app ? core.skipAppUpdate() : core.skipUpdate())}>Skip</button>
+        <button className="btn is-primary" disabled={app ? state.busy || state.recoveryRequired : !gameActionsAvailable(state)} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
+      </footer></div>
+  </div>
+}
+
 function StatusCardContent({ card }: { card: Card }) {
   const [state, core] = useCore()
   if (card.kind === 'game-running' || card.kind === 'game-check-failed') return <div className="health-card is-game-waiting" role="status">
@@ -220,21 +239,7 @@ function StatusCardContent({ card }: { card: Card }) {
       <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
     <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
   </div>
-  if (card.kind === 'app-update' || card.kind === 'update') {
-    const app = card.kind === 'app-update'
-    const notes = app ? card.notes : card.changelog
-    const size = app ? card.size : card.downloadSize
-    return <div className="health-card is-update" role="status">
-      <ArrowDownToLine size={20} />
-      <div className="health-body"><h2>{app ? 'Lucent' : 'Content'} {card.version} is available</h2>
-        <ul className="changelog">{notes.map((line, index) => <li key={index}>{line}</li>)}</ul>
-        <p className="update-size">{size ? `${sizeLabel(size)} to download` : 'Nothing to download'}. {app ? 'Lucent will reopen when the update is ready.' : 'Your profile and Enabled stay as they are.'}</p>
-        <footer className="update-actions">
-          <button className="btn is-ghost" disabled={state.busy} onClick={() => void (app ? core.skipAppUpdate() : core.skipUpdate())}>Skip</button>
-          <button className="btn is-primary" disabled={app ? state.busy || state.recoveryRequired : !gameActionsAvailable(state)} onClick={() => void (app ? core.updateApp() : core.update())}><Download size={14} />Update</button>
-        </footer></div>
-    </div>
-  }
+  if (card.kind === 'app-update' || card.kind === 'update') return <UpdateCard card={card} />
   if (card.kind === 'disabled') return <div className="health-card is-disabled">
     <Snowflake size={20} />
     <div className="health-body"><h2>Disabled</h2><p>Lucent’s files are in place but inactive. The game runs as if vanilla.</p></div>
