@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <!-- Lucent's app icon: the brand mark on the rail colour. Also the site's favicon. -->
   <rect width="1024" height="1024" rx="224" fill="#0d0e11"/>
+  <defs>
+    <linearGradient id="g" x1="8" y1="0" x2="8" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F98135"/>
+      <stop offset="1" stop-color="#F47521"/>
+    </linearGradient>
+  </defs>
   <g transform="translate(512 512) scale(30) translate(-8 -11)">
-    <polygon points="8,0 16,8 8,22 0,8" fill="#F47521"/>
-    <path d="M0 8 L6 10 L8 22 M6 10 L16 8" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width=".9" stroke-linejoin="round"/>
+    <polygon points="8,0 14,14 8,22 2,14" fill="url(#g)"/>
   </g>
 </svg>

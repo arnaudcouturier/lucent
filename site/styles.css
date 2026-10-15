@@ -8,10 +8,7 @@
   --nav-glass: rgba(13, 14, 17, 0.78);
   --card-ring-hover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 32px -16px rgba(0, 0, 0, 0.7);
   --accent-ring: inset 0 0 0 1px rgba(244, 117, 33, 0.24);
-  /* Buttons sit on a solid edge and press down into it. */
-  --edge-accent: #a4470b;
-  --edge-dark: #050608;
-  --radius-card: 18px;
+  --radius-card: 16px;
   --radius-tile: 12px;
   --container: 1160px;
   --gutter: 24px;
@@ -160,22 +157,6 @@ code {
   color: var(--ink);
 }
 
-/* The mark: an orange gem with light edges, as in the app. */
-.brand svg polygon,
-.mock-brand svg polygon,
-.footer-brand svg polygon {
-  fill: var(--accent);
-}
-
-.brand svg path,
-.mock-brand svg path,
-.footer-brand svg path {
-  fill: none;
-  stroke: var(--mark-edge);
-  stroke-width: 0.9;
-  stroke-linejoin: round;
-}
-
 .brand svg {
   width: 15px;
   height: 21px;
@@ -209,9 +190,8 @@ code {
   gap: var(--space-2);
 }
 
-/* ---------- Buttons: pills on a solid edge that press down ---------- */
+/* ---------- Buttons: flat pills, no skeuomorphic press (Raycast is flat, not chunky) ---------- */
 .button {
-  --edge: var(--edge-dark);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -219,8 +199,8 @@ code {
   height: 42px;
   padding: 0 20px;
   border-radius: 999px;
-  background: var(--field);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 0 var(--edge), 0 10px 22px -12px rgba(0, 0, 0, 0.8);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-glow), 0.32);
   color: var(--ink);
   font: 600 14px/1 var(--sans);
   letter-spacing: -0.005em;
@@ -229,37 +209,32 @@ code {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 160ms var(--ease), box-shadow 160ms var(--ease), background var(--duration) var(--ease);
+  transition: background var(--duration) var(--ease), box-shadow var(--duration) var(--ease), color var(--duration) var(--ease);
 }
 
 .button:hover {
-  color: var(--ink);
-  background: var(--hover-2);
-  transform: translateY(-1px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 0 var(--edge), 0 14px 26px -12px rgba(0, 0, 0, 0.85);
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-glow), 0.5);
 }
 
 .button:active {
-  transform: translateY(3px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 var(--edge), 0 4px 10px -6px rgba(0, 0, 0, 0.8);
-  transition-duration: 60ms;
+  background: var(--accent-tint);
 }
 
 .button.is-primary {
-  --edge: var(--edge-accent);
   background: var(--accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 3px 0 var(--edge), 0 12px 26px -12px rgba(var(--accent-glow), 0.7);
+  box-shadow: none;
   color: var(--on-accent);
 }
 
 .button.is-primary:hover {
   background: var(--accent-hover);
+  box-shadow: none;
   color: var(--on-accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 0 var(--edge), 0 16px 30px -12px rgba(var(--accent-glow), 0.8);
 }
 
 .button.is-primary:active {
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2), 0 0 0 var(--edge), 0 4px 10px -6px rgba(var(--accent-glow), 0.6);
+  background: var(--accent-press);
 }
 
 .button.is-ghost {
@@ -270,32 +245,18 @@ code {
 
 .button.is-ghost:hover {
   background: var(--ghost-hover);
+  box-shadow: none;
   color: var(--ink);
-  transform: none;
 }
 
 .button.is-ghost:active {
-  box-shadow: none;
-  transform: none;
+  background: var(--control-hover);
 }
 
 .button.is-small {
   height: 36px;
   padding: 0 16px;
   font-size: 13.5px;
-}
-
-.button.is-small:not(.is-ghost) {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 0 var(--edge);
-}
-
-.button.is-small:not(.is-ghost):hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 3px 0 var(--edge);
-}
-
-.button.is-small:not(.is-ghost):active {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 var(--edge);
 }
 
 .button.is-large {
@@ -373,7 +334,7 @@ kbd {
   margin: 0 1px;
   border-radius: var(--r-chip);
   background: var(--field);
-  box-shadow: var(--ring-button), 0 2px 0 var(--edge-dark);
+  box-shadow: var(--ring-button), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
   color: var(--ink);
   font: 500 11.5px/1 var(--mono);
   vertical-align: 1px;
@@ -383,33 +344,11 @@ kbd {
 .hero {
   position: relative;
   padding: 96px 0 104px;
-  /* Clip sideways only: the glows fade out below the hero instead of being cut off at its edge. */
-  overflow-x: clip;
 }
 
-.hero::before,
-.hero::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-}
-
-/* The crystal's light, falling behind the app window. */
-.hero::before {
-  top: -140px;
-  right: -8%;
-  width: 900px;
-  height: 820px;
-  background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.17), rgba(var(--accent-glow), 0.045) 55%, transparent);
-}
-
-.hero::after {
-  left: -240px;
-  bottom: -320px;
-  width: 640px;
-  height: 560px;
-  background: radial-gradient(closest-side, rgba(var(--accent-glow), 0.06), transparent);
+/* The app window reads as lit from within, not pasted flat on the page. */
+.mock-frame {
+  filter: drop-shadow(0 30px 70px rgba(var(--accent-glow), 0.22)) drop-shadow(0 8px 24px rgba(0, 0, 0, 0.5));
 }
 
 .hero-grid {
@@ -424,6 +363,7 @@ kbd {
 .hero h1 {
   margin: 0 0 22px;
   font-size: clamp(42px, 4.45vw, 64px);
+  font-weight: 800;
   line-height: 1;
   letter-spacing: -0.045em;
 }
@@ -554,12 +494,12 @@ kbd {
 }
 .mock-head { display: flex; align-items: center; justify-content: space-between; gap: 1.5em; margin-top: 1.85em; }
 .mock-launch { display: grid; justify-items: end; gap: 0.45em; flex: none; }
-.mock-launch-button { display: inline-flex; align-items: center; height: 2.92em; padding-left: 1.2em; border-radius: 0.62em; background: linear-gradient(180deg, var(--accent-top), var(--accent)); box-shadow: var(--ring-primary); color: var(--on-accent); font-weight: 600; }
-.mock-launch-button > span { display: grid; place-items: center; width: 2.62em; height: 1.5em; margin-left: 1.2em; box-shadow: inset 1px 0 0 var(--primary-divider); }
+.mock-launch-button { display: inline-flex; align-items: center; height: 2.92em; padding-left: 1.2em; border-radius: 0.62em; background: transparent; box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); font-weight: 600; }
+.mock-launch-button > span { display: grid; place-items: center; width: 2.62em; height: 1.5em; margin-left: 1.2em; box-shadow: inset 1px 0 0 rgba(var(--accent-glow), 0.35); }
 .mock-launch small { color: var(--ink-2); font-size: 0.85em; }
 
 .mock-card {
-  border-radius: 0.72em;
+  border-radius: 0.92em;
   background: var(--surface);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.065);
 }
@@ -808,6 +748,7 @@ kbd {
 
 .component-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
@@ -816,7 +757,18 @@ kbd {
   font-size: 13px;
 }
 
+/* A long licence name (e.g. "Intel Simplified Software License (October 2022)")
+   wraps inside its own tag instead of pushing the Source link out of the card. */
+.component-meta .tag {
+  height: auto;
+  min-width: 0;
+  padding: 3px 10px;
+  white-space: normal;
+  text-align: left;
+}
+
 .component-meta a {
+  flex: none;
   color: var(--ink-2);
   text-decoration: none;
 }
@@ -1705,5 +1657,6 @@ kbd {
   *::before,
   *::after {
     transition: none !important;
+    animation: none !important;
   }
 }

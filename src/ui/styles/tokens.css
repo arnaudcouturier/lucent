@@ -50,9 +50,6 @@
   --close-hover-ink: #fff;
   --desktop: #05070c; /* behind the window, in a browser only */
 
-  /* The mark */
-  --mark-edge: rgba(255, 255, 255, 0.55);
-
   /* Edges are 1px light rings, not borders */
   --ring-card: 0 0 0 1px rgba(255, 255, 255, 0.065), 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
   --ring-button: 0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -71,6 +68,11 @@
   --knob-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   --sheen: rgba(255, 255, 255, 0.22); /* the light that sweeps across a progress bar */
   --ring-control-hover: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  /* A chosen option in a list (profile, preset, segmented choice, launcher picker...):
+     one neutral lifted fill plus a single accent ring, never an accent colour wash. */
+  --selected-fill: var(--control-hover);
+  --ring-selected: inset 0 0 0 1px var(--accent);
 
   /* Type: Geist for the UI, Geist Mono for paths, versions, numbers and keycaps */
   --sans: 'Geist Variable', system-ui, sans-serif;
@@ -95,11 +97,11 @@
   --pane-padding: var(--space-8);
   --row-padding: 11px var(--space-4); /* list rows */
 
-  /* Radius */
+  /* Radius: one shape language, panels a touch rounder than the controls on them */
   --r-chip: 6px;
   --r-control: 8px;
-  --r-button: 10px; /* buttons sit a touch rounder than the controls they sit beside */
-  --r-card: 10px;
+  --r-button: 8px;
+  --r-card: 12px;
   --r-window: 8px; /* what Windows 11 imposes */
 
   /* Layout */

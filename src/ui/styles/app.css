@@ -279,7 +279,7 @@
 
 /* ---------- Buttons ---------- */
 .btn {
-  height: 34px;
+  height: 32px;
   padding: 0 14px;
   display: inline-flex;
   align-items: center;
@@ -303,18 +303,24 @@
 .btn > svg { flex: none; }
 .btn:hover:not(:disabled) { background: var(--control-hover); box-shadow: var(--ring-control-hover); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
+/* Primary: an accent outline, not a solid block — the accent as a ring and as text,
+   the same restraint as every other quiet ring in the app (settled 2026-10-15). */
 .btn.is-primary {
-  background: linear-gradient(180deg, var(--accent-top), var(--accent));
-  color: var(--on-accent);
+  background: transparent;
+  color: var(--accent);
   font-weight: 600;
-  box-shadow: var(--ring-primary), 0 2px 12px rgba(var(--accent-glow), 0.16);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .btn.is-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--accent-hover), var(--accent-top));
-  box-shadow: var(--ring-primary), 0 4px 16px rgba(var(--accent-glow), 0.24);
-  transform: translateY(-1px);
+  background: var(--accent-wash);
+  color: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-hover);
 }
-.btn.is-primary:active:not(:disabled) { background: var(--accent-press); transform: translateY(0); }
+.btn.is-primary:active:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--accent-press);
+  box-shadow: inset 0 0 0 1px var(--accent-press);
+}
 .btn.is-ghost {
   background: transparent;
   box-shadow: none;
@@ -324,6 +330,14 @@
   background: var(--ghost-hover);
   box-shadow: none;
   color: var(--ink);
+}
+/* A disabled primary or danger button falls back to the quiet secondary surface:
+   dimming the accent fill instead reads as a muddy, desaturated brown or rust. */
+.btn.is-primary:disabled,
+.btn.is-danger:disabled {
+  background: var(--control);
+  color: var(--ink-3);
+  box-shadow: var(--ring-control);
 }
 @media (prefers-reduced-motion: reduce) {
   .btn, .btn:hover:not(:disabled), .btn:active:not(:disabled) { transform: none; }
@@ -455,7 +469,7 @@
 .screen-actions .is-ghost { margin-right: auto; }
 /* A long step scrolls under its actions, which stay in reach. */
 .screen-actions.is-pinned .screen-note { margin: 0 var(--space-2) 0 0; align-self: center; text-align: right; }
-.screen-actions.is-pinned { position: sticky; bottom: 0; margin-top: auto; background: linear-gradient(to bottom, transparent, var(--canvas) 12px); padding-top: var(--space-4); }
+.screen-actions.is-pinned { position: sticky; bottom: 0; margin-top: auto; background: linear-gradient(to bottom, transparent, var(--canvas) 12px); box-shadow: inset 0 1px 0 var(--line); padding-top: var(--space-4); }
 .destination { display: grid; gap: var(--space-1); color: var(--ink-2); font-size: var(--text-label); margin-bottom: var(--space-4); }
 .destination > span:first-child { color: var(--ink-3); }
 .plan-numbers { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 0 var(--space-4); padding: var(--space-4); }
@@ -548,9 +562,9 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .profile-selector { border: 0; padding: 0; margin: 0; min-width: 0; }
 .profile-recommended { display: inline-block; margin-left: var(--space-2); padding: 2px 6px; border-radius: var(--r-chip); background: var(--accent-tint); color: var(--accent); font-size: 10px; font-weight: 500; vertical-align: 1px; }
 .profile-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-.profile-card { display: flex; align-items: flex-start; gap: var(--space-3); padding: 9px var(--space-4); cursor: pointer; transition: background var(--duration) var(--ease); }
+.profile-card { display: flex; align-items: flex-start; gap: var(--space-3); padding: 9px var(--space-4); cursor: pointer; transition: background var(--duration) var(--ease), box-shadow var(--duration) var(--ease); }
 .profile-card:hover { background: var(--hover); }
-.profile-card.is-selected { background: var(--accent-tint); }
+.profile-card.is-selected { background: var(--selected-fill); box-shadow: var(--ring-selected); }
 .profile-card input { flex: none; margin-top: 2px; accent-color: var(--accent); width: 16px; height: 16px; }
 .profile-card strong { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-2); row-gap: 2px; font-weight: 500; }
 .profile-card strong .profile-recommended { margin-left: 0; }
@@ -574,14 +588,14 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 }
 .segmented-choice-option input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .segmented-choice-option:hover { color: var(--ink); }
-.segmented-choice-option:has(input:checked) { background: var(--accent-tint); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.segmented-choice-option:has(input:checked) { background: var(--selected-fill); color: var(--ink); box-shadow: var(--ring-selected); }
 .segmented-choice-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
 .segmented-choice-option:has(input:disabled) { opacity: 0.45; cursor: default; }
 .segmented-choice-experimental { color: var(--caution-ink); font-size: 10px; line-height: 1; font-weight: 500; }
 /* Neural Rendering: one card of labelled blocks, each a control and the line that says what it does. */
 .neural-rendering { padding: var(--space-4); }
 .neural-rendering > h2 { margin-bottom: var(--space-3); }
-.nr-block + .nr-block { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.07)); }
+.nr-block + .nr-block { margin-top: var(--space-4); padding-top: var(--space-4); box-shadow: inset 0 1px 0 var(--line); }
 .nr-block > h3 { margin: 0 0 var(--space-2); color: var(--ink); font-size: var(--text-label); font-weight: 600; }
 .preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
 .preset-option {
@@ -593,7 +607,7 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .preset-option strong { color: var(--ink); font-size: var(--text-label); font-weight: 500; }
 .preset-option small { color: var(--ink-3); font-size: 11px; }
 .preset-option:hover { background: var(--hover); }
-.preset-option.is-selected { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent); }
+.preset-option.is-selected { background: var(--selected-fill); box-shadow: var(--ring-selected); }
 .preset-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 .preset-grid:disabled .preset-option { cursor: default; opacity: 0.45; }
 .choice-hint { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: var(--space-2) 0 0; padding: 8px var(--space-3); border-radius: var(--r-control); background: var(--accent-tint); color: var(--ink); font-size: var(--text-label); line-height: 1.4; }
@@ -651,7 +665,7 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .uninstall-choices .option-row { cursor: pointer; align-items: flex-start; padding: var(--space-3); transition: background var(--duration) var(--ease), box-shadow var(--duration) var(--ease); }
 .uninstall-choices .option-row + .option-row { margin-top: 0; }
 .uninstall-choices .option-row:hover { background: var(--hover); }
-.uninstall-choices .option-row.is-selected { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent); }
+.uninstall-choices .option-row.is-selected { background: var(--selected-fill); box-shadow: var(--ring-selected); }
 .uninstall-choices .option-row input { margin-top: 2px; flex: none; }
 .uninstall-choices:disabled .option-row { cursor: default; opacity: 0.6; }
 .confirm .uninstall-note { margin-top: var(--space-3); font-size: var(--text-label); color: var(--ink-3); }
@@ -860,20 +874,20 @@ html.is-browser .uninstall-window {
 /* ---------- Launch XIV ---------- */
 .launch { display: grid; justify-items: end; gap: 6px; }
 .launch-actions { display: inline-flex; border-radius: var(--r-control); }
-.btn.is-launch { height: 38px; padding: 0 var(--space-4); }
+.btn.is-launch { height: 40px; padding: 0 var(--space-4); }
 .launch-via { color: var(--ink-2); font-size: var(--text-label-sm); }
-.launch-actions.is-split { background: linear-gradient(180deg, var(--accent-top), var(--accent)); box-shadow: var(--ring-primary); }
-.launch-actions.is-split .btn { background: transparent; box-shadow: none; }
-.launch-actions.is-split .btn:hover:not(:disabled) { background: var(--primary-hover-wash); }
-.launch-actions.is-split .btn:active:not(:disabled) { background: var(--primary-press-wash); transform: none; }
+.launch-actions.is-split { background: transparent; box-shadow: inset 0 0 0 1px var(--accent); border-radius: var(--r-control); }
+.launch-actions.is-split .btn { background: transparent; box-shadow: none; color: var(--accent); }
+.launch-actions.is-split .btn:hover:not(:disabled) { background: var(--accent-wash); color: var(--accent-hover); }
+.launch-actions.is-split .btn:active:not(:disabled) { background: var(--accent-tint); color: var(--accent-press); transform: none; }
 .launch-actions.is-split .is-launch { border-radius: var(--r-control) 0 0 var(--r-control); }
-.launch-choose { position: relative; width: 34px; height: 38px; padding: 0; border-radius: 0 var(--r-control) var(--r-control) 0; }
-.launch-choose::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--primary-divider); }
+.launch-choose { position: relative; width: 34px; height: 40px; padding: 0; border-radius: 0 var(--r-control) var(--r-control) 0; }
+.launch-choose::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: rgba(var(--accent-glow), 0.35); }
 .launch-choose > svg { transition: transform var(--duration) var(--ease); }
 .launch-choose[aria-expanded='true'] > svg { transform: rotate(180deg); }
 .launch-actions .btn:focus-visible { outline-offset: 3px; }
-.launch-actions.is-split:has(.btn:disabled) { background: var(--accent-tint); box-shadow: var(--ring-control); }
-.launch-actions.is-split .btn:disabled { color: var(--accent); opacity: 0.5; }
+.launch-actions.is-split:has(.btn:disabled) { background: transparent; box-shadow: var(--ring-control); }
+.launch-actions.is-split .btn:disabled { color: var(--ink-3); opacity: 1; }
 .launch-picker {
   position: fixed; inset: auto; margin: 0; width: 244px; max-width: calc(100vw - var(--space-4));
   padding: var(--space-2); border: 0; border-radius: var(--r-card); background: var(--overlay); color: var(--ink);
@@ -887,14 +901,14 @@ html.is-browser .uninstall-window {
   border-radius: var(--r-control); cursor: pointer; transition: background var(--duration) var(--ease);
 }
 .launch-option:hover { background: var(--control); }
-.launch-option.is-selected { background: var(--accent-wash); }
+.launch-option.is-selected { background: var(--selected-fill); box-shadow: var(--ring-selected); }
 .launch-option input { flex: none; width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
 .launch-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .launch-picker p { margin: var(--space-2) var(--space-2) var(--space-1); color: var(--ink-3); font-size: var(--text-label-sm); }
 /* The margin stands in for the launcher line under the button, so Home doesn't shift when XIV starts or closes. */
 .launch.is-running {
   margin-bottom: calc(6px + var(--text-label-sm) * 1.5);
-  display: inline-flex; align-items: center; gap: var(--space-2); height: 38px; padding: 0 var(--space-4); border-radius: var(--r-control);
+  display: inline-flex; align-items: center; gap: var(--space-2); height: 40px; padding: 0 var(--space-4); border-radius: var(--r-control);
   background: var(--accent-tint); box-shadow: inset 0 0 0 1px rgba(var(--accent-glow), 0.25); color: var(--ink); font-weight: 500;
 }
 .live-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
@@ -921,7 +935,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 .settings-group > h2 { margin: 0 0 var(--space-2); color: var(--ink-2); font: 500 var(--text-label)/1.3 var(--sans); }
 .help-credits-note { margin: var(--space-6) 0 var(--space-4); }
 .settings-choices { margin: 0; padding: 0; border: 0; min-width: 0; }
-.settings-choices .option-row.is-selected { background: var(--accent-wash); }
+.settings-choices .option-row.is-selected { background: var(--selected-fill); box-shadow: var(--ring-selected); }
 .settings-switch { justify-content: space-between; cursor: pointer; }
 .settings-switch > span { flex: 1; min-width: 0; }
 .settings-check > span { flex: 1; min-width: 0; }
@@ -968,7 +982,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
   transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
 }
 .segmented button:hover { color: var(--ink); }
-.segmented button[aria-pressed='true'] { background: var(--hover-2); color: var(--ink); box-shadow: var(--ring-subtle); }
+.segmented button[aria-pressed='true'] { background: var(--selected-fill); color: var(--ink); box-shadow: var(--ring-selected); }
 .terminal {
   position: relative; flex: 1; min-height: 240px; display: flex; flex-direction: column; overflow: hidden;
   margin-bottom: var(--space-4); border-radius: var(--r-card); background: var(--terminal); box-shadow: var(--ring-card);

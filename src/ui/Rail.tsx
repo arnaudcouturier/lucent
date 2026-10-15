@@ -1,6 +1,6 @@
 // The left rail: the crystal, then the first-run steps or, once there is a deployment, the navigation between its
 // sections. The graphics card sits at the bottom, with the app version.
-import { useRef, type KeyboardEvent } from 'react'
+import { useId, useRef, type KeyboardEvent } from 'react'
 import { Check, Cpu, History, House, Keyboard, LifeBuoy, Settings2, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { crystalState } from '../core/crystal'
 import { setupChoices, type State } from '../core/core'
@@ -37,10 +37,16 @@ function attention(state: State, section: Section): 'caution' | 'accent' | null 
 }
 
 export function Mark({ className }: { className?: string }) {
+  const id = useId()
   return (
     <svg className={className} viewBox="0 0 16 22" aria-hidden>
-      <polygon points="8,0 16,8 8,22 0,8" fill="var(--accent)" />
-      <path d="M0 8 L6 10 L8 22 M6 10 L16 8" fill="none" stroke="var(--mark-edge)" strokeWidth=".9" strokeLinejoin="round" />
+      <defs>
+        <linearGradient id={id} x1="8" y1="0" x2="8" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--accent-top)" />
+          <stop offset="1" stopColor="var(--accent)" />
+        </linearGradient>
+      </defs>
+      <polygon points="8,0 14,14 8,22 2,14" fill={`url(#${id})`} />
     </svg>
   )
 }
