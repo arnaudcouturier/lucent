@@ -30,6 +30,7 @@ import { fileCount } from './format'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
+import { STAGING_FOLDER, closedGuard, scanStarterSet, seedPlugins, type StarterSetState } from './starterSet'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -152,6 +153,8 @@ export interface State {
   setupMode: 'install' | 'reset' | 'tier'
   /** The next readable backup folder shown in Reset's confirmation. */
   resetBackupPath: string | null
+  /** The Mods section: the Starter set and which of its plugins and mods this PC has. Independent of any deployment. */
+  starterSet: StarterSetState
 }
 
 export interface Core {
@@ -231,6 +234,10 @@ export interface Core {
   /** Copies those lines to the clipboard, as written. Resolves to whether there was a log to copy. */
   copyLog(source: LogSource): Promise<boolean>
   openLink(url: string): Promise<void>
+  /** Reads what the Mods section shows. Waits for the manifest; the section calls it again when the manifest arrives. */
+  refreshStarterSet(): Promise<void>
+  /** Fetches the named Starter set plugins from their repos and places them in Dalamud. XIV and XIVLauncher must be closed. */
+  addPlugins(internalNames: string[]): Promise<void>
 }
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
@@ -278,7 +285,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null, starterSet: { status: 'idle' },
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -833,6 +840,49 @@ export function createCore(platform: Platform): Core {
         await platform.openUrl(link.href)
       } catch (error) { set({ error: `Could not open the link. ${message(error)}` }) }
       finally { set({ busy: false }) }
+    },
+    async refreshStarterSet() {
+      const { manifest } = state
+      // The section asks again when the manifest arrives.
+      if (manifest.status === 'idle' || manifest.status === 'loading') return
+      if (manifest.status !== 'ready') { set({ starterSet: { status: 'unavailable', message: 'Lucent couldn’t load its manifest, so it has no Starter set to offer right now.' } }); return }
+      const starter = manifest.manifest.starterSet
+      if (!starter) {
+        const reason = manifest.manifest.starterSetError
+        if (reason && state.starterSet.status !== 'unavailable') log.write('warning', `The manifest's Starter set is invalid and was left out: ${reason}`)
+        set({ starterSet: { status: 'unavailable', message: reason ? 'The Starter set in the manifest has a mistake, so Lucent isn’t offering it. A newer Lucent or manifest may fix it.' : 'This manifest has no Starter set yet.' } })
+        return
+      }
+      // A refresh keeps what the section shows (and the last Add's result) until the new reading arrives.
+      const previous = state.starterSet.status === 'ready' ? state.starterSet : null
+      if (!previous) set({ starterSet: { status: 'loading' } })
+      try {
+        const scan = await scanStarterSet(platform, starter)
+        set({ starterSet: { status: 'ready', set: starter, scan, progress: previous?.progress ?? null, result: previous?.result ?? null } })
+      } catch (error) { set({ starterSet: { status: 'unavailable', message: `Lucent couldn’t read Dalamud’s folders. ${message(error)}` } }) }
+    },
+    async addPlugins(internalNames) {
+      const current = state.starterSet
+      if (state.busy || current.status !== 'ready') return
+      const plugins = current.set.plugins.filter((plugin) => internalNames.includes(plugin.internalName))
+      if (!plugins.length) return
+      const showing = (patch: Partial<Extract<StarterSetState, { status: 'ready' }>>) => {
+        if (state.starterSet.status === 'ready') set({ starterSet: { ...state.starterSet, ...patch } })
+      }
+      set({ busy: true, error: null, notice: null })
+      showing({ result: null, progress: 'Starting…' })
+      try {
+        const stagingRoot = joinPath(await platform.envFolder('LocalAppData'), 'Lucent', STAGING_FOLDER)
+        log.write('info', `Starter set: adding ${plugins.map((plugin) => plugin.name).join(', ')}`)
+        const result = await withOperationLock(platform, () => seedPlugins(platform, current.set, current.scan, plugins, {
+          stagingRoot, guard: closedGuard(platform), progress: (text) => showing({ progress: text }), log: (level, text) => log.write(level, text),
+        }))
+        const scan = await scanStarterSet(platform, current.set)
+        set({ starterSet: { status: 'ready', set: current.set, scan, progress: null, result } })
+      } catch (error) {
+        showing({ progress: null })
+        set({ error: message(error) })
+      } finally { set({ busy: false }) }
     },
     async setAutoRepair(enabled) {
       const { xivLauncher, deployment } = state

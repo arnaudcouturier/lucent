@@ -114,6 +114,13 @@ export interface Platform {
   /** Removes a directory only while it is empty; one holding anything, or already gone, is left as is. */
   removeDirectoryIfEmpty(path: string): Promise<void>
   listFiles(root: string): Promise<string[]>
+  /** The names of `root`'s immediate subfolders, junctions included, sorted ignoring case; `not-found` when `root` is missing. */
+  listFolders(root: string): Promise<string[]>
+  /**
+   * Unpacks a .zip into `to`, which must be missing or empty. Refuses an entry that would land outside `to` or is not a plain
+   * file or folder, and leaves nothing behind when it fails.
+   */
+  extractZip(zip: string, to: string): Promise<void>
   hashFile(path: string): Promise<string>
   /** Resolves a relative path, rejecting traversal and reparse points in every existing ancestor. */
   resolveGamePath(root: string, relative: string): Promise<string>

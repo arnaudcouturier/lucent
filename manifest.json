@@ -25080,5 +25080,116 @@
         "nvngx_dlss*.dll.backup"
       ]
     }
-  ]
+  ],
+  "starterSet": {
+    "repos": [
+      {
+        "id": "seaofstars",
+        "label": "SeaOfStars",
+        "author": "Ottermandias",
+        "url": "https://raw.githubusercontent.com/Ottermandias/SeaOfStars/main/repo.json"
+      },
+      {
+        "id": "action-timeline-replacement",
+        "label": "ActionTimelineReplacement",
+        "author": "papapachin",
+        "url": "https://raw.githubusercontent.com/papapachin/ActionTimelineReplacement/Global/repo.json"
+      }
+    ],
+    "plugins": [
+      {
+        "internalName": "Penumbra",
+        "name": "Penumbra",
+        "author": "Ottermandias and contributors",
+        "summary": "Loads mods into the game while it runs, and manages them.",
+        "source": "https://github.com/xivdev/Penumbra",
+        "repo": "seaofstars",
+        "group": "core"
+      },
+      {
+        "internalName": "Glamourer",
+        "name": "Glamourer",
+        "author": "Ottermandias",
+        "summary": "Changes and saves the look of your character and others. Needs Penumbra.",
+        "source": "https://github.com/Ottermandias/Glamourer",
+        "repo": "seaofstars",
+        "group": "core"
+      },
+      {
+        "internalName": "heliosphere-plugin",
+        "name": "Heliosphere",
+        "author": "Anna",
+        "summary": "Installs and updates mods from heliosphere.app straight into Penumbra.",
+        "source": "https://heliosphere.app/",
+        "repo": "seaofstars",
+        "group": "core",
+        "manual": true
+      },
+      {
+        "internalName": "Weatherman",
+        "name": "Weatherman",
+        "author": "NightmareXIV",
+        "summary": "Sets the time and weather in the game, for every zone or one at a time.",
+        "source": "https://github.com/NightmareXIV/Weatherman",
+        "repo": "official",
+        "group": "core"
+      },
+      {
+        "internalName": "AcrylicXIV",
+        "name": "AcrylicXIV",
+        "author": "MapleRecall",
+        "summary": "Blurs the background behind the game's windows, like frosted glass.",
+        "source": "https://github.com/MapleRecall/AcrylicXIV",
+        "repo": "official",
+        "group": "core"
+      },
+      {
+        "internalName": "ActionTimelineReplacement",
+        "name": "ActionTimelineReplacement",
+        "author": "Loskh, Papachin, DethiCra",
+        "summary": "Replaces the animation timelines of actions, which some skill mods need.",
+        "source": "https://github.com/papapachin/ActionTimelineReplacement",
+        "repo": "action-timeline-replacement",
+        "group": "core"
+      },
+      {
+        "internalName": "CharacterPanelRefined",
+        "name": "Character Panel Refined",
+        "author": "Kouzukii",
+        "summary": "Shows useful stats such as critical and direct hit chance on the character panel.",
+        "source": "https://github.com/Kouzukii/ffxiv-characterstatus-refined",
+        "repo": "official",
+        "group": "extra"
+      },
+      {
+        "internalName": "MultiHit",
+        "name": "MultiHit",
+        "author": "Bluefissure",
+        "summary": "Splits a multi-hit action's damage number into one number per hit.",
+        "repo": "official",
+        "group": "extra"
+      }
+    ],
+    "mods": [
+      {
+        "id": "am6y77mg6h1cn8agg7kqna6emc",
+        "name": "Hair Defined 2",
+        "author": "Kytsurai",
+        "summary": "Hairstyles for every race, with ears and tails."
+      },
+      {
+        "id": "2w70f4t4ws5a57p4aa8eae0kgr",
+        "name": "AETHERIS UI AIO",
+        "author": "djUSA.GI",
+        "summary": "An all-in-one theme for the game's interface."
+      },
+      {
+        "id": "00e1decfyd2aqbhb7x20b9ccbm",
+        "name": "The Body SE",
+        "author": "Tsar",
+        "summary": "Body type edits with options for each race.",
+        "nsfw": true
+      }
+    ]
+  }
 }

@@ -7,7 +7,7 @@ import { closeWindow, dragWindow, minimizeWindow, observeMaximized, toggleMaximi
 import { Rail } from './Rail'
 import { useCore } from './useCore'
 
-export type Section = 'home' | 'keys' | 'versions' | 'logs' | 'settings' | 'help'
+export type Section = 'home' | 'keys' | 'versions' | 'mods' | 'logs' | 'settings' | 'help'
 
 /** The main screen's section, which the rail's navigation switches. */
 export const SectionContext = createContext<{ section: Section; setSection(section: Section): void }>({ section: 'home', setSection: () => {} })

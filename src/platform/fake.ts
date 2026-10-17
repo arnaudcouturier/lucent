@@ -47,6 +47,14 @@ export const DEFAULT_ENV: Record<EnvFolder, string> = {
 const norm = (path: string) =>
   path.replace(/\//g, '\\').replace(/\\{2,}/g, '\\').replace(/\\$/, '').toLowerCase()
 
+const FAKE_ZIP_MARKER = 'FAKEZIP\n'
+/** A "zip" the fake can extract: the entries' names and text, which a test serves from a download address. */
+export const fakeZip = (entries: Record<string, string>): string => FAKE_ZIP_MARKER + JSON.stringify(entries)
+function parseFakeZip(text: string, path: string): Record<string, string> {
+  if (!text.startsWith(FAKE_ZIP_MARKER)) throw new PlatformError('unknown', 'The file is not a valid zip archive.', path)
+  return JSON.parse(text.slice(FAKE_ZIP_MARKER.length)) as Record<string, string>
+}
+
 export const FAKE_EXE_PATH = 'C:\\Users\\Player\\Downloads\\Lucent.exe'
 const uninstallKey = (id: string) => norm(`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${id}`)
 
@@ -85,7 +93,17 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   let clock = 1_700_000_000_000
   const touch = (path: string) => modified.set(path, ++clock)
   const directories = new Set((machine.directories ?? []).map(norm))
+  // Paths compare lower-cased, but a folder listing should give back the names as they were written.
+  const writtenNames = new Map<string, string>()
+  const rememberNames = (path: string) => {
+    let walked = ''
+    for (const part of path.replace(/\//g, '\\').replace(/\\{2,}/g, '\\').split('\\')) {
+      walked = walked ? `${walked}\\${part}` : part
+      writtenNames.set(norm(walked), part)
+    }
+  }
   const addParents = (path: string) => {
+    rememberNames(path)
     let parent = norm(path).slice(0, norm(path).lastIndexOf('\\'))
     while (parent.includes('\\')) {
       directories.add(parent)
@@ -155,8 +173,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const text = await this.readText(path)
       return text.replace(/\r?\n$/, '').split(/\r?\n/).slice(-maxLines).join('\n')
     },
-    async writeText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, text); touch(target) },
-    async appendText(path, text) { await gate; const target = writable(path); addParents(target); files.set(target, (files.get(target) ?? '') + text); touch(target) },
+    async writeText(path, text) { await gate; const target = writable(path); addParents(target); rememberNames(path); files.set(target, text); touch(target) },
+    async appendText(path, text) { await gate; const target = writable(path); addParents(target); rememberNames(path); files.set(target, (files.get(target) ?? '') + text); touch(target) },
     async writeFileByte(path, offset, value) {
       const text = await this.readText(path)
       if (!Number.isSafeInteger(offset) || offset < 0 || offset >= text.length || value < 0 || value > 127) throw new PlatformError('unknown', 'Invalid byte write', path)
@@ -168,6 +186,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const target = writable(to)
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
       addParents(target)
+      rememberNames(to)
       files.set(target, text)
       modified.set(target, modified.get(norm(from)) ?? 0)
     },
@@ -177,6 +196,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const target = writable(to)
       if (!replace && files.has(target)) throw new PlatformError('access-denied', `Protecting a file that appeared since Review: ${to}`, to)
       addParents(target)
+      rememberNames(to)
       files.set(target, text)
       modified.set(target, modified.get(source) ?? 0)
       files.delete(source)
@@ -212,6 +232,27 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       const p = norm(root)
       if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${root}`, root)
       return [...files.keys()].filter((f) => f.startsWith(p + '\\')).map((f) => f.slice(p.length + 1))
+    },
+    async listFolders(root) {
+      await gate
+      const p = norm(root)
+      if (isDenied(p)) throw new PlatformError('access-denied', `Access is denied: ${root}`, root)
+      if (!isDir(p)) throw new PlatformError('not-found', `Not found: ${root}`, root)
+      return [...directories].filter((d) => d.startsWith(p + '\\') && !d.slice(p.length + 1).includes('\\'))
+        .map((d) => writtenNames.get(d) ?? d.slice(p.length + 1)).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    },
+    async extractZip(zip, to) {
+      await gate
+      const archive = parseFakeZip(await this.readText(zip), zip)
+      const target = norm(to)
+      if (isDenied(target)) throw new PlatformError('access-denied', `Access is denied: ${to}`, to)
+      if (files.has(target) || [...files.keys()].some((f) => f.startsWith(target + '\\'))) throw new PlatformError('unknown', `The folder is not empty: ${to}`, to)
+      // The real port rejects each of these entries, and so does the fake.
+      for (const name of Object.keys(archive)) {
+        try { assertGamePath(name) } catch { throw new PlatformError('unknown', `The archive entry "${name}" is not a plain file or folder inside the archive.`, zip) }
+      }
+      addParents(`${to}\\x`)
+      for (const [name, text] of Object.entries(archive)) { const path = `${to}\\${name.replace(/\//g, '\\')}`; addParents(path); files.set(norm(path), text); touch(norm(path)) }
     },
     async hashFile(path) {
       const bytes = new TextEncoder().encode(await this.readText(path))

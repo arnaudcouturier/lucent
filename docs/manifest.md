@@ -4,7 +4,7 @@
 publish tool share `src/shared/manifest.ts`: `parseManifest` validates JSON text and
 `validateManifest` validates an object before publishing. The module has no UI or Platform dependency.
 
-Schema version **2** contains `schemaVersion`, `tiers`, `versions` and `existingSetups`. The app still reads v1 tier-only
+Schema version **2** contains `schemaVersion`, `tiers`, `versions` and `existingSetups`, and optionally a `starterSet`. The app still reads v1 tier-only
 manifests. A newer schema version produces an app-update message before its
 contents are interpreted. Invalid manifests and fetch failures leave the graphics card visible
 without assigning a tier.
@@ -446,3 +446,41 @@ backup path. At the next start, a hash-checked `<exe>.lucent-update.json` record
 exe and any prepared file to remove. Unrecognized or changed adjacent files are preserved.
 
 The gallery includes `app-update`, `app-updating`, `app-update-failed`, and `schema-update`.
+
+## Starter set
+
+`starterSet` is an optional top-level field beside `existingSetups`. It lists what the Mods section offers: Dalamud plugins that
+Lucent fetches from their own repositories, and Penumbra mods it links to (`docs/decisions.md`, Starter set (Mods)). It holds
+names, addresses and IDs, never files, so it has no content version, no cache and no rollback, and it doesn't change the schema
+version: apps from before the Mods section ignore it. It is edited by hand in `manifest.json` on `main`, like the tiers; the publish
+tool carries it through unchanged.
+
+```json
+"starterSet": {
+  "repos": [{ "id": "seaofstars", "label": "SeaOfStars", "author": "Ottermandias", "url": "https://…/repo.json" }],
+  "plugins": [{ "internalName": "Penumbra", "name": "Penumbra", "author": "…", "summary": "…", "source": "https://…", "repo": "seaofstars", "group": "core" }],
+  "mods": [{ "id": "00e1decfyd2aqbhb7x20b9ccbm", "name": "The Body SE", "author": "Tsar", "summary": "…", "nsfw": true }]
+}
+```
+
+- **`repos`** are the third-party plugin repositories. `id` is lowercase letters, digits and dashes (`official` is reserved for
+  Dalamud's own repository, which needs no entry); `label` and `author` are named in the consent panel; `url` is the HTTPS address
+  of the repository's `repo.json`. Dalamud matches a repository by the exact string, so Lucent writes `url` as given, and a plugin it
+  places is marked with it.
+- **`plugins`** each have `internalName` (Dalamud's name for it, which becomes a folder name: letters, digits, `.`, `_` and `-`;
+  unique ignoring case), `name`, `author`, `summary`, an optional `source` page, a `repo` (`official` or a repo `id`) and a `group`:
+  `core` plugins share one switch and `extra` ones are each ticked on their own. `manual: true` lists a plugin Lucent never fetches
+  (Heliosphere, whose terms bar other programs from its endpoints): its row says to install it from Dalamud's plugin installer.
+- **`mods`** each have the `id` from the mod's Heliosphere page address (`https://heliosphere.app/mod/<id>`: 26 lowercase
+  letters and digits, no `i`, `l`, `o` or `u`), `name`, `author`, an optional `summary` and `nsfw: true` for the neutral NSFW chip.
+  Lucent finds the mod on the PC by that ID in the `Website` of a `meta.json` in Penumbra's mod folder, and opens the page to get it.
+
+The set is validated apart from the rest (`validateStarterSet` in `src/shared/starterSet.ts`), because a typo in a hand-edited
+field mustn't take every DLSS deployment down. A set with a mistake is left out of the parsed manifest and the reason is put in
+`starterSetError`: the Mods section then says it is unavailable and the activity log names the mistake. The publish tool refuses to
+rewrite a manifest that has one, since writing back what it parsed would delete the set. The repository's own set is checked by
+`src/shared/starterSet.test.ts`, so `npm test` catches a mistake before it is pushed.
+
+To add a plugin, copy its `InternalName` exactly from the repository's `repo.json` (Lucent matches it by exact string) and pick its
+`repo`. To add a mod, copy the ID from its Heliosphere page address. The browser dev machines `?machine=mods` and `?machine=modsFresh`
+show the section with Dalamud set up (some plugins and a mod folder in, or neither) and let Add run against fake repositories.

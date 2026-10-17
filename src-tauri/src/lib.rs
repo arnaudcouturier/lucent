@@ -188,6 +188,14 @@ async fn platform_list_files(root: PathBuf) -> Result<Vec<String>, PlatformError
     files::list_files(&root)
 }
 #[tauri::command]
+async fn platform_list_folders(root: PathBuf) -> Result<Vec<String>, PlatformError> {
+    blocking(move || files::list_folders(&root)).await
+}
+#[tauri::command]
+async fn platform_extract_zip(zip: PathBuf, to: PathBuf) -> Result<(), PlatformError> {
+    blocking(move || files::extract_zip(&zip, &to)).await
+}
+#[tauri::command]
 async fn platform_hash_file(path: PathBuf) -> Result<String, PlatformError> {
     files::hash_file(&path)
 }
@@ -399,6 +407,8 @@ pub fn run() {
             platform_remove_file,
             platform_remove_directory_if_empty,
             platform_list_files,
+            platform_list_folders,
+            platform_extract_zip,
             platform_hash_file,
             platform_resolve_game_path,
             platform_resolve_game_paths,

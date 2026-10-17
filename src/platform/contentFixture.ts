@@ -35,7 +35,8 @@ export const TEST_CONTENT: ContentVersion = {
   files: Object.entries(FIXTURE_ASSETS).map(([sha256, content]) => ({ sha256, size: new TextEncoder().encode(content).length, release: 'content-2026.10.12' })),
   tiers: Object.fromEntries(manifest.tiers.map((t) => [t.id, recipe(t.id === 'other', t.id === 'radeon')])),
 }
-export const TEST_MANIFEST: Manifest = { ...manifest, schemaVersion: 2, tiers: manifest.tiers as Manifest['tiers'], versions: [TEST_CONTENT] }
+// The real Starter set rides along, so the browser machines and the gallery can show the Mods section.
+export const TEST_MANIFEST: Manifest = { ...manifest, schemaVersion: 2, tiers: manifest.tiers as Manifest['tiers'], versions: [TEST_CONTENT], starterSet: manifest.starterSet as Manifest['starterSet'] }
 const PROFILE_CONFIG_HASH = 'b3ef5c1edd86fa42913cf7d887e6730a3a7bd3584e59549be748b0284be5f7ed'
 export const PROFILE_ASSETS = {
   ...FIXTURE_ASSETS,
