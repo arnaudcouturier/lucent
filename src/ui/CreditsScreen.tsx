@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { creditsVersion } from '../core/credits'
+import { heliosphereModUrl } from '../shared/starterSet'
 import { useCore } from './useCore'
 
 const AUTHORS = [
@@ -44,6 +45,7 @@ export function Credits() {
     finally { setOpening(null) }
   }
   const linkDisabled = state.busy || opening !== null
+  const starter = state.manifest.status === 'ready' ? state.manifest.manifest.starterSet : undefined
 
   return <div className="credits">
       {linkError && <div className="credits-message is-error" role="alert">{linkError}</div>}
@@ -60,6 +62,26 @@ export function Credits() {
           </div>)}
         </dl>
       </section>
+
+      {starter && <section className="credits-section" aria-labelledby="starter-credits-title">
+        <h2 id="starter-credits-title">Mods section</h2>
+        <dl className="card credits-authors">
+          {starter.plugins.map((plugin) => <div className="credits-author" key={plugin.internalName}>
+            <dt>{plugin.name}</dt>
+            <dd>{plugin.author}{plugin.source && <>
+              <span aria-hidden="true"> · </span>
+              <button className="text-link" aria-label={`Open the page for ${plugin.name}`} disabled={linkDisabled} onClick={() => void openLink(plugin.source!)}>Page<ExternalLink size={14} strokeWidth={1.75} /></button>
+            </>}</dd>
+          </div>)}
+          {starter.mods.map((mod) => <div className="credits-author" key={mod.id}>
+            <dt>{mod.name}</dt>
+            <dd>{mod.author}
+              <span aria-hidden="true"> · </span>
+              <button className="text-link" aria-label={`Open the Heliosphere page for ${mod.name}`} disabled={linkDisabled} onClick={() => void openLink(heliosphereModUrl(mod.id))}>Heliosphere<ExternalLink size={14} strokeWidth={1.75} /></button>
+            </dd>
+          </div>)}
+        </dl>
+      </section>}
 
       <section className="credits-section" aria-labelledby="content-components-title">
         <div className="credits-section-heading">

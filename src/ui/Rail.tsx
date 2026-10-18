@@ -1,7 +1,7 @@
 // The left rail: the crystal, then the first-run steps or, once there is a deployment, the navigation between its
 // sections. The graphics card sits at the bottom, with the app version.
 import { useId, useRef, type KeyboardEvent } from 'react'
-import { Check, Cpu, History, House, Keyboard, LifeBuoy, Settings2, SquareTerminal, type LucideIcon } from 'lucide-react'
+import { Check, Cpu, History, House, Keyboard, LifeBuoy, Puzzle, Settings2, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { crystalState } from '../core/crystal'
 import { setupChoices, type State } from '../core/core'
 import { Crystal } from './crystal/Crystal'
@@ -22,6 +22,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'keys', label: 'Keys', icon: Keyboard },
   { id: 'versions', label: 'Versions', icon: History },
+  { id: 'mods', label: 'Mods', icon: Puzzle },
   { id: 'logs', label: 'Logs', icon: SquareTerminal },
   { id: 'settings', label: 'Settings', icon: Settings2 },
   { id: 'help', label: 'Help', icon: LifeBuoy },
@@ -69,14 +70,17 @@ export function Rail() {
       <div className={`stage is-${crystal.mode}`}>
         <Crystal state={crystal} />
       </div>
-      {main ? <Navigation /> : <ol className="steps" aria-label="Setup steps">
-        {steps.map(({ title }, i) => (
-          <li key={title} className={i < step ? 'is-done' : i === step ? 'is-now' : ''} aria-current={i === step ? 'step' : undefined}>
-            <span className="step-dot">{i < step && <Check size={10} strokeWidth={3} />}</span>
-            {title}
-          </li>
-        ))}
-      </ol>}
+      {main ? <Navigation /> : <>
+        <ol className="steps" aria-label="Setup steps">
+          {steps.map(({ title }, i) => (
+            <li key={title} className={i < step ? 'is-done' : i === step ? 'is-now' : ''} aria-current={i === step ? 'step' : undefined}>
+              <span className="step-dot">{i < step && <Check size={10} strokeWidth={3} />}</span>
+              {title}
+            </li>
+          ))}
+        </ol>
+        {state.activity.kind !== 'deploying' && <ModsLink />}
+      </>}
       {!state.recoveryRequired && (main ? <SystemCard /> : <GraphicsFacts />)}
       <div className="rail-foot">Lucent {__APP_VERSION__}</div>
     </aside>
@@ -108,6 +112,18 @@ function Navigation() {
       })}
     </nav>
   )
+}
+
+/** Mods doesn't need a deployment, so the first-run steps carry a way in to it as well. */
+function ModsLink() {
+  const { section, setSection } = useSection()
+  const open = section === 'mods'
+  return <nav className="rail-nav rail-nav-solo" aria-label="More">
+    <button className={`rail-nav-item${open ? ' is-active' : ''}`} aria-current={open ? 'page' : undefined} onClick={() => setSection(open ? 'home' : 'mods')}>
+      <Puzzle size={15} strokeWidth={1.75} />
+      <span>Mods</span>
+    </button>
+  </nav>
 }
 
 /** The graphics card and the setup Lucent applies for it, compact, under the navigation. */

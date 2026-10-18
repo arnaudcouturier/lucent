@@ -56,6 +56,21 @@ it('previews hash-named uploads and the shared manifest without GitHub or local 
   expect(await readFile(manifestPath, 'utf8')).toBe(before)
 })
 
+it('keeps the Starter set in the manifest it writes', async () => {
+  const manifestPath = await manifestFile()
+  const base = JSON.parse(await readFile('manifest.json', 'utf8'))
+  const result = await publishContent(fixture, { manifestPath, dryRun: true })
+  expect(JSON.parse(result.manifestText).starterSet).toEqual(base.starterSet)
+})
+
+it('refuses to rewrite a manifest whose Starter set is invalid, since that would delete it', async () => {
+  const manifestPath = await manifestFile()
+  const base = JSON.parse(await readFile(manifestPath, 'utf8'))
+  base.starterSet.plugins[0].repo = 'nowhere'
+  await writeFile(manifestPath, JSON.stringify(base))
+  await expect(publishContent(fixture, { manifestPath, dryRun: true })).rejects.toThrow(/starterSet is invalid.*unknown repo/i)
+})
+
 it('refuses two shaders with different bytes at the same Windows path', async () => {
   const manifestPath = await manifestFile()
   await expect(publishContent(resolve('scripts/fixtures/publish/shader-collision/publish.json'), { manifestPath, dryRun: true })).rejects.toThrow(/shader.*collision/i)

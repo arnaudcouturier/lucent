@@ -198,6 +198,41 @@ fn reject_reparse(path: &Path) -> Result<()> {
     }
 }
 
+/// Why a single path part cannot be created as written on Windows, if it cannot: an empty or relative part, a
+/// trailing dot or space, a legacy device name (`CON`, `COM1`, `LPT¹`, with or without an extension), or a
+/// character Windows reserves (`:` also names NTFS alternate streams and drive letters).
+fn unsafe_path_part(part: &str) -> Option<&'static str> {
+    // Windows ignores spaces between a device name and its extension, so `con .txt` is the console too.
+    let stem = part
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(' ')
+        .to_ascii_lowercase();
+    let device = ["con", "prn", "aux", "nul"].contains(&stem.as_str())
+        || (stem.chars().count() == 4
+            && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && matches!(stem.chars().nth(3), Some('1'..='9' | '¹' | '²' | '³')));
+    if part.is_empty() {
+        Some("empty path part")
+    } else if part == "." || part == ".." {
+        Some("relative path part")
+    } else if part.contains(':') {
+        Some("':' (drive letter or alternate data stream)")
+    } else if part.ends_with(['.', ' ']) {
+        Some("name ends with a dot or space")
+    } else if device {
+        Some("reserved device name")
+    } else if part
+        .chars()
+        .any(|c| c.is_control() || "<>\"|?*".contains(c))
+    {
+        Some("character Windows does not allow in names")
+    } else {
+        None
+    }
+}
+
 pub fn resolve_game_path(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(resolve_game_paths(root, &[relative.to_owned()])?.remove(0))
 }
@@ -220,20 +255,7 @@ pub fn resolve_game_paths(root: &Path, relatives: &[String]) -> Result<Vec<PathB
         .map(|relative| {
             let mut target = root.to_path_buf();
             for part in relative.split(['/', '\\']) {
-                let stem = part.split('.').next().unwrap_or("").to_ascii_lowercase();
-                let device = ["con", "prn", "aux", "nul"].contains(&stem.as_str())
-                    || (stem.chars().count() == 4
-                        && (stem.starts_with("com") || stem.starts_with("lpt"))
-                        && matches!(stem.chars().nth(3), Some('1'..='9' | '¹' | '²' | '³')));
-                if part.is_empty()
-                    || part == "."
-                    || part == ".."
-                    || part.ends_with(['.', ' '])
-                    || device
-                    || part
-                        .chars()
-                        .any(|c| c.is_control() || "<>:\"|?*".contains(c))
-                {
+                if unsafe_path_part(part).is_some() {
                     return Err(PlatformError::new(
                         ErrorKind::AccessDenied,
                         "Unsafe game-folder path",
@@ -389,6 +411,343 @@ pub fn list_files(root: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
     visit(root, root, &mut files)?;
     Ok(files)
+}
+
+/// Names of the immediate subfolders of `root`, sorted ignoring case. Unlike `list_files` this follows junctions
+/// and symlinks: it only reads names, and a linked folder is still one of the player's folders. A link whose
+/// target is gone is not a folder, so it is left out.
+pub fn list_folders(root: &Path) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(root).map_err(|e| PlatformError::io(e, Some(root)))? {
+        let entry = entry.map_err(|e| PlatformError::io(e, Some(root)))?;
+        if entry.path().is_dir() {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+    Ok(names)
+}
+
+/// What `extract_zip` accepts. Counted while unpacking, never read from the archive's own headers.
+#[derive(Clone, Copy)]
+struct ZipLimits {
+    entries: usize,
+    total_bytes: u64,
+    entry_bytes: u64,
+}
+
+const ZIP_LIMITS: ZipLimits = ZipLimits {
+    entries: 4_000,
+    total_bytes: 256 * 1024 * 1024,
+    entry_bytes: 128 * 1024 * 1024,
+};
+
+fn zip_failure(zip: &Path, message: impl Into<String>) -> PlatformError {
+    PlatformError::new(ErrorKind::Unknown, message, Some(zip))
+}
+
+fn rejected_entry(zip: &Path, name: &str, why: impl std::fmt::Display) -> PlatformError {
+    zip_failure(zip, format!("Zip entry '{name}' rejected: {why}"))
+}
+
+/// A bad archive or entry is `Unknown`; a real I/O failure underneath keeps its kind (locked, disk full...).
+fn zip_error(error: zip::result::ZipError, zip: &Path, entry: Option<&str>) -> PlatformError {
+    let mut error = match error {
+        zip::result::ZipError::Io(e) => PlatformError::io(e, Some(zip)),
+        other => zip_failure(zip, format!("Invalid zip archive: {other}")),
+    };
+    if let Some(name) = entry {
+        error.message = format!("Zip entry '{name}' could not be read: {}", error.message);
+    }
+    error
+}
+
+struct ZipEntryPlan {
+    index: usize,
+    name: String,
+    parts: Vec<String>,
+    is_dir: bool,
+}
+
+/// Vets every entry from the central directory before anything is written, so a hostile archive fails with
+/// nothing on disk. Both separators split a name: backslashes are separators on Windows.
+fn plan_zip_entries<R: Read + Seek>(
+    archive: &zip::ZipArchive<R>,
+    zip: &Path,
+    limits: ZipLimits,
+) -> Result<Vec<ZipEntryPlan>> {
+    if archive.len() > limits.entries {
+        return Err(zip_failure(
+            zip,
+            format!(
+                "Zip archive has {} entries; at most {} are allowed",
+                archive.len(),
+                limits.entries
+            ),
+        ));
+    }
+    (0..archive.len())
+        .map(|index| {
+            let entry = archive
+                .by_index_data(index)
+                .map_err(|e| zip_error(e, zip, None))?;
+            let name = entry
+                .name()
+                .map_err(|e| zip_error(e, zip, None))?
+                .into_owned();
+            if entry.encrypted() {
+                return Err(rejected_entry(
+                    zip,
+                    &name,
+                    "encrypted entries are not supported",
+                ));
+            }
+            if entry.is_symlink()
+                || entry
+                    .unix_mode()
+                    .is_some_and(|mode| mode & 0o170000 == 0o120000)
+            {
+                return Err(rejected_entry(zip, &name, "symbolic links are not allowed"));
+            }
+            let is_dir = entry.is_dir() || name.ends_with(['/', '\\']);
+            let path = name.strip_suffix(['/', '\\']).unwrap_or(&name);
+            if path.starts_with(['/', '\\']) {
+                return Err(rejected_entry(zip, &name, "absolute path"));
+            }
+            let parts: Vec<String> = path.split(['/', '\\']).map(str::to_owned).collect();
+            if let Some((part, why)) = parts
+                .iter()
+                .find_map(|part| unsafe_path_part(part).map(|why| (part, why)))
+            {
+                return Err(rejected_entry(zip, &name, format!("'{part}' is {why}")));
+            }
+            // The library's own check, as a backstop to the rules above.
+            if entry.enclosed_name().is_none() {
+                return Err(rejected_entry(
+                    zip,
+                    &name,
+                    "path is not enclosed by the destination",
+                ));
+            }
+            Ok(ZipEntryPlan {
+                index,
+                name,
+                parts,
+                is_dir,
+            })
+        })
+        .collect()
+}
+
+/// Everything one extraction created, so that a failure takes all of it away again and nothing else:
+/// a destination folder that was already there (empty) stays.
+struct Extracted {
+    root: PathBuf,
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+    known_dirs: std::collections::HashSet<PathBuf>,
+    keep: bool,
+}
+
+impl Extracted {
+    /// Takes over `to`, which must be missing (created with its parents) or an empty folder.
+    fn claim(to: &Path) -> Result<Self> {
+        let mut extracted = Extracted {
+            root: to.to_path_buf(),
+            files: Vec::new(),
+            dirs: Vec::new(),
+            known_dirs: std::collections::HashSet::new(),
+            keep: false,
+        };
+        match fs::symlink_metadata(to) {
+            Ok(meta) if is_reparse_point(&meta) => Err(PlatformError::new(
+                ErrorKind::AccessDenied,
+                "The destination is a junction or symbolic link",
+                Some(to),
+            )),
+            Ok(meta) if !meta.is_dir() => Err(PlatformError::new(
+                ErrorKind::Unknown,
+                "The destination already exists and is not a folder",
+                Some(to),
+            )),
+            Ok(_) => {
+                let mut entries = fs::read_dir(to).map_err(|e| PlatformError::io(e, Some(to)))?;
+                if entries.next().is_some() {
+                    return Err(PlatformError::new(
+                        ErrorKind::Unknown,
+                        "The destination folder already exists and is not empty",
+                        Some(to),
+                    ));
+                }
+                extracted.known_dirs.insert(to.to_path_buf());
+                Ok(extracted)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let missing: Vec<&Path> = to
+                    .ancestors()
+                    .take_while(|dir| {
+                        !dir.as_os_str().is_empty()
+                            && matches!(fs::symlink_metadata(dir), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+                    })
+                    .collect();
+                for dir in missing.into_iter().rev() {
+                    fs::create_dir(dir).map_err(|e| PlatformError::io(e, Some(dir)))?;
+                    extracted.dirs.push(dir.to_path_buf());
+                    extracted.known_dirs.insert(dir.to_path_buf());
+                }
+                Ok(extracted)
+            }
+            Err(e) => Err(PlatformError::io(e, Some(to))),
+        }
+    }
+
+    /// Creates `dir` (inside the destination) one level at a time. A folder is only passed through when this
+    /// extraction made it, or when an earlier entry spelled it in another case: never an unknown junction.
+    fn make_dirs(&mut self, zip: &Path, entry: &str, dir: &Path) -> Result<()> {
+        let relative = dir
+            .strip_prefix(&self.root)
+            .map_err(|_| rejected_entry(zip, entry, "path lands outside the destination"))?
+            .to_path_buf();
+        let mut path = self.root.clone();
+        for part in relative.components() {
+            path.push(part);
+            if self.known_dirs.contains(&path) {
+                continue;
+            }
+            match fs::create_dir(&path) {
+                Ok(()) => self.dirs.push(path.clone()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let real_dir = fs::symlink_metadata(&path)
+                        .is_ok_and(|meta| meta.is_dir() && !is_reparse_point(&meta));
+                    if !real_dir {
+                        return Err(rejected_entry(
+                            zip,
+                            entry,
+                            "its folder clashes with an earlier entry",
+                        ));
+                    }
+                }
+                Err(e) => return Err(PlatformError::io(e, Some(&path))),
+            }
+            self.known_dirs.insert(path.clone());
+        }
+        Ok(())
+    }
+
+    fn commit(mut self) {
+        self.keep = true;
+    }
+}
+
+impl Drop for Extracted {
+    fn drop(&mut self) {
+        if self.keep {
+            return;
+        }
+        // Best effort, newest first. A scanner may hold a fresh file for a moment, so a stubborn one gets retries.
+        for file in self.files.iter().rev() {
+            for _ in 0..3 {
+                if remove_file(file).is_ok() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+        for dir in self.dirs.iter().rev() {
+            let _ = fs::remove_dir(dir);
+        }
+    }
+}
+
+fn is_reparse_point(meta: &fs::Metadata) -> bool {
+    meta.file_attributes() & 0x400 != 0
+}
+
+/// Unpacks every entry of a zip into `to`, which must be missing or an empty folder. Entries are vetted first
+/// (names, links, counts); bytes are counted as they are unpacked. Any failure removes what was extracted.
+pub fn extract_zip(zip: &Path, to: &Path) -> Result<()> {
+    extract_zip_limited(zip, to, ZIP_LIMITS)
+}
+
+fn extract_zip_limited(zip: &Path, to: &Path, limits: ZipLimits) -> Result<()> {
+    let file = File::open(zip).map_err(|e| PlatformError::io(e, Some(zip)))?;
+    let mut archive =
+        zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|e| zip_error(e, zip, None))?;
+    let plan = plan_zip_entries(&archive, zip, limits)?;
+    let mut extracted = Extracted::claim(to)?;
+    let mut total = 0u64;
+    let mut buffer = vec![0u8; 64 * 1024];
+    for item in &plan {
+        let mut dest = to.to_path_buf();
+        dest.extend(&item.parts);
+        if dest == to || !dest.starts_with(to) {
+            return Err(rejected_entry(
+                zip,
+                &item.name,
+                "path lands outside the destination",
+            ));
+        }
+        if item.is_dir {
+            extracted.make_dirs(zip, &item.name, &dest)?;
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            extracted.make_dirs(zip, &item.name, parent)?;
+        }
+        let mut entry = archive
+            .by_index(item.index)
+            .map_err(|e| zip_error(e, zip, Some(&item.name)))?;
+        // create_new: an entry can never overwrite an earlier one, even one that differs only in case.
+        // Windows reports a folder in the way as access denied, so anything already there is a clash.
+        let mut out = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest)
+            .map_err(|e| {
+                if fs::symlink_metadata(&dest).is_ok() {
+                    rejected_entry(
+                        zip,
+                        &item.name,
+                        "a file or folder with this name was already extracted",
+                    )
+                } else {
+                    PlatformError::io(e, Some(&dest))
+                }
+            })?;
+        extracted.files.push(dest.clone());
+        let mut written = 0u64;
+        loop {
+            let n = entry
+                .read(&mut buffer)
+                .map_err(|e| zip_error(zip::result::ZipError::Io(e), zip, Some(&item.name)))?;
+            if n == 0 {
+                break;
+            }
+            written += n as u64;
+            total += n as u64;
+            if written > limits.entry_bytes {
+                return Err(rejected_entry(
+                    zip,
+                    &item.name,
+                    format!("it unpacks to more than {} bytes", limits.entry_bytes),
+                ));
+            }
+            if total > limits.total_bytes {
+                return Err(rejected_entry(
+                    zip,
+                    &item.name,
+                    format!(
+                        "the archive unpacks to more than {} bytes in total",
+                        limits.total_bytes
+                    ),
+                ));
+            }
+            out.write_all(&buffer[..n])
+                .map_err(|e| PlatformError::io(e, Some(&dest)))?;
+        }
+    }
+    extracted.commit();
+    Ok(())
 }
 
 /// One client for every download, so the core's parallel downloads share pooled connections and TLS sessions:
@@ -786,5 +1145,503 @@ mod tests {
         assert_eq!(fs::read_to_string(&target).unwrap(), "User bytes");
         assert_eq!(fs::read_to_string(&source).unwrap(), "Lucent bytes");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    fn make_junction(link: &Path, target: &Path) {
+        // Directory junctions need no developer mode or administrator privileges.
+        let result = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+    }
+
+    #[test]
+    fn lists_folder_names_sorted_ignoring_case_and_leaves_out_files() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["banana", "Cherry", "apple", "Äpfel", "Apple pie"] {
+            fs::create_dir(dir.path().join(name)).unwrap();
+        }
+        fs::write(dir.path().join("aaa.txt"), "file").unwrap();
+        fs::create_dir_all(dir.path().join("banana").join("nested")).unwrap();
+        assert_eq!(
+            list_folders(dir.path()).unwrap(),
+            ["apple", "Apple pie", "banana", "Cherry", "Äpfel"]
+        );
+        assert!(list_folders(&dir.path().join("apple")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_folders_includes_junctions_and_leaves_out_dangling_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let gone = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("plain")).unwrap();
+        make_junction(&dir.path().join("linked"), elsewhere.path());
+        let gone_link = dir.path().join("dangling");
+        make_junction(&gone_link, gone.path());
+        drop(gone);
+        assert_eq!(list_folders(dir.path()).unwrap(), ["linked", "plain"]);
+        fs::remove_dir(dir.path().join("linked")).unwrap();
+        fs::remove_dir(gone_link).unwrap();
+    }
+
+    #[test]
+    fn list_folders_reports_a_missing_root_as_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = list_folders(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound);
+    }
+
+    fn stored() -> zip::write::SimpleFileOptions {
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)
+    }
+
+    fn deflated() -> zip::write::SimpleFileOptions {
+        zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+    }
+
+    fn write_zip_with(path: &Path, build: impl FnOnce(&mut zip::ZipWriter<File>)) {
+        let mut writer = zip::ZipWriter::new(File::create(path).unwrap());
+        build(&mut writer);
+        writer.finish().unwrap();
+    }
+
+    /// Stored entries. A name ending in a slash is a folder entry.
+    fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        write_zip_with(path, |writer| {
+            for (name, bytes) in entries {
+                if name.ends_with('/') {
+                    writer.add_directory(*name, stored()).unwrap();
+                } else {
+                    writer.start_file(*name, stored()).unwrap();
+                    writer.write_all(bytes).unwrap();
+                }
+            }
+        });
+        // A writer that quietly "fixed" a hostile name would make a rejection test pass for the wrong reason.
+        let archive = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
+        let stored_names: Vec<String> = archive
+            .file_names()
+            .map(|name| name.unwrap().into_owned())
+            .collect();
+        let wanted: Vec<String> = entries.iter().map(|(name, _)| name.to_string()).collect();
+        assert_eq!(stored_names, wanted);
+    }
+
+    fn limits(entries: usize, total_bytes: u64, entry_bytes: u64) -> ZipLimits {
+        ZipLimits {
+            entries,
+            total_bytes,
+            entry_bytes,
+        }
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn extracts_nested_folders_and_files_into_a_new_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("plugin.zip");
+        write_zip(
+            &zip,
+            &[
+                ("Plugin.json", b"{}"),
+                ("lib/", b""),
+                ("lib/deep/Plugin.dll", b"\x00\xff\x01"),
+                ("docs/Readme.txt", b"hello"),
+                ("empty/", b""),
+                ("Lib/deep/Other.dll", b"cased differently"),
+            ],
+        );
+        let to = dir.path().join("Plugins").join("Plugin");
+        extract_zip(&zip, &to).unwrap();
+        assert_eq!(fs::read(to.join("Plugin.json")).unwrap(), b"{}");
+        assert_eq!(
+            fs::read(to.join("lib").join("deep").join("Plugin.dll")).unwrap(),
+            b"\x00\xff\x01"
+        );
+        assert_eq!(
+            fs::read(to.join("lib").join("deep").join("Other.dll")).unwrap(),
+            b"cased differently"
+        );
+        assert_eq!(
+            fs::read_to_string(to.join("docs").join("Readme.txt")).unwrap(),
+            "hello"
+        );
+        assert!(to.join("empty").is_dir());
+        assert_eq!(names_in(dir.path()), ["Plugins", "plugin.zip"]);
+    }
+
+    #[test]
+    fn extracts_deflated_entries_and_treats_backslashes_as_folder_separators() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("plugin.zip");
+        let text = "Lucent ".repeat(20_000);
+        write_zip_with(&zip, |writer| {
+            writer.start_file("big.txt", deflated()).unwrap();
+            writer.write_all(text.as_bytes()).unwrap();
+            writer
+                .start_file("old\\style\\file.txt", deflated())
+                .unwrap();
+            writer.write_all(b"windows tool").unwrap();
+        });
+        let to = dir.path().join("out");
+        extract_zip(&zip, &to).unwrap();
+        assert_eq!(fs::read_to_string(to.join("big.txt")).unwrap(), text);
+        assert_eq!(
+            fs::read_to_string(to.join("old").join("style").join("file.txt")).unwrap(),
+            "windows tool"
+        );
+    }
+
+    #[test]
+    fn extracts_into_an_existing_empty_folder_and_an_empty_archive_leaves_it_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("plugin.zip");
+        let empty_zip = dir.path().join("empty.zip");
+        write_zip(&zip, &[("a.txt", b"a")]);
+        write_zip(&empty_zip, &[]);
+        let to = dir.path().join("out");
+        fs::create_dir(&to).unwrap();
+        extract_zip(&empty_zip, &to).unwrap();
+        assert!(names_in(&to).is_empty());
+        extract_zip(&zip, &to).unwrap();
+        assert_eq!(fs::read_to_string(to.join("a.txt")).unwrap(), "a");
+    }
+
+    #[test]
+    fn rejects_unsafe_entry_names_before_writing_anything() {
+        let hostile = [
+            "../evil.txt",
+            "a/../../evil.txt",
+            "a/../b.txt",
+            "..",
+            "../evil/",
+            "..\\evil.txt",
+            "x\\..\\..\\evil.txt",
+            "a/..\\..\\evil.txt",
+            "/abs.txt",
+            "/abs/dir/",
+            "\\abs.txt",
+            "C:/evil.txt",
+            "C:evil.txt",
+            "c:\\evil\\",
+            "\\\\?\\C:\\evil.txt",
+            "\\\\server\\share\\evil.txt",
+            "dir/evil.txt:stream",
+            "evil.txt::$DATA",
+            "sub/C:/evil.txt",
+            "nul",
+            "NUL.txt",
+            "con.tar.gz",
+            "dir/aux/file.txt",
+            "dir/PRN.dll",
+            "com1",
+            "Lpt9.dll",
+            "COM\u{b9}.dll",
+            "con .txt",
+            "trailing./file.txt",
+            "dir./",
+            "space /file.txt",
+            "a. /b.txt",
+            "name.",
+            "bad<name>.txt",
+            "what?.txt",
+            "pipe|.txt",
+            "star*.txt",
+            "quote\".txt",
+            "tab\there.txt",
+            "nul\0.txt",
+            "./dot.txt",
+            "a/./b.txt",
+            "a//b.txt",
+        ];
+        for name in hostile {
+            let dir = tempfile::tempdir().unwrap();
+            let zip = dir.path().join("in.zip");
+            write_zip(&zip, &[("ok.txt", b"fine"), (name, b"evil")]);
+            let to = dir.path().join("outer").join("out");
+            let error = extract_zip(&zip, &to).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Unknown, "{name:?}");
+            assert!(
+                error.message.contains("rejected") && error.message.contains(name),
+                "{name:?}: {}",
+                error.message
+            );
+            assert_eq!(
+                names_in(dir.path()),
+                ["in.zip"],
+                "{name:?} left files behind"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_names_that_only_look_unusual() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip(
+            &zip,
+            &[
+                ("console.txt", b"1"),
+                ("com10.txt", b"2"),
+                ("aux2/lptx.txt", b"3"),
+                (".hidden", b"4"),
+                ("spaced name/file name.txt", b"5"),
+                ("v1.2.3/lib-1.0..dll", b"6"),
+                ("Ünïcødé/файл.txt", b"7"),
+            ],
+        );
+        let to = dir.path().join("out");
+        extract_zip(&zip, &to).unwrap();
+        assert_eq!(
+            fs::read(to.join("v1.2.3").join("lib-1.0..dll")).unwrap(),
+            b"6"
+        );
+        assert_eq!(fs::read(to.join("Ünïcødé").join("файл.txt")).unwrap(), b"7");
+    }
+
+    #[test]
+    fn rejects_symbolic_link_entries() {
+        for link_name in ["link", "nested/link"] {
+            let dir = tempfile::tempdir().unwrap();
+            let zip = dir.path().join("in.zip");
+            write_zip_with(&zip, |writer| {
+                writer.start_file("ok.txt", stored()).unwrap();
+                writer.write_all(b"fine").unwrap();
+                writer
+                    .add_symlink(link_name, "..\\..\\secret.txt", stored())
+                    .unwrap();
+            });
+            let to = dir.path().join("out");
+            let error = extract_zip(&zip, &to).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Unknown);
+            assert!(
+                error.message.contains(link_name) && error.message.contains("symbolic link"),
+                "{}",
+                error.message
+            );
+            assert_eq!(names_in(dir.path()), ["in.zip"]);
+        }
+    }
+
+    #[test]
+    fn caps_the_number_of_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip(
+            &zip,
+            &[("a", b"1"), ("b/", b""), ("b/c", b"2"), ("d", b"3")],
+        );
+        let to = dir.path().join("out");
+        let error = extract_zip_limited(&zip, &to, limits(3, 1000, 1000)).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(error.message.contains("4 entries"), "{}", error.message);
+        assert_eq!(names_in(dir.path()), ["in.zip"]);
+        extract_zip_limited(&zip, &to, limits(4, 1000, 1000)).unwrap();
+        assert_eq!(fs::read_to_string(to.join("b").join("c")).unwrap(), "2");
+        assert_eq!(ZIP_LIMITS.entries, 4_000);
+        assert_eq!(ZIP_LIMITS.total_bytes, 256 * 1024 * 1024);
+        assert_eq!(ZIP_LIMITS.entry_bytes, 128 * 1024 * 1024);
+    }
+
+    #[test]
+    fn caps_each_entry_by_counting_unpacked_bytes_and_removes_the_partial_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip_with(&zip, |writer| {
+            writer.start_file("small/first.bin", deflated()).unwrap();
+            writer.write_all(&[7u8; 100]).unwrap();
+            writer.start_file("exact.bin", deflated()).unwrap();
+            writer.write_all(&[8u8; 1000]).unwrap();
+            writer.start_file("small/bomb.bin", deflated()).unwrap();
+            writer.write_all(&vec![0u8; 1001]).unwrap();
+        });
+        let to = dir.path().join("out");
+        let error = extract_zip_limited(&zip, &to, limits(10, 10_000, 1000)).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(
+            error.message.contains("small/bomb.bin") && error.message.contains("1000 bytes"),
+            "{}",
+            error.message
+        );
+        assert_eq!(
+            names_in(dir.path()),
+            ["in.zip"],
+            "the destination is removed"
+        );
+        // Exactly at the limit is fine.
+        let ok_zip = dir.path().join("ok.zip");
+        write_zip_with(&ok_zip, |writer| {
+            writer.start_file("exact.bin", deflated()).unwrap();
+            writer.write_all(&[8u8; 1000]).unwrap();
+        });
+        extract_zip_limited(&ok_zip, &to, limits(10, 1000, 1000)).unwrap();
+        assert_eq!(fs::metadata(to.join("exact.bin")).unwrap().len(), 1000);
+    }
+
+    #[test]
+    fn caps_the_whole_archive_by_counting_unpacked_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip_with(&zip, |writer| {
+            for name in ["one", "two", "three"] {
+                writer.start_file(name, deflated()).unwrap();
+                writer.write_all(&[1u8; 600]).unwrap();
+            }
+        });
+        let to = dir.path().join("out");
+        let error = extract_zip_limited(&zip, &to, limits(10, 1500, 1000)).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(
+            error.message.contains("three") && error.message.contains("1500 bytes"),
+            "{}",
+            error.message
+        );
+        assert_eq!(names_in(dir.path()), ["in.zip"]);
+        extract_zip_limited(&zip, &to, limits(10, 1800, 1000)).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_destination_that_is_not_empty_and_leaves_it_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip(&zip, &[("new.txt", b"new"), ("mine.txt", b"from the zip")]);
+        let to = dir.path().join("out");
+        fs::create_dir_all(to.join("keep")).unwrap();
+        fs::write(to.join("mine.txt"), "player data").unwrap();
+        let error = extract_zip(&zip, &to).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(error.message.contains("not empty"), "{}", error.message);
+        assert_eq!(names_in(&to), ["keep", "mine.txt"]);
+        assert_eq!(
+            fs::read_to_string(to.join("mine.txt")).unwrap(),
+            "player data"
+        );
+        // A file is not a folder either, and stays as it was.
+        let file = dir.path().join("file");
+        fs::write(&file, "data").unwrap();
+        let error = extract_zip(&zip, &file).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert_eq!(fs::read_to_string(&file).unwrap(), "data");
+    }
+
+    #[test]
+    fn refuses_a_destination_that_is_a_junction() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip(&zip, &[("new.txt", b"new")]);
+        let link = dir.path().join("out");
+        make_junction(&link, elsewhere.path());
+        let error = extract_zip(&zip, &link).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::AccessDenied);
+        assert!(names_in(elsewhere.path()).is_empty());
+        fs::remove_dir(link).unwrap();
+    }
+
+    #[test]
+    fn removes_everything_extracted_when_a_later_entry_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip = dir.path().join("in.zip");
+        write_zip(
+            &zip,
+            &[
+                ("first/", b""),
+                ("first/a.txt", b"AAAAAAAAAAAAAAAA"),
+                ("second/b.txt", b"BBBBBBBBBBBBBBBB"),
+                ("third.txt", b"third"),
+            ],
+        );
+        // Flip a byte of the second file's stored data: its checksum no longer matches.
+        let mut bytes = fs::read(&zip).unwrap();
+        let at = bytes
+            .windows(16)
+            .position(|window| window == b"BBBBBBBBBBBBBBBB")
+            .unwrap();
+        bytes[at + 4] ^= 0xff;
+        fs::write(&zip, bytes).unwrap();
+        let to = dir.path().join("outer").join("out");
+        let error = extract_zip(&zip, &to).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(error.message.contains("second/b.txt"), "{}", error.message);
+        assert_eq!(
+            names_in(dir.path()),
+            ["in.zip"],
+            "parents made for the destination go too"
+        );
+        // Into a folder that was already there: it stays, empty.
+        fs::create_dir(to.parent().unwrap()).unwrap();
+        fs::create_dir(&to).unwrap();
+        assert!(extract_zip(&zip, &to).is_err());
+        assert!(to.is_dir());
+        assert!(names_in(&to).is_empty());
+    }
+
+    #[test]
+    fn removes_everything_extracted_when_entries_clash() {
+        for clash in [
+            ("a.txt", "A.TXT"),
+            ("same", "same/inside.txt"),
+            ("folder/inner.txt", "folder"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let zip = dir.path().join("in.zip");
+            write_zip(
+                &zip,
+                &[
+                    ("first.txt", b"first"),
+                    (clash.0, b"one"),
+                    (clash.1, b"two"),
+                ],
+            );
+            let to = dir.path().join("out");
+            let error = extract_zip(&zip, &to).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Unknown, "{clash:?}");
+            assert!(
+                error.message.contains(clash.1),
+                "{clash:?}: {}",
+                error.message
+            );
+            assert_eq!(names_in(dir.path()), ["in.zip"], "{clash:?}");
+        }
+    }
+
+    #[test]
+    fn reports_a_missing_zip_as_not_found_and_a_bad_one_as_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let to = dir.path().join("out");
+        let error = extract_zip(&dir.path().join("missing.zip"), &to).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound);
+        let garbage = dir.path().join("garbage.zip");
+        fs::write(&garbage, b"this is not a zip archive at all, just text").unwrap();
+        let error = extract_zip(&garbage, &to).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Unknown);
+        assert!(error.message.contains("zip"), "{}", error.message);
+        let good = dir.path().join("good.zip");
+        write_zip(&good, &[("a.txt", b"a"), ("b.txt", b"b")]);
+        let bytes = fs::read(&good).unwrap();
+        let truncated = dir.path().join("truncated.zip");
+        fs::write(&truncated, &bytes[..bytes.len() / 2]).unwrap();
+        assert_eq!(
+            extract_zip(&truncated, &to).unwrap_err().kind,
+            ErrorKind::Unknown
+        );
+        assert!(!to.exists());
     }
 }

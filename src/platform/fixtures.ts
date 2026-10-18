@@ -1,6 +1,6 @@
 // Machine layouts for the fake Platform: game folders and the launchers that point at them.
 // Shared by the core's tests, the state gallery and the app running in a browser.
-import { DEFAULT_ENV, FAKE_EXE_PATH, type Machine } from './fake'
+import { DEFAULT_ENV, FAKE_EXE_PATH, fakeZip, type Machine } from './fake'
 import type { MonitorInfo } from '../core/platform'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
@@ -95,6 +95,33 @@ export function xivLauncher(gamePath: string, env = DEFAULT_ENV): Machine {
   return {
     files: {
       [`${env.AppData}\\XIVLauncher\\launcherConfigV3.json`]: JSON.stringify({ GamePath: gamePath, AddonList: '[]' }, null, 2),
+    },
+  }
+}
+
+/**
+ * XIVLauncher with Dalamud run once, some starter plugins already in, and Penumbra pointing at a mod folder holding some of the
+ * starter mods. The repos publish every starter plugin, so Add works on the fake machine too.
+ */
+export function dalamudSetup(options: { plugins?: string[]; mods?: Record<string, string>; modDirectory?: string | null } = {}, env = DEFAULT_ENV): Machine {
+  const root = `${env.AppData}\\XIVLauncher`
+  const modDirectory = options.modDirectory === undefined ? 'D:\\FFXIV Mods' : options.modDirectory
+  const publish = (name: string) => ({ InternalName: name, Name: name, AssemblyVersion: '1.0.0.0', DalamudApiLevel: 15, DownloadLinkInstall: `https://downloads.fixture/${name}.zip` })
+  const names = manifest.starterSet.plugins.map((plugin) => plugin.internalName)
+  const files: Record<string, string> = {
+    [`${root}\\launcherConfigV3.json`]: JSON.stringify({ GamePath: 'C:\\Games\\FFXIV', InGameAddonEnabled: 'true', AddonList: '[]' }, null, 2),
+    [`${root}\\dalamudConfig.json`]: JSON.stringify({ ThirdRepoList: { $type: 'System.Collections.Generic.List`1[[Dalamud.Configuration.ThirdPartyRepoSettings, Dalamud]], System.Private.CoreLib', $values: [] } }, null, 2),
+    ...Object.fromEntries((options.plugins ?? []).map((name) => [`${root}\\installedPlugins\\${name}\\1.0.0.0\\${name}.dll`, 'dll'])),
+    ...(modDirectory === null ? {} : { [`${root}\\pluginConfigs\\Penumbra\\config\\penumbra.json`]: JSON.stringify({ Version: 100, ModDirectory: modDirectory }) }),
+    ...Object.fromEntries(Object.entries(options.mods ?? {}).map(([folder, website]) => [`${modDirectory}\\${folder}\\meta.json`, JSON.stringify({ FileVersion: 4, Name: folder, Website: website })])),
+  }
+  const repoUrl = (id: string) => manifest.starterSet.repos.find((repo) => repo.id === id)!.url
+  const listed = (repo: string) => JSON.stringify(manifest.starterSet.plugins.filter((plugin) => plugin.repo === repo).map((plugin) => publish(plugin.internalName)))
+  return {
+    files, directories: [`${root}\\addon\\Hooks\\15.0.3.7`],
+    remoteText: {
+      'https://kamori.goats.dev/Plugin/PluginMaster': listed('official'), [repoUrl('seaofstars')]: listed('seaofstars'), [repoUrl('action-timeline-replacement')]: listed('action-timeline-replacement'), [repoUrl('iinact')]: listed('iinact'),
+      ...Object.fromEntries(names.map((name) => [`https://downloads.fixture/${name}.zip`, fakeZip({ [`${name}.dll`]: 'dll', [`${name}.json`]: JSON.stringify({ InternalName: name, AssemblyVersion: '1.0.0.0' }) })])),
     },
   }
 }
@@ -203,6 +230,11 @@ export const MACHINES = {
   squareenix: machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)),
   existing: machine(fixtureContentHost(), graphicsCard(), xivLauncher('C:\\Games\\FFXIV'), vanillaGame('C:\\Games\\FFXIV'), existingSetup('C:\\Games\\FFXIV', 'reshade'), existingSetup('C:\\Games\\FFXIV', 'dlss-swap')),
   none: machine(manifestHost(), graphicsCard()),
+  /** The Mods section: Dalamud set up with two starter plugins and one starter mod in, and a mod folder for Penumbra. */
+  mods: machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')),
+    dalamudSetup({ plugins: ['Penumbra', 'Weatherman'], mods: { 'hs-Hair Defined 2-7.5.5-LkG': 'https://heliosphere.app/mod/am6y77mg6h1cn8agg7kqna6emc' } })),
+  /** The Mods section before Penumbra has a mod folder, with the plugins not yet added. */
+  modsFresh: machine(fixtureContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), dalamudSetup({ modDirectory: null })),
   /** Browser gallery: representative 60/144/240 Hz panels, SDR/HDR, and a two-display layout. */
   screen60Sdr: screenGallery(60, false),
   screen144Hdr: screenGallery(144, true),

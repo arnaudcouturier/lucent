@@ -1,6 +1,6 @@
 # Lucent
 
-Lucent is a manager for a player's FFXIV graphics mods. It deploys a tested set of third-party mods into the game folder, grouped as features (DLSS 5 through OptiScaler, and ReShade), and keeps them working across game patches and content updates. Once deployed, the config files are the player's: they tune them in OptiScaler's and ReShade's overlays, not in Lucent.
+Lucent is a manager for a player's FFXIV graphics mods. It deploys a tested set of third-party mods into the game folder, grouped as features (DLSS 5 through OptiScaler, and ReShade), and keeps them working across game patches and content updates. Once deployed, the config files are the player's: they tune them in OptiScaler's and ReShade's overlays, not in Lucent. It also offers a Starter set of Dalamud plugins and Penumbra mods, which it places or links to once and then leaves alone.
 
 ## Language
 
@@ -46,7 +46,7 @@ _Avoid_: using "uninstall" alone for it (that word belongs to deployments)
 
 **Feature**:
 Something Lucent manages for the player, made of one or more components: **DLSS 5** (OptiScaler with a Neural Rendering runtime, or FSR on Radeon) and **ReShade** (ReShade, its add-on, shaders and presets). Lucent is meant to take on more features over time.
-_Avoid_: module, plugin, mod (for the grouping)
+_Avoid_: module, plugin, mod (for the grouping; a Dalamud plugin and a Penumbra mod are the two kinds of item in the Starter set, which is not a Feature)
 
 **Component**:
 One piece of third-party software Lucent deploys: an OptiScaler build, a Neural Rendering runtime, ReShade, a ReShade add-on, a shader pack or a preset pack.
@@ -113,6 +113,28 @@ _Avoid_: profile, look, theme
 **Publish**:
 The maintainer's act of turning a tested folder into a new content version in the manifest.
 _Avoid_: release (ambiguous), upload
+
+### Starter set
+
+**Starter set**:
+The curated list of Dalamud plugins and Penumbra mods that the Mods section offers, defined in the manifest by the maintainer. Lucent seeds its plugins or links to its mods once and then forgets them: it has no deployment, journal or health check. Its items are not components.
+_Avoid_: default set (Penumbra has a Default collection and Dalamud a default profile), bundle, pack
+
+**Dalamud plugin**:
+A plugin that Dalamud loads into the game, kept under `%APPDATA%\XIVLauncher\installedPlugins`. Lucent can place the Starter set's plugins; from then on Dalamud owns them.
+_Avoid_: add-on (that word belongs to XIVLauncher add-ons and ReShade add-ons), mod
+
+**Plugin repo**:
+A published list of Dalamud plugins and where to download them (`repo.json`): the official one, or a third-party one the player has in Dalamud's `ThirdRepoList`. Lucent adds third-party repos only after the player has read its consent panel.
+_Avoid_: repository (that word belongs to Git)
+
+**Seed**:
+To place a Dalamud plugin once, fetched from its repo's current release, recording nothing to check or repair afterwards.
+_Avoid_: install and deploy (a deployment is journaled and health-checked)
+
+**Penumbra mod**:
+A folder in Penumbra's `ModDirectory` that changes how the game looks or plays. Lucent lists some in the Starter set and links to where to get them; it never downloads, places or edits one, and it never writes `ModDirectory`.
+_Avoid_: component, plugin
 
 ### Deployment
 

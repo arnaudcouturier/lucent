@@ -48,6 +48,8 @@ export async function publishContent(inputPath: string, options: PublishOptions)
   try {
     const original = await readFile(options.manifestPath, 'utf8')
     const manifest = parseManifest(original)
+    // A broken Starter set is dropped by the app, so rewriting the manifest from what was parsed would delete it for good.
+    if (manifest.starterSetError) throw new Error(`The manifest's starterSet is invalid, and publishing would drop it. Fix it first: ${manifest.starterSetError}`)
     const input: PublishInput = JSON.parse((await readFile(inputPath, 'utf8')).replace(/^\uFEFF/, ''))
     if (options.dryRunFilesDirectory && !options.dryRun) throw new Error('Local dry-run files can only be materialized in dry-run mode.')
     if (!/^\d{4}\.\d{2}\.\d{2}$/.test(input.id) || new Date(`${input.id.replace(/\./g, '-')}T00:00:00Z`).toISOString().slice(0, 10) !== input.id.replace(/\./g, '-')) throw new Error('Content version must be a real date in YYYY.MM.DD form.')

@@ -1,4 +1,5 @@
 // Shared by the app and the publish tool. No framework or Platform dependencies.
+import { StarterSetError, validateStarterSet, type StarterSet } from './starterSet'
 export const MANIFEST_SCHEMA_VERSION = 2
 
 export type TierStatus = 'stable' | 'experimental' | 'community-verified'
@@ -25,6 +26,13 @@ export interface Manifest {
   tiers: Tier[]
   versions: ContentVersion[]
   existingSetups: ExistingSetupSignature[]
+  /** The Mods section's plugins and mods; absent from older manifests, and unknown to apps before the Mods section. */
+  starterSet?: StarterSet
+  /**
+   * Why a `starterSet` in the document was dropped. The set is edited by hand and a typo in it must not take DLSS deploys
+   * down with it, so it is validated apart from the rest; the publish tool refuses to rewrite a manifest that has this.
+   */
+  starterSetError?: string
 }
 
 /**
@@ -277,7 +285,17 @@ export function validateManifest(value: unknown): Manifest {
   unique(versions.map((v) => v.id), 'Content version ids')
   const existingSetups = array(m.existingSetups ?? [], 'Existing setups').map(existingSetup)
   unique(existingSetups.map((s) => s.id), 'Existing setup ids')
-  return { schemaVersion: m.schemaVersion, tiers, versions, existingSetups }
+  return { schemaVersion: m.schemaVersion, tiers, versions, existingSetups, ...starterSetField(m.starterSet) }
+}
+
+/** The Starter set is optional, and a bad one is reported on the manifest instead of invalidating it. */
+function starterSetField(value: unknown): Pick<Manifest, 'starterSet' | 'starterSetError'> {
+  if (value === undefined) return {}
+  try { return { starterSet: validateStarterSet(value) } }
+  catch (error) {
+    if (error instanceof StarterSetError) return { starterSetError: error.message }
+    throw error
+  }
 }
 
 /** Checks a pattern as a game path, with `**` standing for whole folders and `*` for part of a name. */
