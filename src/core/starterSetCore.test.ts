@@ -36,7 +36,7 @@ describe('the Mods section’s state', () => {
     const { starterSet } = core.getState()
     expect(starterSet.status).toBe('ready')
     if (starterSet.status !== 'ready') return
-    expect(starterSet.set.plugins).toHaveLength(9)
+    expect(starterSet.set.plugins).toHaveLength(10)
     expect(starterSet.scan.dalamud).toEqual({ status: 'ready' })
     expect(starterSet.scan.installedPlugins).toEqual(['Penumbra'])
     expect(starterSet.result).toBeNull()

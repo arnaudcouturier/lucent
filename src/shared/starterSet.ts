@@ -34,6 +34,8 @@ export interface StarterPlugin {
   group: StarterGroup
   /** Listed but never fetched: the player installs it from Dalamud's plugin installer. */
   manual?: true
+  /** What the player does in the game once it is added. Lucent never writes a plugin's settings, so it only says so. */
+  setup?: string
 }
 
 export interface StarterMod {
@@ -124,6 +126,7 @@ export function validateStarterSet(value: unknown): StarterSet {
       summary: text(plugin.summary, `Plugin ${internalName} summary`, 300),
       ...(plugin.source === undefined ? {} : { source: httpsUrl(plugin.source, `Plugin ${internalName} source`) }),
       repo, group: plugin.group as StarterGroup, ...(plugin.manual ? { manual: true as const } : {}),
+      ...(plugin.setup === undefined ? {} : { setup: text(plugin.setup, `Plugin ${internalName} setup`, 300) }),
     }
   })
   unique(plugins.map((p) => p.internalName), 'Plugin internal names')

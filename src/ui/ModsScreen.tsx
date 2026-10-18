@@ -93,7 +93,7 @@ function PluginsGroup({ set, scan, progress }: { set: StarterSet; scan: StarterS
         {state.busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Download size={14} strokeWidth={1.75} />}Add plugins…
       </button>
     </div>
-    {report && !state.busy && <Report report={report} scan={scan} />}
+    {report && !state.busy && <Report report={report} scan={scan} set={set} />}
     {confirming && <AddDialog plugins={toAdd} set={set} scan={scan} onAdd={add} onClose={() => setConfirming(false)} />}
   </section>
 }
@@ -135,13 +135,19 @@ function AddDialog({ plugins, set, scan, onAdd, onClose }: { plugins: StarterPlu
 }
 
 /** What the last Add did: what was placed, what was left out and why, and what to do next. */
-function Report({ report, scan }: { report: SeedOutcome; scan: StarterSetScan }) {
+function Report({ report, scan, set }: { report: SeedOutcome; scan: StarterSetScan; set: StarterSet }) {
   const penumbra = report.placed.some((p) => p.name === 'Penumbra') && !scan.modDirectory
+  // Lucent never writes a plugin's settings, so what the player still has to do in the game is said here.
+  const setups = report.placed.flatMap((p) => { const setup = set.plugins.find((plugin) => plugin.name === p.name)?.setup; return setup ? [{ name: p.name, setup }] : [] })
   return <div className="card starter-report" role="status">
     {!!report.placed.length && <>
       <strong>Added {report.placed.length === 1 ? 'a plugin' : `${report.placed.length} plugins`}</strong>
       <ul>{report.placed.map((p) => <li key={p.name}><Check size={14} strokeWidth={2} aria-hidden />{p.name} <span className="mono">{p.version}</span></li>)}</ul>
       <small>Launch XIV from XIVLauncher with Dalamud on, and they load.{penumbra ? ' Penumbra asks for a mod folder the first time it runs; set one in its Settings tab.' : ''}</small>
+      {!!setups.length && <>
+        <strong>Then set up</strong>
+        <ul>{setups.map((s) => <li key={s.name}><span>{s.name}: {s.setup}</span></li>)}</ul>
+      </>}
     </>}
     {!!report.reposAdded.length && <small>Added {report.reposAdded.length === 1 ? 'a repository' : `${report.reposAdded.length} repositories`} to Dalamud’s list.</small>}
     {!!report.skipped.length && <>

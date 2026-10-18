@@ -22,9 +22,16 @@ describe('the published Starter set', () => {
   it('offers the agreed plugins and mods', () => {
     const { plugins, mods, repos } = set()
     expect(plugins.filter((p) => p.group === 'core').map((p) => p.internalName)).toEqual(['Penumbra', 'Glamourer', 'heliosphere-plugin', 'Weatherman', 'AcrylicXIV', 'ActionTimelineReplacement'])
-    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit', 'Browsingway'])
+    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit', 'Browsingway', 'IINACT'])
     expect(mods.map((m) => m.name)).toEqual(['Hair Defined 2', 'AETHERIS UI AIO', 'The Body SE'])
-    expect(repos.map((r) => r.id)).toEqual(['seaofstars', 'action-timeline-replacement'])
+    expect(repos.map((r) => r.id)).toEqual(['seaofstars', 'action-timeline-replacement', 'iinact'])
+  })
+
+  it('tells the player what to set up for Browsingway and IINACT, which Lucent can’t write for them', () => {
+    const setups = Object.fromEntries(set().plugins.filter((p) => p.setup).map((p) => [p.internalName, p.setup]))
+    expect(Object.keys(setups)).toEqual(['Browsingway', 'IINACT'])
+    expect(setups.IINACT).toMatch(/\/iinact/)
+    expect(setups.Browsingway).toMatch(/\/bw config/)
   })
 
   it('never fetches the Heliosphere plugin', () => {
@@ -90,6 +97,8 @@ describe('validateStarterSet', () => {
   rejects('two mods with one ID', (d) => { d.mods[1].id = d.mods[0].id }, /unique/)
   rejects('a name with a control character', (d) => { d.plugins[0].name = 'Pen\numbra' }, /single line/)
   rejects('a manual flag that is not a boolean', (d) => { d.plugins[2].manual = 'yes' }, /manual/)
+  rejects('a setup line that is not one short line', (d) => { d.plugins[0].setup = 'First do this.\nThen that.' }, /setup must be a short single line/)
+  rejects('an empty setup line', (d) => { d.plugins[0].setup = '  ' }, /setup/)
   rejects('a set that is not an object', (d) => { Object.keys(d).forEach((k) => delete d[k]); d.mods = {} }, /array/)
 
   it('accepts an empty set', () => {

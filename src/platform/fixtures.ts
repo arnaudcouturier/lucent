@@ -120,7 +120,7 @@ export function dalamudSetup(options: { plugins?: string[]; mods?: Record<string
   return {
     files, directories: [`${root}\\addon\\Hooks\\15.0.3.7`],
     remoteText: {
-      'https://kamori.goats.dev/Plugin/PluginMaster': listed('official'), [repoUrl('seaofstars')]: listed('seaofstars'), [repoUrl('action-timeline-replacement')]: listed('action-timeline-replacement'),
+      'https://kamori.goats.dev/Plugin/PluginMaster': listed('official'), [repoUrl('seaofstars')]: listed('seaofstars'), [repoUrl('action-timeline-replacement')]: listed('action-timeline-replacement'), [repoUrl('iinact')]: listed('iinact'),
       ...Object.fromEntries(names.map((name) => [`https://downloads.fixture/${name}.zip`, fakeZip({ [`${name}.dll`]: 'dll', [`${name}.json`]: JSON.stringify({ InternalName: name, AssemblyVersion: '1.0.0.0' }) })])),
     },
   }

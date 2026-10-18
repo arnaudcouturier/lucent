@@ -469,7 +469,8 @@ tool carries it through unchanged.
   places is marked with it.
 - **`plugins`** each have `internalName` (Dalamud's name for it, which becomes a folder name: letters, digits, `.`, `_` and `-`;
   unique ignoring case), `name`, `author`, `summary`, an optional `source` page, a `repo` (`official` or a repo `id`) and a `group`:
-  `core` plugins share one switch and `extra` ones are each ticked on their own. `manual: true` lists a plugin Lucent never fetches
+  `core` plugins share one switch and `extra` ones are each ticked on their own. An optional `setup` is one line on what the player
+  still does in the game once it is added; Lucent never writes a plugin's settings, so the report after an Add prints it. `manual: true` lists a plugin Lucent never fetches
   (Heliosphere, whose terms bar other programs from its endpoints): its row says to install it from Dalamud's plugin installer.
 - **`mods`** each have the `id` from the mod's Heliosphere page address (`https://heliosphere.app/mod/<id>`: 26 lowercase
   letters and digits, no `i`, `l`, `o` or `u`), `name`, `author`, an optional `summary` and `nsfw: true` for the neutral NSFW chip.
