@@ -22,7 +22,7 @@ describe('the published Starter set', () => {
   it('offers the agreed plugins and mods', () => {
     const { plugins, mods, repos } = set()
     expect(plugins.filter((p) => p.group === 'core').map((p) => p.internalName)).toEqual(['Penumbra', 'Glamourer', 'heliosphere-plugin', 'Weatherman', 'AcrylicXIV', 'ActionTimelineReplacement'])
-    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit'])
+    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit', 'Browsingway'])
     expect(mods.map((m) => m.name)).toEqual(['Hair Defined 2', 'AETHERIS UI AIO', 'The Body SE'])
     expect(repos.map((r) => r.id)).toEqual(['seaofstars', 'action-timeline-replacement'])
   })

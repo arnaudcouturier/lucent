@@ -25168,6 +25168,15 @@
         "summary": "Splits a multi-hit action's damage number into one number per hit.",
         "repo": "official",
         "group": "extra"
+      },
+      {
+        "internalName": "Browsingway",
+        "name": "Browsingway",
+        "author": "Styr1x",
+        "summary": "Shows web pages and ACT overlays inside the game, so you can play fullscreen.",
+        "source": "https://github.com/Styr1x/Browsingway",
+        "repo": "official",
+        "group": "extra"
       }
     ],
     "mods": [
