@@ -1034,6 +1034,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 /* ---------- Mods: the Starter set ---------- */
 .rail-nav-solo { margin-top: var(--space-3); }
 .starter-list { overflow: hidden; }
+.settings-switch + .starter-list { margin-top: var(--space-2); }
 .starter-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .starter-row + .starter-row { box-shadow: inset 0 1px 0 var(--line); }
 .starter-row.is-dimmed .starter-body { opacity: 0.5; }
