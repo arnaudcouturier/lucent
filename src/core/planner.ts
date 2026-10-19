@@ -17,12 +17,14 @@ export interface DeploymentScan {
   ownedFiles: string[]
   cachedFiles: string[]
   existingSetups?: ExistingSetup[]
+  /** What each path held before the deployment first wrote it, as the hash of that file; a path that held nothing has none. */
+  originals?: Record<string, string>
 }
 /** Where carried-over presets go. ReShade lists this folder in its preset picker. */
 export const PRESET_FOLDER = 'reshade-presets'
 /** A carry copies an existing setup's preset into Lucent's preset folder, where it stays as a user file. */
 export type PlanStep = Step | { kind: 'carry'; from: string; to: string } | { kind: 'write'; path: string; text: string }
-  /** Copies an exact, hash-verified journal backup back into the game folder (used by rollback). */
+  /** Copies an exact, hash-verified journal backup back into the game folder (used by rollback, and by an update that gives up a file it replaced). */
   | { kind: 'restore'; hash: string; to: string }
 /** The paths a step mutates; copying a carried-over preset only reads its source. */
 export const stepWritePaths = (step: PlanStep): string[] => step.kind === 'rename' ? [step.from, step.to]
@@ -66,7 +68,7 @@ export interface ProfilePlanContext {
 /**
  * Pure planning: all facts about the folder and verified cache are supplied by Scan.
  * Planned from a current deployment (its files are `scan.ownedFiles`), the steps also delete the owned files the content no
- * longer deploys, and a Disabled deployment gets its entry files renamed aside.
+ * longer deploys (or put back the file one replaced, from `scan.originals`), and a Disabled deployment gets its entry files renamed aside.
  */
 export interface PlanSelection extends ProfilePlanContext {
   /** Options already filtered to the player's GPU. Omit to keep every manifest variant. */
@@ -184,10 +186,13 @@ export function planDeployment(
       present.delete(fileKey(step.path))
     }
   }
-  // Owned files this content doesn't deploy are removed, through the journal like every other step.
+  // Owned files this content doesn't deploy are removed, through the journal like every other step. One that replaced a
+  // file when the deployment first wrote it gets that file back instead. Either way it stops being owned, so it isn't expected.
+  const originals = new Map(Object.entries(scan.originals ?? {}).map(([path, hash]) => [fileKey(path), hash]))
   const dropped = scan.ownedFiles.filter((p) => present.has(fileKey(p)) && !touched.has(fileKey(p)))
   for (const path of dropped) {
-    steps.push({ kind: 'delete', path })
+    const original = originals.get(fileKey(path))
+    steps.push(original ? { kind: 'restore', hash: original, to: path } : { kind: 'delete', path })
     modify(path)
     present.delete(fileKey(path))
   }

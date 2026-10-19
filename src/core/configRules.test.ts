@@ -61,7 +61,7 @@ async function replaceShipped(content: ContentVersion, destination: string, newT
 /** The next version with a new `ReShade.ini` baseline and the given update rule for it (none when `rule` is absent). */
 async function nextWithReShadeBaseline(m: Machine, baseline: string, rule?: ConfigUpdateRule) {
   const { content, hash } = await replaceShipped(NEXT_CONTENT, 'ReShade.ini', baseline)
-  if (rule) for (const config of content.tiers['rtx-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') config.update = rule
+  if (rule) for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') config.update = rule
   publishVariant(m, content, { [hash]: baseline })
 }
 
@@ -85,7 +85,7 @@ it('keep leaves a tuned OptiScaler.ini alone although the new content changes th
   const config = `${GAME}\\OptiScaler.ini`
   await platform.writeText(config, (await platform.readText(config)).replace('Passes = 2', 'Passes = 9'))
   const variant = structuredClone(NEXT_CONTENT)
-  for (const profile of variant.tiers['rtx-30-40'].performanceProfiles!) {
+  for (const profile of variant.tiers['rtx-20-30-40'].performanceProfiles!) {
     for (const setting of profile.settings) if (setting.key === 'Passes') setting.value = '3'
   }
   publishVariant(m, variant)
@@ -139,7 +139,7 @@ it('replace writes OptiScaler.ini from the stored profile, with the new contentâ
   const tuned = (await platform.readText(config)).replace('Passes = 2', 'Passes = 9')
   await platform.writeText(config, tuned)
   const variant = structuredClone(NEXT_CONTENT)
-  const recipe = variant.tiers['rtx-30-40']
+  const recipe = variant.tiers['rtx-20-30-40']
   for (const profile of recipe.performanceProfiles!) for (const setting of profile.settings) if (setting.key === 'Passes') setting.value = profile.id === 'fidelity' ? '3' : '1'
   recipe.ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = 'replace'
   publishVariant(m, variant)
@@ -233,7 +233,7 @@ it('a config the player deleted stays missing under keep so Repair can restore i
 it('the changelog names the files an update adds keys to or replaces, and the activity log has a line per file', async () => {
   const { platform, m } = await deployed()
   const variant = structuredClone(NEXT_CONTENT)
-  const [reShade, optiScaler] = [variant.tiers['rtx-30-40'].ownedConfigs.find((c) => c.path === 'ReShade.ini')!, variant.tiers['rtx-30-40'].ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!]
+  const [reShade, optiScaler] = [variant.tiers['rtx-20-30-40'].ownedConfigs.find((c) => c.path === 'ReShade.ini')!, variant.tiers['rtx-20-30-40'].ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!]
   reShade.update = 'replace'
   optiScaler.update = 'addMissingKeys'
   publishVariant(m, variant)

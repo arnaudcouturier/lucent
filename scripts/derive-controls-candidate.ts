@@ -37,8 +37,8 @@ if (!isAbsolute(outputPath)) throw new Error('The output folder must be an absol
 const recipe = JSON.parse(await readFile(recipePath, 'utf8')) as ControlsRecipe
 const input = JSON.parse((await readFile(basePath, 'utf8')).replace(/^\uFEFF/, '')) as PublishInput
 if (input.id !== recipe.basedOnContent) throw new Error(`Expected the input for ${recipe.basedOnContent}; found ${input.id}.`)
-const tier = input.tiers['rtx-30-40']
-if (!tier || Object.keys(input.tiers).length !== 1) throw new Error('Expected only the rtx-30-40 tier.')
+const tier = input.tiers['rtx-20-30-40']
+if (!tier || Object.keys(input.tiers).length !== 1) throw new Error('Expected only the rtx-20-30-40 tier.')
 
 input.id = recipe.id
 input.channel = recipe.channel

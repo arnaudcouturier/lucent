@@ -54,7 +54,7 @@ Here is an example for one tested tier; add entries for the other tested tiers a
   ],
   "knownUserShaders": ["PaidShader.fx"],
   "tiers": {
-    "rtx-30-40": {
+    "rtx-20-30-40": {
       "sources": [
         { "folder": "tested/OptiScaler", "component": "OptiScaler" },
         { "folder": "tested/ReShade", "component": "ReShade", "when": "reshade" }

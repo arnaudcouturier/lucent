@@ -14,18 +14,18 @@ it('plans the final file count and downloads once per hash, including optional R
 })
 
 it('keeps screen-derived settings only for configs included in the selected plan', () => {
-  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
-    ...TEST_CONTENT.tiers['rtx-30-40'],
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
+    ...TEST_CONTENT.tiers['rtx-20-30-40'],
     screenDerivedSettings: [{ file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: 'frameCap' as const }],
   } } }
   const scan = { files: [], ownedFiles: [], cachedFiles: [] }
   expect(planDeployment(content, TEST_MANIFEST.tiers[1], false, scan).recipe.screenDerivedSettings).toEqual([])
-  expect(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan).recipe.screenDerivedSettings).toEqual(content.tiers['rtx-30-40'].screenDerivedSettings)
+  expect(planDeployment(content, TEST_MANIFEST.tiers[1], true, scan).recipe.screenDerivedSettings).toEqual(content.tiers['rtx-20-30-40'].screenDerivedSettings)
 })
 
 it('writes the screen-derived settings last, from the screen it is given, and only for included configs', () => {
-  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
-    ...TEST_CONTENT.tiers['rtx-30-40'],
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
+    ...TEST_CONTENT.tiers['rtx-20-30-40'],
     screenDerivedSettings: [
       { file: 'ReShade.ini', section: 'FrameRate', key: 'Limit', value: 'frameCap' as const },
       { file: 'ReShade.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' as const },
@@ -46,7 +46,7 @@ it('writes the screen-derived settings last, from the screen it is given, and on
 })
 
 it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profile settings', () => {
-  const base = TEST_CONTENT.tiers['rtx-30-40']
+  const base = TEST_CONTENT.tiers['rtx-20-30-40']
   const frameGenerationOptions: FrameGenerationOption[] = [{
     id: '2x', settings: [
       { file: 'OptiScaler.ini', section: 'FrameGeneration', key: 'Mode', value: '2x' },
@@ -70,7 +70,7 @@ it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profi
       { file: 'OptiScaler.ini', section: 'HDR', key: 'Mode', value: '1' },
     ] },
   ]
-  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
     ...base,
     recipe: [...base.recipe, { kind: 'copy' as const, file: OPTISCALER_HASH, to: 'OptiScaler.ini' }],
     ownedConfigs: [...base.ownedConfigs, { path: 'OptiScaler.ini' }],
@@ -106,8 +106,8 @@ it('plans the default HDR mode and keeps HDR-owned keys out of overlapping profi
 })
 
 it('counts originals once across rename, overwrite and delete, while protecting unowned files', () => {
-  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-30-40': {
-    ...TEST_CONTENT.tiers['rtx-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
+    ...TEST_CONTENT.tiers['rtx-20-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [
       { kind: 'rename' as const, from: 'old.dll', to: 'winmm.dll' },
       { kind: 'copy' as const, file: OPTISCALER_HASH, to: 'winmm.dll' },
       { kind: 'delete' as const, path: 'obsolete.ini' },
@@ -122,7 +122,7 @@ it('counts originals once across rename, overwrite and delete, while protecting 
 
 it('plans each first-install choice once, with the frame cap and peak brightness from the screen', () => {
   const content = HDR_FRAME_GENERATION_MANIFEST.versions[0]
-  const tier = HDR_FRAME_GENERATION_MANIFEST.tiers.find((t) => t.id === 'rtx-30-40')!
+  const tier = HDR_FRAME_GENERATION_MANIFEST.tiers.find((t) => t.id === 'rtx-20-30-40')!
   const scan = { files: [], ownedFiles: [], cachedFiles: [] }
   const values = (plan: ReturnType<typeof planDeployment>) => Object.fromEntries(plan.steps.flatMap((s) =>
     s.kind === 'ini_set' ? [[`${s.section}.${s.key}`, s.value]] : []))
@@ -156,4 +156,36 @@ it('plans each first-install choice once, with the frame cap and peak brightness
   expect(rtx30.frameGenerationMode).toBeNull()
   expect(values(rtx30)).not.toHaveProperty(['FrameGeneration.Mode'])
   expect(values(rtx30)).toMatchObject({ 'HDR.FfxivHDR': 'false', 'Framerate.FramerateLimit': '59.000000', 'HDR.PeakNits': '1100' })
+})
+
+it('puts back the file an owned path replaced when the content drops it, and deletes the dropped path that replaced nothing', () => {
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
+    ...TEST_CONTENT.tiers['rtx-20-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [{ kind: 'copy' as const, file: OPTISCALER_HASH, to: 'winmm.dll' }],
+  } } }
+  const original = 'a'.repeat(64)
+  const scan = {
+    files: ['winmm.dll', 'nvngx_dlss.dll', 'obsolete.ini', 'User.ini'], ownedFiles: ['winmm.dll', 'nvngx_dlss.dll', 'obsolete.ini'], cachedFiles: [],
+    // Keyed however the journal spelled the path; winmm.dll's own original is overwritten again, not given back.
+    originals: { 'NVNGX_DLSS.dll': original, 'winmm.dll': 'b'.repeat(64) },
+  }
+  const plan = planDeployment(content, TEST_MANIFEST.tiers[1], false, scan)
+  expect(plan.steps).toEqual([
+    { kind: 'copy', file: OPTISCALER_HASH, to: 'winmm.dll' },
+    { kind: 'restore', hash: original, to: 'nvngx_dlss.dll' },
+    { kind: 'delete', path: 'obsolete.ini' },
+  ])
+  // Neither dropped path is owned afterwards, so the record stamps and the health check never see them.
+  expect(plan.expectedFiles).toEqual([{ path: 'winmm.dll', sha256: OPTISCALER_HASH }])
+  expect(plan.filesToBackup).toEqual(['winmm.dll', 'nvngx_dlss.dll', 'obsolete.ini'])
+  expect(plan.unclaimedPaths).toEqual([])
+})
+
+it('leaves a restored original out of the next plan, since the deployment no longer owns it', () => {
+  const content = { ...TEST_CONTENT, tiers: { ...TEST_CONTENT.tiers, 'rtx-20-30-40': {
+    ...TEST_CONTENT.tiers['rtx-20-30-40'], ownedConfigs: [], shippedPresets: [], recipe: [{ kind: 'copy' as const, file: OPTISCALER_HASH, to: 'winmm.dll' }],
+  } } }
+  const scan = { files: ['winmm.dll', 'nvngx_dlss.dll'], ownedFiles: ['winmm.dll'], cachedFiles: [], originals: { 'nvngx_dlss.dll': 'a'.repeat(64) } }
+  const plan = planDeployment(content, TEST_MANIFEST.tiers[1], false, scan)
+  expect(plan.steps).toEqual([{ kind: 'copy', file: OPTISCALER_HASH, to: 'winmm.dll' }])
+  expect(plan.filesToBackup).toEqual(['winmm.dll'])
 })

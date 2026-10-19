@@ -49,8 +49,8 @@ async function publish(m: Machine, id: string, text: string, previous: ContentVe
 
 function replaceReShadeOn(m: Machine, versions: ContentVersion[]): ContentVersion[] {
   const changed = versions.map((version) => {
-    const recipe = version.tiers['rtx-30-40']
-    return { ...version, tiers: { ...version.tiers, 'rtx-30-40': {
+    const recipe = version.tiers['rtx-20-30-40']
+    return { ...version, tiers: { ...version.tiers, 'rtx-20-30-40': {
       ...recipe,
       ownedConfigs: recipe.ownedConfigs.map((config) => config.path === 'ReShade.ini' ? { ...config, update: 'replace' as const } : config),
     } } }

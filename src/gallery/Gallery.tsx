@@ -383,7 +383,7 @@ const STATES: GalleryState[] = [
   { key: 'existing-setup', label: 'Scan · existing setups found', setup: scanned(MACHINES.existing) },
   { key: 'not-found', label: 'Scan · not found', setup: scanned(MACHINES.none) },
   { key: 'rtx-50', label: 'Scan · RTX 50, Community-verified', setup: scanned(machine(MACHINES.steam, graphicsCard('NVIDIA GeForce RTX 5090'))) },
-  { key: 'rtx-20', label: 'Scan · RTX 20, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('NVIDIA GeForce RTX 2080 SUPER'))) },
+  { key: 'rtx-20', label: 'Scan · RTX 20, shares the RTX 20/30/40 tier', setup: scanned(machine(MACHINES.steam, graphicsCard('NVIDIA GeForce RTX 2080 SUPER'))) },
   { key: 'radeon', label: 'Scan · Radeon, Experimental', setup: scanned(machine(MACHINES.steam, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002))) },
   { key: 'intel', label: 'Scan · Intel, Other', setup: scanned(machine(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086))) },
   { key: 'schema-update', label: 'Scan · app update required', setup: scanned(machine(MACHINES.steam, manifestHost({ schemaVersion: 3 }), appReleaseHost())) },

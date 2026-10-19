@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { choiceOptions, frameGenerationChoice, hdrChoice, hdrDescription, storedHdrChoice, storedSelection } from './choices'
 import { HDR_FRAME_GENERATION_MANIFEST } from '../platform/contentFixture'
 
-const recipe = HDR_FRAME_GENERATION_MANIFEST.versions[0].tiers['rtx-30-40']
+const recipe = HDR_FRAME_GENERATION_MANIFEST.versions[0].tiers['rtx-20-30-40']
 const ids = (options: { id: string }[]) => options.map((option) => option.id)
 
 describe('choiceOptions', () => {

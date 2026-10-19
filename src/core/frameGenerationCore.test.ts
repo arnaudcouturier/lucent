@@ -16,7 +16,7 @@ const GAME = `${ROOT}\\game`
 function manifestWith(rule: ConfigUpdateRule | undefined, extraVersions: Manifest['versions'] = []): Manifest {
   const manifest = structuredClone(FRAME_GENERATION_MANIFEST)
   manifest.versions = [...manifest.versions, ...extraVersions]
-  if (rule) for (const version of manifest.versions) version.tiers['rtx-30-40'].ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = rule
+  if (rule) for (const version of manifest.versions) version.tiers['rtx-20-30-40'].ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = rule
   return manifest
 }
 

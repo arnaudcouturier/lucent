@@ -337,7 +337,7 @@ export async function scanDeployment(platform: Platform, gameFolder: string, con
   const hashes = await platform.hashMany(sized.map((file) => joinPath(cache, file.sha256)))
   const cachedFiles = sized.filter((file, i) => hashes[i] === file.sha256).map((file) => file.sha256)
   const ownedFiles = record?.status === 'complete' ? Object.keys(record.files) : []
-  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, files, ownedFiles) }
+  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, files, ownedFiles), originals: record?.status === 'complete' ? originalHashes(record) : {} }
 }
 
 export function releaseAsset(file: ContentVersion['files'][number]): string {
@@ -851,9 +851,23 @@ function writtenPath(step: PlanStep): string | null {
   return step.kind === 'copy' || step.kind === 'rename' || step.kind === 'restore' ? step.to : step.kind === 'ini_set' ? step.file : step.kind === 'write' ? step.path : null
 }
 
+/** The unclaimed paths that still hold the original an earlier update put back there (keys, by `fileKey`); any other file is the player's. */
+async function originalsPutBack(platform: Platform, gameFolder: string, scan: DeploymentScan, unclaimed: string[]): Promise<Set<string>> {
+  const originals = new Map(Object.entries(scan.originals ?? {}).map(([path, hash]) => [fileKey(path), hash]))
+  const root = joinPath(gameFolder, 'game')
+  const putBack = new Set<string>()
+  for (const path of unclaimed) {
+    const original = originals.get(fileKey(path))
+    if (original && await platform.hashFile(await platform.resolveGamePath(root, path)) === original) putBack.add(fileKey(path))
+  }
+  return putBack
+}
+
 /**
  * Moves a complete deployment to another content version, planned from the deployment as it stands: downloads only the
  * files the cache lacks, applies the recipe, and deletes the files the version no longer deploys, all through the journal.
+ * A file it deletes that replaced one of the player's when the deployment began is put back as that file instead, and is no longer
+ * the deployment's own: the record stops stamping it.
  * Config files follow the config update rule the new version gives each one (see `configs.ts`): `keep` leaves it,
  * `addMissingKeys` writes only the keys it lacks, and `replace` writes the new baseline from the stored first-install choices,
  * after the journal has backed the file up. An edited shipped preset is kept when Lucent's version is unchanged, or saved as
@@ -880,7 +894,10 @@ export async function updateDeployment(
   const selection = reset ? options.selection ?? storedSelection(record, targetRecipe, gpuName, screen) : storedSelection(record, targetRecipe, gpuName, screen)
   const includeReShade = reset ? options.includeReShade ?? record.includeReShade : record.includeReShade
   const plan = planDeployment(content, tier, includeReShade, scan, profile, record.enabled, selection)
-  if (plan.unclaimedPaths.length) throw new Error(`These user files would be replaced: ${plan.unclaimedPaths.join(', ')}. Move them aside before updating.`)
+  // An original an earlier update put back is the game's again; deploying over it once more (a rollback) is no takeover while it is still that file.
+  const putBack = await originalsPutBack(platform, gameFolder, scan, plan.unclaimedPaths)
+  const unclaimed = plan.unclaimedPaths.filter((path) => !putBack.has(fileKey(path)))
+  if (unclaimed.length) throw new Error(`These user files would be replaced: ${unclaimed.join(', ')}. Move them aside before updating.`)
   const paths = await dataPaths(platform, gameFolder)
   await cachePlannedFiles(platform, paths.cache, plan, scan.cachedFiles, source, report)
   await requireGameStopped(platform)
@@ -1042,7 +1059,7 @@ export async function updateDeployment(
       steps = withPreserved
     }
     if (autoHdrRestore) await applyAutoHdrTransition(platform, record, save, autoHdrRestore, 'restoring Auto HDR')
-    await applySteps({ platform, record, save, report, owned: new Set(Object.keys(record.files).map(fileKey)) }, steps)
+    await applySteps({ platform, record, save, report, owned: new Set([...Object.keys(record.files).map(fileKey), ...putBack]) }, steps)
     if (autoHdr) await applyAutoHdrOff(platform, record, save, autoHdr)
     const files = await stampFiles(platform, record, expectedFiles, report)
     // A config left as it is keeps the file the player has; Lucent only stamps what is there, since a health check reads no more of it.
@@ -1259,18 +1276,31 @@ export async function migrateDeployment(platform: Platform, gameFolder: string):
   return migrated
 }
 
-/** The game-folder files that were there before the deployment and that uninstall puts back: each path whose first step found a file. */
-export function replacedOriginals(record: Pick<DeploymentRecord, 'journal'>): string[] {
+/** Each path's first journal entry, in journal order: the hash of the file its step found there (null if it found none) and of the file it left. */
+function firstBefores(record: Pick<DeploymentRecord, 'journal'>): { path: string; before: string | null; after: string | null }[] {
   const seen = new Set<string>()
-  const originals: string[] = []
+  const first: { path: string; before: string | null; after: string | null }[] = []
   for (const entry of record.journal) {
     for (const [path, before] of Object.entries(entry.before)) {
       if (seen.has(fileKey(path))) continue
       seen.add(fileKey(path))
-      if (before !== null) originals.push(path)
+      first.push({ path, before, after: entry.after[path] ?? null })
     }
   }
-  return originals
+  return first
+}
+
+/** The game-folder files that were there before the deployment and that uninstall puts back: each path whose first step found a file. */
+export function replacedOriginals(record: Pick<DeploymentRecord, 'journal'>): string[] {
+  return firstBefores(record).flatMap(({ path, before }) => before !== null ? [path] : [])
+}
+
+/**
+ * The files Lucent overwrote in place, with their hashes (the journal keeps a backup of each): what an update that drops one of them
+ * puts back. A file a setup takeover removed first, such as an old ReShade `dxgi.dll`, is not one: it was removed because it conflicts.
+ */
+export function originalHashes(record: Pick<DeploymentRecord, 'journal'>): Record<string, string> {
+  return Object.fromEntries(firstBefores(record).flatMap(({ path, before, after }) => before !== null && after !== null ? [[path, before]] : []))
 }
 
 /** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */

@@ -200,7 +200,7 @@ it('keeps Reset choices through coordinated calls and an elevated resume', async
 
   expect(platform.elevationRequests).toHaveLength(1)
   const request = JSON.parse(await platform.readText(platform.elevationRequests[0]))
-  expect(request.request).toMatchObject({ kind: 'reset', tier: 'rtx-30-40', profile: 'balanced', includeReShade: false })
+  expect(request.request).toMatchObject({ kind: 'reset', tier: 'rtx-20-30-40', profile: 'balanced', includeReShade: false })
   m.elevated = true
   const resumed = createCore(platform)
   await resumed.scan()

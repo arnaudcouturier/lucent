@@ -34,14 +34,14 @@ it('offers Switch tier when the graphics card now matches another tier', async (
   const { platform, m } = await deployedOnRtx()
   m.gpus = RADEON
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toEqual({ kind: 'switch-tier', gpu: 'AMD Radeon RX 7900 XTX', from: 'RTX 30/40', to: 'Radeon' })
+  expect(statusCard(core.getState())).toEqual({ kind: 'switch-tier', gpu: 'AMD Radeon RX 7900 XTX', from: 'RTX 20/30/40', to: 'Radeon' })
 })
 
 it('offers a GPU refresh when another card matches the same tier', async () => {
   const { platform, m } = await deployedOnRtx()
   m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
   expect(statusCard((await reopen(platform)).getState())).toEqual({
-    kind: 'switch-tier', gpu: 'NVIDIA GeForce RTX 3080', from: 'RTX 30/40', to: 'RTX 30/40', sameTier: true,
+    kind: 'switch-tier', gpu: 'NVIDIA GeForce RTX 3080', from: 'RTX 20/30/40', to: 'RTX 20/30/40', sameTier: true,
   })
 })
 
@@ -78,7 +78,7 @@ it('keeps the profile when the new tier has it', async () => {
   const { platform, m } = await deployedOnRtx('performance')
   m.gpus = graphicsCard('NVIDIA GeForce RTX 5090').gpus
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toMatchObject({ kind: 'switch-tier', from: 'RTX 30/40', to: 'RTX 50' })
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'switch-tier', from: 'RTX 20/30/40', to: 'RTX 50' })
   await core.switchTier()
   expect(core.getState().activity.kind).toBe('profile')
   await core.review()
@@ -97,5 +97,5 @@ it('Switch tier waits while the game runs', async () => {
   m.gameRunning = true
   await core.switchTier()
   expect(core.getState().error).toMatch(/Close XIV/)
-  expect(core.getState().deployment).toMatchObject({ tier: 'rtx-30-40' })
+  expect(core.getState().deployment).toMatchObject({ tier: 'rtx-20-30-40' })
 })

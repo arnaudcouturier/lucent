@@ -76,10 +76,10 @@ describe('what the picks write', () => {
 })
 
 describe('multi-frame unlock', () => {
-  const options = frameGenerationOptionsForGpu(NEURAL_RENDERING_MANIFEST.versions[0].tiers['rtx-30-40'].frameGenerationOptions!, RTX_4090)
+  const options = frameGenerationOptionsForGpu(NEURAL_RENDERING_MANIFEST.versions[0].tiers['rtx-20-30-40'].frameGenerationOptions!, RTX_4090)
 
   it('is offered to RTX 40 cards only', () => {
-    const recipe = NEURAL_RENDERING_MANIFEST.versions[0].tiers['rtx-30-40']
+    const recipe = NEURAL_RENDERING_MANIFEST.versions[0].tiers['rtx-20-30-40']
     expect(mfgUnlockFor(recipe, RTX_4090)).toBe(MFG_UNLOCK)
     expect(mfgUnlockFor(recipe, 'NVIDIA GeForce RTX 3080')).toBeNull()
     expect(mfgUnlockFor(recipe, 'NVIDIA GeForce RTX 5090')).toBeNull()
@@ -98,7 +98,7 @@ describe('the manifest', () => {
   const published = () => JSON.parse(JSON.stringify(NEURAL_RENDERING_MANIFEST))
 
   it('accepts controls and the unlock', () => {
-    expect(parseManifest(JSON.stringify(NEURAL_RENDERING_MANIFEST)).versions[0].tiers['rtx-30-40'].neuralRenderingControls?.presets).toHaveLength(6)
+    expect(parseManifest(JSON.stringify(NEURAL_RENDERING_MANIFEST)).versions[0].tiers['rtx-20-30-40'].neuralRenderingControls?.presets).toHaveLength(6)
   })
 
   it.each([
@@ -110,17 +110,17 @@ describe('the manifest', () => {
     ['a config the tier does not own', (c: Record<string, unknown>) => { (c.scaleKey as { file: string }).file = 'Other.ini' }, /owned config/],
   ])('rejects %s', (_name, mutate, message) => {
     const manifest = published()
-    mutate(manifest.versions[0].tiers['rtx-30-40'].neuralRenderingControls)
+    mutate(manifest.versions[0].tiers['rtx-20-30-40'].neuralRenderingControls)
     expect(() => parseManifest(JSON.stringify(manifest))).toThrow(message)
   })
 
   it('rejects a tier that offers both profiles and controls, and an unlock that gates 2×', () => {
     const both = published()
-    both.versions[0].tiers['rtx-30-40'].performanceProfiles = []
-    both.versions[0].tiers['rtx-30-40'].performanceProfilesV2 = [{ id: 'ultra', label: 'U', description: 'd', settings: [{ file: 'OptiScaler.ini', section: 'a', key: 'b', value: 'c' }] }]
+    both.versions[0].tiers['rtx-20-30-40'].performanceProfiles = []
+    both.versions[0].tiers['rtx-20-30-40'].performanceProfilesV2 = [{ id: 'ultra', label: 'U', description: 'd', settings: [{ file: 'OptiScaler.ini', section: 'a', key: 'b', value: 'c' }] }]
     expect(() => parseManifest(JSON.stringify(both))).toThrow()
     const gated = published()
-    gated.versions[0].tiers['rtx-30-40'].mfgUnlock.gates = ['2x']
+    gated.versions[0].tiers['rtx-20-30-40'].mfgUnlock.gates = ['2x']
     expect(() => parseManifest(JSON.stringify(gated))).toThrow(/gates 3× to 6×/)
   })
 })

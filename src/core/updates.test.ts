@@ -5,7 +5,7 @@ import type { ContentVersion, Manifest } from '../shared/manifest'
 
 const version = (id: string, patch: Partial<ContentVersion> = {}): ContentVersion => ({ ...TEST_CONTENT, id, ...patch })
 const manifest = (...versions: ContentVersion[]): Manifest => ({ ...TEST_MANIFEST, versions })
-const facts = { channel: 'stable' as const, tier: 'rtx-30-40', current: '2026.10.12', skipped: [] as string[], appVersion: '0.1.0' }
+const facts = { channel: 'stable' as const, tier: 'rtx-20-30-40', current: '2026.10.12', skipped: [] as string[], appVersion: '0.1.0' }
 
 it('announces the newest Stable version newer than the current one', () => {
   const m = manifest(version('2026.10.12'), version('2026.11.02'), version('2026.11.20'), version('2026.12.01', { channel: 'beta' }))

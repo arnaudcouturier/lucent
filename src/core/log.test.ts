@@ -32,10 +32,10 @@ describe('the activity log', () => {
     expect(lines[0]).toBe(`[info] Lucent ${__APP_VERSION__} started`)
     expect(lines).toEqual(expect.arrayContaining([
       `[info] Game folder: ${ROOT}, game 2026.09.30.0000.0000`,
-      '[info] Graphics card: NVIDIA GeForce RTX 4090, RTX 30/40 tier',
+      '[info] Graphics card: NVIDIA GeForce RTX 4090, RTX 20/30/40 tier',
       '[info] Manifest: 1 content version',
       '[info] XIVLauncher: found, auto-repair off',
-      '[info] Install: content 2026.10.12, RTX 30/40 tier, Fidelity profile',
+      '[info] Install: content 2026.10.12, RTX 20/30/40 tier, Fidelity profile',
       '[detail] wrote winmm.dll',
       '[detail] renamed ReShade.download to ReShade64.dll',
       '[info] Health check: healthy, 6 files',

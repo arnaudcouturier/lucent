@@ -126,7 +126,7 @@ export const FRAME_GENERATION_MANIFEST: Manifest = {
       ? {
         ...tier,
         performanceProfilesV2: FRAME_GENERATION_PROFILES,
-        ...(id === 'rtx-30-40' ? { frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] } : {}),
+        ...(id === 'rtx-20-30-40' ? { frameGenerationOptions: [...rtx30FrameGeneration, ...rtx40FrameGeneration] } : {}),
       }
       : tier])),
   })),
@@ -241,7 +241,7 @@ export const NEURAL_RENDERING_MANIFEST: Manifest = {
     tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => {
       if (!id.startsWith('rtx-')) return [id, tier]
       const { performanceProfiles: _legacy, performanceProfilesV2: _profiles, ...rest } = tier
-      return [id, { ...rest, neuralRenderingControls: NEURAL_RENDERING_CONTROLS, ...(id === 'rtx-30-40' ? { mfgUnlock: MFG_UNLOCK } : {}) }]
+      return [id, { ...rest, neuralRenderingControls: NEURAL_RENDERING_CONTROLS, ...(id === 'rtx-20-30-40' ? { mfgUnlock: MFG_UNLOCK } : {}) }]
     })),
   })),
 }

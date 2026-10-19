@@ -18,7 +18,7 @@ it('retains content versions and validates recipe paths before deployment', () =
 
 it('keeps the HDR gallery manifest valid across the NVIDIA and Radeon fixture tiers', () => {
   const parsed = parseManifest(JSON.stringify(HDR_FRAME_GENERATION_MANIFEST))
-  const nvidia = parsed.versions[0].tiers['rtx-30-40']
+  const nvidia = parsed.versions[0].tiers['rtx-20-30-40']
   const radeon = parsed.versions[0].tiers.radeon
 
   expect(nvidia.hdrOptions?.map((option) => option.id)).toEqual(['off', 'hdr', 'scene-hdr'])
@@ -40,7 +40,7 @@ it.each(['../file', '..\\file', '/file', '\\file', 'C:\\file', 'file:stream', 'N
 })
 
 const profileContent = () => structuredClone(PROFILE_MANIFEST)
-const nvidia = (m: Manifest) => m.versions[0].tiers['rtx-30-40']
+const nvidia = (m: Manifest) => m.versions[0].tiers['rtx-20-30-40']
 
 it('retains known-broken game versions per content version and rejects malformed lists', () => {
   const m = { ...PROFILE_MANIFEST, versions: [{ ...PROFILE_MANIFEST.versions[0], knownBrokenGameVersions: ['2026.10.20.0000.0000'] }] }
@@ -80,7 +80,7 @@ it('accepts four resolution-aware profiles with recommended GPU patterns in the 
     { id: 'performance', label: 'Performance', description: 'The highest frame rate.', settings: [{ file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value: { '1080p': '1', '1440p': '1', '4k+': '0' } }] },
   ]
   const parsed = parseManifest(JSON.stringify(m))
-  const profiles = (parsed.versions[0].tiers['rtx-30-40'] as unknown as { performanceProfilesV2: { id: string }[] }).performanceProfilesV2
+  const profiles = (parsed.versions[0].tiers['rtx-20-30-40'] as unknown as { performanceProfilesV2: { id: string }[] }).performanceProfilesV2
   expect(parsed.schemaVersion).toBe(2)
   expect(profiles.map(({ id }) => id)).toEqual(['ultra', 'fidelity', 'balanced', 'performance'])
 })

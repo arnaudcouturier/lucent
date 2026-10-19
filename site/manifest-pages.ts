@@ -11,8 +11,7 @@ const assetUrl = (release: string, sha256: string) => `https://github.com/arnaud
 /** What OptiScaler does on each tier, in the player's words. Tiers are data; an unknown one falls back to its flags. */
 const TIER_OPTISCALER: Record<string, string> = {
   'rtx-50': 'DLSS 5 Neural Rendering, with the runtime file NVIDIA ships',
-  'rtx-30-40': 'DLSS 5 Neural Rendering, with ShortFuse’s compatibility build of NVIDIA’s runtime',
-  'rtx-20': 'DLSS 5 Neural Rendering, with ShortFuse’s compatibility build of NVIDIA’s runtime',
+  'rtx-20-30-40': 'DLSS 5 Neural Rendering, with ShortFuse’s compatibility build of NVIDIA’s runtime',
   radeon: 'No Neural Rendering. FSR upscaling and FSR frame generation instead',
   other: 'Not installed',
 }

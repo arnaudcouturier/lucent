@@ -66,8 +66,8 @@ async function prepareCandidate(sourceRoot: string, outputRoot: string): Promise
   const input = JSON.parse((await readFile(join(sourceRoot, 'publish.json'), 'utf8')).replace(/^\uFEFF/, '')) as PublishInput
   if (input.id !== recipe.basedOnContent) throw new Error(`Expected source publish.json for ${recipe.basedOnContent}; found ${input.id}.`)
   const tierIds = Object.keys(input.tiers)
-  if (tierIds.length !== 1 || tierIds[0] !== 'rtx-30-40') throw new Error(`Expected only the tested rtx-30-40 source tier; found ${tierIds.join(', ')}.`)
-  if (input.tiers['rtx-30-40'].performanceProfilesV2) throw new Error('Source input already has V2 profiles; refusing to overwrite changed candidate data.')
+  if (tierIds.length !== 1 || tierIds[0] !== 'rtx-20-30-40') throw new Error(`Expected only the tested rtx-20-30-40 source tier; found ${tierIds.join(', ')}.`)
+  if (input.tiers['rtx-20-30-40'].performanceProfilesV2) throw new Error('Source input already has V2 profiles; refusing to overwrite changed candidate data.')
   // mkdir without recursive intentionally refuses an existing candidate folder; an earlier result is preserved.
   await mkdir(outputRoot)
   const overlays = join(outputRoot, 'overlays')
@@ -111,14 +111,14 @@ async function prepareCandidate(sourceRoot: string, outputRoot: string): Promise
       redistributionNoticePresent: copiedFiles.some(({ path }) => path === 'licenses/FidelityFX_v2_LICENSE.md' || path === 'licenses/XeSS_LICENSE.txt'),
     })
     input.components.push({ name: vendor.name, upstream: vendor.upstream, licence: vendor.licence, source: vendor.source })
-    input.tiers['rtx-30-40'].sources.push({ folder: targetRoot, component: vendor.name })
+    input.tiers['rtx-20-30-40'].sources.push({ folder: targetRoot, component: vendor.name })
   }
 
   input.id = recipe.id
   input.channel = recipe.channel
   input.minAppVersion = recipe.minAppVersion
   input.changelog = [...recipe.changelog]
-  const tier = input.tiers['rtx-30-40']
+  const tier = input.tiers['rtx-20-30-40']
   for (const source of tier.sources) {
     if (source.folder && !isAbsolute(source.folder)) source.folder = resolve(sourceRoot, source.folder)
   }

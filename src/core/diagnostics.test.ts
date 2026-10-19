@@ -57,7 +57,7 @@ it('copies diagnostics before opening a bug report template that asks the player
   expect(url.origin + url.pathname).toBe('https://github.com/arnaudcouturier/lucent/issues/new')
   expect(url.searchParams.get('body')).toContain('Paste the diagnostics from your clipboard')
   expect(url.searchParams.get('body')).toContain('Steps to reproduce')
-  expect(url.searchParams.get('title')).toContain('RTX 30/40')
+  expect(url.searchParams.get('title')).toContain('RTX 20/30/40')
   expect(url.searchParams.get('title')).toContain('RTX 4090')
   expect(url.href).not.toContain('Player%20log')
 })
@@ -141,11 +141,11 @@ it('can copy a report with explicit unavailable fields before a deployment exist
 it('keeps the deployed tier in the report title when the manifest no longer describes it', async () => {
   const { platform, core } = await deployed()
   const manifest = structuredClone(PROFILE_MANIFEST)
-  manifest.tiers = manifest.tiers.filter((tier) => tier.id !== 'rtx-30-40')
-  for (const version of manifest.versions) delete version.tiers['rtx-30-40']
+  manifest.tiers = manifest.tiers.filter((tier) => tier.id !== 'rtx-20-30-40')
+  for (const version of manifest.versions) delete version.tiers['rtx-20-30-40']
   platform.fetchText = async () => JSON.stringify(manifest)
   await core.scan()
   await core.reportBug()
-  expect(platform.clipboard).toContain('Tier: rtx-30-40')
-  expect(new URL(platform.openedUrls[0]).searchParams.get('title')).toContain('rtx-30-40')
+  expect(platform.clipboard).toContain('Tier: rtx-20-30-40')
+  expect(new URL(platform.openedUrls[0]).searchParams.get('title')).toContain('rtx-20-30-40')
 })

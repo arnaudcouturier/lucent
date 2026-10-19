@@ -80,7 +80,7 @@ it('offers profiles between Scan and Review and deploys the selected values', as
 
 it('uses Windows path matching for profile configs and omits settings for excluded ReShade', async () => {
   const manifest = structuredClone(PROFILE_MANIFEST)
-  for (const p of manifest.versions[0].tiers['rtx-30-40'].performanceProfiles!) {
+  for (const p of manifest.versions[0].tiers['rtx-20-30-40'].performanceProfiles!) {
     for (const setting of p.settings) setting.file = 'optiscaler.INI'
     p.settings.push({ file: 'reshade.INI', section: 'GENERAL', key: 'PerformanceMode', value: p.id === 'performance' ? '1' : '0' })
   }
@@ -113,7 +113,7 @@ it('keeps only the remaining choices on the Profile step for a tier without prof
 
 it('applies the profile after the recipe without saving it into the deployed recipe', () => {
   const content = PROFILE_MANIFEST.versions[0]
-  const tier = PROFILE_MANIFEST.tiers.find((t) => t.id === 'rtx-30-40')!
+  const tier = PROFILE_MANIFEST.tiers.find((t) => t.id === 'rtx-20-30-40')!
   const plan = planDeployment(content, tier, true, { files: [], cachedFiles: [], ownedFiles: [] }, 'performance')
   const performance = content.tiers[tier.id].performanceProfiles!.find((p) => p.id === 'performance')!
   expect(plan.steps.slice(-performance.settings.length)).toEqual(performance.settings.map((s) => ({ kind: 'ini_set', ...s })))
@@ -160,7 +160,7 @@ it.each([[1080, '2'], [1440, '1'], [2160, '1']] as const)(
   'plans Balanced upscaling at output height %s using its matching column', (outputHeight, value) => {
     const manifest = fourProfileManifest()
     const content = manifest.versions[0]
-    const tier = manifest.tiers.find((item) => item.id === 'rtx-30-40')!
+    const tier = manifest.tiers.find((item) => item.id === 'rtx-20-30-40')!
     const plan = planDeployment(content, tier, false, { files: [], cachedFiles: [], ownedFiles: [] }, 'balanced', true, { outputHeight })
     expect(plan.steps).toContainEqual({ kind: 'ini_set', file: 'OptiScaler.ini', section: 'QualityOverrides', key: 'ForcePerfQuality', value })
   },

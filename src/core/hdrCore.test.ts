@@ -26,7 +26,7 @@ const HDR_MANIFEST: Manifest = {
   ...FRAME_GENERATION_MANIFEST,
   versions: FRAME_GENERATION_MANIFEST.versions.map((content) => ({
     ...content,
-    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, recipe]) => [id, id === 'rtx-30-40' ? {
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, recipe]) => [id, id === 'rtx-20-30-40' ? {
       ...recipe,
       hdrOptions,
       screenDerivedSettings: [

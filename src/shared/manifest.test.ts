@@ -117,7 +117,7 @@ describe('The shared manifest schema', () => {
     const input = screenDerivedManifest([{ file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' }])
     const parsed: Manifest = parseManifest(JSON.stringify(input))
 
-    expect(parsed.versions[0].tiers['rtx-30-40'].screenDerivedSettings).toEqual([
+    expect(parsed.versions[0].tiers['rtx-20-30-40'].screenDerivedSettings).toEqual([
       { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimit', value: 'frameCap' },
     ])
   })
@@ -126,7 +126,7 @@ describe('The shared manifest schema', () => {
     const parsed = parseManifest(JSON.stringify(screenDerivedManifest([
       { file: 'OptiScaler.ini', section: 'HDR', key: 'PeakNits', value: 'peakNits' },
     ])))
-    expect(parsed.versions[0].tiers['rtx-30-40'].screenDerivedSettings?.[0].value).toBe('peakNits')
+    expect(parsed.versions[0].tiers['rtx-20-30-40'].screenDerivedSettings?.[0].value).toBe('peakNits')
   })
 
   it('reads GPU-specific frame-generation variants and HDR overrides as optional recipe data', () => {
@@ -139,14 +139,14 @@ describe('The shared manifest schema', () => {
     const input = frameGenerationManifest(options)
     const parsed: Manifest = parseManifest(JSON.stringify(input))
 
-    expect(parsed.versions[0].tiers['rtx-30-40'].frameGenerationOptions).toEqual(options)
+    expect(parsed.versions[0].tiers['rtx-20-30-40'].frameGenerationOptions).toEqual(options)
   })
 
   it('keeps an older recipe without frame-generation options valid', () => {
     const input = frameGenerationManifest(undefined) as Manifest
     for (const recipe of Object.values(input.versions[0].tiers)) delete recipe.frameGenerationOptions
 
-    expect(parseManifest(JSON.stringify(input)).versions[0].tiers['rtx-30-40'].frameGenerationOptions).toBeUndefined()
+    expect(parseManifest(JSON.stringify(input)).versions[0].tiers['rtx-20-30-40'].frameGenerationOptions).toBeUndefined()
   })
 
   it('rejects HDR frame-generation overrides without a normal-mode value to restore', () => {
@@ -159,8 +159,8 @@ describe('The shared manifest schema', () => {
 
   it('reads all three HDR modes and the experimental Scene HDR marker', () => {
     const parsed = parseManifest(JSON.stringify(hdrManifest(hdrOptions)))
-    expect(parsed.versions[0].tiers['rtx-30-40'].hdrOptions).toEqual(hdrOptions)
-    expect(parseManifest(JSON.stringify(manifest)).versions[0].tiers['rtx-30-40'].hdrOptions).toBeUndefined()
+    expect(parsed.versions[0].tiers['rtx-20-30-40'].hdrOptions).toEqual(hdrOptions)
+    expect(parseManifest(JSON.stringify(manifest)).versions[0].tiers['rtx-20-30-40'].hdrOptions).toBeUndefined()
   })
 
   it.each([

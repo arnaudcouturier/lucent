@@ -35,7 +35,7 @@ it('installs a Beta-only first deployment only after the player explicitly choos
 describe('announcements across both channels', () => {
   const version = (id: string, patch: Partial<ContentVersion> = {}): ContentVersion => ({ ...TEST_CONTENT, id, ...patch })
   const manifest = (...versions: ContentVersion[]): Manifest => ({ ...PROFILE_MANIFEST, versions })
-  const facts = { tier: 'rtx-30-40', current: '2026.10.12', skipped: [] as string[], appVersion: '0.1.0' }
+  const facts = { tier: 'rtx-20-30-40', current: '2026.10.12', skipped: [] as string[], appVersion: '0.1.0' }
 
   it('content: Beta announces the newest version of either channel, Stable ignores Beta', () => {
     const m = manifest(version('2026.10.12'), version('2026.11.02'), version('2026.11.10', { channel: 'beta' }))

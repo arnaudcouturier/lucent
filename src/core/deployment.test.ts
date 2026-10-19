@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { dataPaths, readDeployment, uninstallDeployment } from './deployment'
+import { dataPaths, originalHashes, readDeployment, replacedOriginals, uninstallDeployment, type JournalEntry } from './deployment'
 import { createCore } from './core'
 import { createFakePlatform } from '../platform/fake'
 import { graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
@@ -26,7 +26,7 @@ it('deploys a vanilla folder, reports the plan numbers and stores a complete rec
   expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('OptiScaler')
   expect(await platform.readText(`${ROOT}\\game\\ReShade64.dll`)).toBe('ReShade')
   expect(await platform.readText(`${ROOT}\\game\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=\n')
-  expect(core.getState().deployment).toMatchObject({ status: 'complete', tier: 'rtx-30-40', contentVersion: '2026.10.12', includeReShade: true })
+  expect(core.getState().deployment).toMatchObject({ status: 'complete', tier: 'rtx-20-30-40', contentVersion: '2026.10.12', includeReShade: true })
   // Config files belong to the player: the record keeps no copy of what Lucent wrote.
   expect(core.getState().deployment).not.toHaveProperty('ownedConfigs')
   const reopened = createCore(platform)
@@ -334,7 +334,7 @@ it('checks paths again at execution and leaves files untouched for an escaping s
   await core.review(false)
   const state = core.getState()
   if (state.manifest.status !== 'ready') throw new Error('Fixture manifest missing')
-  const step = state.manifest.manifest.versions[0].tiers['rtx-30-40'].recipe[0]
+  const step = state.manifest.manifest.versions[0].tiers['rtx-20-30-40'].recipe[0]
   if (step.kind !== 'copy') throw new Error('Fixture copy step missing')
   step.to = '../outside.dll'
   await core.deploy()
@@ -377,7 +377,7 @@ it('protects an unowned file that appears between journaling and the atomic copy
 
 it.each(['before removal', 'after removal'])('resumes recovery interrupted %s after undoing repeated writes to one path', async (when) => {
   const manifest = structuredClone(TEST_MANIFEST)
-  const recipe = manifest.versions[0].tiers['rtx-30-40']
+  const recipe = manifest.versions[0].tiers['rtx-20-30-40']
   recipe.recipe = [{ kind: 'copy', file: OPTISCALER_HASH, to: 'winmm.dll' }, { kind: 'copy', file: RESHADE_HASH, to: 'winmm.dll' }, { kind: 'copy', file: PRESET_HASH, to: 'winmm.dll' }]
   recipe.ownedConfigs = []
   recipe.shippedPresets = []
@@ -449,4 +449,18 @@ it('retries a download that failed on the network before giving up on the deploy
   await core.deploy()
   expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
   expect(failed.size).toBe(Object.keys(FIXTURE_ASSETS).length)
+})
+
+it('reads the originals Lucent overwrote in place, and none that a takeover removed before the content wrote its own file', () => {
+  const [original, written, edited] = ['a', 'b', 'c'].map((digit) => digit.repeat(64))
+  const journal: JournalEntry[] = [
+    { step: { kind: 'delete', path: 'nvngx_dlss.dll' }, before: { 'nvngx_dlss.dll': original }, after: { 'nvngx_dlss.dll': null } },
+    { step: { kind: 'copy', file: written, to: 'NVNGX_DLSS.dll' }, before: { 'NVNGX_DLSS.dll': null }, after: { 'NVNGX_DLSS.dll': written } },
+    { step: { kind: 'copy', file: written, to: 'winmm.dll' }, before: { 'winmm.dll': null }, after: { 'winmm.dll': written } },
+    { step: { kind: 'copy', file: written, to: 'ReShade.ini' }, before: { 'ReShade.ini': original }, after: { 'ReShade.ini': written } },
+    { step: { kind: 'copy', file: edited, to: 'RESHADE.ini' }, before: { 'RESHADE.ini': written }, after: { 'RESHADE.ini': edited } },
+    { step: { kind: 'copy', file: written, to: 'winmm.dll' }, before: { 'winmm.dll': written }, after: { 'winmm.dll': written } },
+  ]
+  expect(originalHashes({ journal })).toEqual({ 'ReShade.ini': original })
+  expect(replacedOriginals({ journal })).toEqual(['nvngx_dlss.dll', 'ReShade.ini'])
 })

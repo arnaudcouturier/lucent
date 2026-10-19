@@ -17,7 +17,7 @@ function deploymentMachine(manifest = TEST_MANIFEST, root = ROOT) {
 
 function recoveryMachine() {
   const manifest = structuredClone(TEST_MANIFEST)
-  const recipe = manifest.versions[0].tiers['rtx-30-40']
+  const recipe = manifest.versions[0].tiers['rtx-20-30-40']
   recipe.recipe = [
     { kind: 'copy', file: OPTISCALER_HASH, to: 'winmm.dll' },
     { kind: 'copy', file: RESHADE_HASH, to: 'scratch/nested/staging.dll' },

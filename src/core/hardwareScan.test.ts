@@ -23,14 +23,14 @@ describe('Scan shows the graphics card and its tier', () => {
     expect(core.getState().graphics).toMatchObject({
       status: 'found',
       adapter: { name: 'NVIDIA GeForce RTX 4090' },
-      tier: { id: 'rtx-30-40', label: 'RTX 30/40', status: 'stable', neuralRendering: true, requiresReShade: false },
+      tier: { id: 'rtx-20-30-40', label: 'RTX 20/30/40', status: 'stable', neuralRendering: true, requiresReShade: false },
     })
   })
 
   it.each([
     ['NVIDIA GeForce RTX 5090', 0x10de, 'rtx-50', 'community-verified', true, false],
-    ['NVIDIA GeForce RTX 3080 Ti', 0x10de, 'rtx-30-40', 'stable', true, false],
-    ['nvidia geforce rtx 2080 SUPER', 0x10de, 'rtx-20', 'experimental', true, false],
+    ['NVIDIA GeForce RTX 3080 Ti', 0x10de, 'rtx-20-30-40', 'stable', true, false],
+    ['nvidia geforce rtx 2080 SUPER', 0x10de, 'rtx-20-30-40', 'stable', true, false],
     ['AMD Radeon RX 7900 XTX', 0x1002, 'radeon', 'experimental', false, true],
     ['Intel Arc A770 Graphics', 0x8086, 'other', 'stable', false, true],
     ['NVIDIA GeForce GTX 1080', 0x10de, 'other', 'stable', false, true],

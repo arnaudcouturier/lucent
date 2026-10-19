@@ -26,9 +26,9 @@ const monitor = (refreshHz: number): MonitorInfo => ({
 function screenMachine(refreshHz = 240) {
   const content = fixtureContentHost()
   const manifest = structuredClone(PROFILE_MANIFEST)
-  manifest.versions[0].tiers['rtx-30-40'].screenDerivedSettings = FRAME_CAPS
+  manifest.versions[0].tiers['rtx-20-30-40'].screenDerivedSettings = FRAME_CAPS
   // A content author may also list this key in a profile; the screen-derived value remains authoritative.
-  for (const profile of manifest.versions[0].tiers['rtx-30-40'].performanceProfiles!) {
+  for (const profile of manifest.versions[0].tiers['rtx-20-30-40'].performanceProfiles!) {
     profile.settings.push({ ...FRAME_CAPS[0], value: '120' })
   }
   return machine(content, {
@@ -224,7 +224,7 @@ describe('screen-derived settings', () => {
       const manifest = JSON.parse(m.remoteText![MANIFEST_URL]) as typeof PROFILE_MANIFEST
       const added = { file: 'OptiScaler.ini', section: 'Framerate', key: 'FramerateLimitBackup', value: 'frameCap' as const }
       manifest.versions.push({ ...structuredClone(manifest.versions[0]), id: '2026.11.02', changelog: ['A new cap.'] })
-      const recipe = manifest.versions[1].tiers['rtx-30-40']
+      const recipe = manifest.versions[1].tiers['rtx-20-30-40']
       recipe.screenDerivedSettings = [...FRAME_CAPS, added]
       recipe.ownedConfigs.find((c) => c.path === 'OptiScaler.ini')!.update = rule
       m.remoteText![MANIFEST_URL] = JSON.stringify(manifest)

@@ -17,29 +17,14 @@
       "requiresReShade": false
     },
     {
-      "id": "rtx-30-40",
-      "label": "RTX 30/40",
+      "id": "rtx-20-30-40",
+      "label": "RTX 20/30/40",
       "status": "stable",
       "gpuMatch": [
         {
           "vendorId": 4318,
           "deviceNamePatterns": [
-            "\\bRTX\\s+[34]0[0-9]{2}\\b"
-          ]
-        }
-      ],
-      "neuralRendering": true,
-      "requiresReShade": false
-    },
-    {
-      "id": "rtx-20",
-      "label": "RTX 20",
-      "status": "experimental",
-      "gpuMatch": [
-        {
-          "vendorId": 4318,
-          "deviceNamePatterns": [
-            "\\bRTX\\s+20[0-9]{2}\\b"
+            "\\bRTX\\s+[234]0[0-9]{2}\\b"
           ]
         }
       ],
@@ -5645,7 +5630,7 @@
         }
       ],
       "tiers": {
-        "rtx-30-40": {
+        "rtx-20-30-40": {
           "recipe": [
             {
               "kind": "copy",
@@ -13750,7 +13735,7 @@
         }
       ],
       "tiers": {
-        "rtx-30-40": {
+        "rtx-20-30-40": {
           "recipe": [
             {
               "kind": "copy",
@@ -16127,7 +16112,7 @@
         }
       ],
       "tiers": {
-        "rtx-30-40": {
+        "rtx-20-30-40": {
           "recipe": [
             {
               "kind": "copy",
@@ -19417,7 +19402,7 @@
         }
       ],
       "tiers": {
-        "rtx-30-40": {
+        "rtx-20-30-40": {
           "recipe": [
             {
               "kind": "copy",
@@ -22667,7 +22652,7 @@
         }
       ],
       "tiers": {
-        "rtx-30-40": {
+        "rtx-20-30-40": {
           "recipe": [
             {
               "kind": "copy",

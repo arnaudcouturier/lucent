@@ -49,7 +49,7 @@ content if the local manifest is missing or invalid. Portable release builds ign
 Browser dev mode uses fake machines and a fake release host, with the committed manifest's tiers
 and tiny inert content from `src/platform/contentFixture.ts`. It never fetches or deploys real DLLs.
 The dev-only gallery includes every tier, an app-update request, invalid/unavailable manifests and
-a machine without a hardware adapter. Open `?gallery=rtx-20` to inspect the caution badge.
+a machine without a hardware adapter. Open `?gallery=radeon` to inspect the caution badge.
 The gallery also includes `screen-60-sdr`, `screen-144-hdr` and `screen-240-dual`; their toolbar shows the
 resolved refresh, frame cap, resolution and HDR status from inert fake monitors and `FFXIV.cfg` files. The Profile step has
 `profile-v2-rtx4090` and `profile-v2-rtx4070` previews for the card's recommended profile, and `choices-*` states for the
@@ -391,7 +391,8 @@ announcing it. A newer version is still announced. A missing or damaged settings
 
 Update is planned from the deployment as it stands: `planDeployment` gets the deployment's files as
 `ownedFiles`, so the recipe may overwrite them, and appends a journaled `delete` for each owned file the
-new version no longer deploys. A Disabled deployment keeps its entry files renamed aside to
+new version no longer deploys. When that file replaced one of the player's in place when the deployment first
+wrote it, the step is a journaled `restore` of the original instead, and the file is no longer owned. A Disabled deployment keeps its entry files renamed aside to
 `<entry>.disabled` through journaled renames, and the record's performance profile is reapplied. Only
 the files the cache lacks are downloaded, and all of them are verified before the game folder changes.
 Each config file the player has follows the update rule the new version gives it (see

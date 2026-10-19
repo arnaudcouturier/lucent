@@ -21,7 +21,7 @@ async function largeMachine() {
   const content: ContentVersion = {
     ...TEST_MANIFEST.versions[0],
     files: hashes.map((sha256, i) => ({ sha256, size: texts[i].length, release: 'content-2026.10.12' })),
-    tiers: { 'rtx-30-40': {
+    tiers: { 'rtx-20-30-40': {
       recipe: hashes.map((file, i) => ({ kind: 'copy' as const, file, to: i === 0 ? 'winmm.dll' : `reshade-shaders/Shaders/Pack${i % 12}/Effect${i}.fx` })),
       entryFiles: [{ path: 'winmm.dll' }], ownedConfigs: [], shippedPresets: [], generatedFiles: [], overlay: 'neural-rendering',
     } },
@@ -80,9 +80,9 @@ it('updates to a version that drops nine in ten files in a few hundred round tri
   // The next version keeps a tenth of the files, as when unused shaders stop being shipped.
   const manifest = JSON.parse(m.remoteText![MANIFEST_URL])
   const current: ContentVersion = manifest.versions[0]
-  const recipe = current.tiers['rtx-30-40'].recipe.filter((_, i) => i % 10 === 0)
+  const recipe = current.tiers['rtx-20-30-40'].recipe.filter((_, i) => i % 10 === 0)
   const kept = new Set(recipe.map((step) => step.kind === 'copy' ? step.file : ''))
-  const next: ContentVersion = { ...current, id: '2026.11.02', files: current.files.filter((f) => kept.has(f.sha256)), tiers: { 'rtx-30-40': { ...current.tiers['rtx-30-40'], recipe } } }
+  const next: ContentVersion = { ...current, id: '2026.11.02', files: current.files.filter((f) => kept.has(f.sha256)), tiers: { 'rtx-20-30-40': { ...current.tiers['rtx-20-30-40'], recipe } } }
   m.remoteText![MANIFEST_URL] = JSON.stringify({ ...manifest, versions: [current, next] })
   const { counted, calls, total } = counting(platform)
   const core = createCore(counted)
