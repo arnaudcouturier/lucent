@@ -34,9 +34,8 @@ Lucent manages two features: DLSS 5 through OptiScaler, and ReShade with shaders
 
 | Card | OptiScaler | ReShade | Content |
 |:--|:--|:--|:--|
-| RTX 50 | DLSS 5 Neural Rendering, with the runtime file NVIDIA ships | Optional | Not yet |
-| RTX 30 / 40 | DLSS 5 Neural Rendering, with ShortFuse's compatibility build of NVIDIA's runtime | Optional | **Beta** |
-| RTX 20 | Same as RTX 30 / 40 | Optional | Not yet |
+| RTX 50 | DLSS 5 Neural Rendering, with the runtime file NVIDIA ships | Optional | **Beta** |
+| RTX 20 / 30 / 40 | DLSS 5 Neural Rendering, with ShortFuse's compatibility build of NVIDIA's runtime | Optional | **Beta** |
 | Radeon | No Neural Rendering. FSR upscaling and FSR frame generation instead | Always | Not yet |
 | Any other | Not installed | Always | Not yet |
 
@@ -59,7 +58,7 @@ Lucent installs other people's work. Each component ships with its licence.
 
 | | |
 |:--|:--|
-| OptiScaler forks | [SirenBrink](https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV), [y4my4my4m](https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG), [Dagherbou](https://github.com/Dagherbou/OptiScaler_DLSSNR) |
+| OptiScaler | [OptiScaler-FFXIV](https://github.com/arnaudcouturier/OptiScaler-FFXIV) |
 | Compatibility runtime | ShortFuse / [RenoDX](https://github.com/clshortfuse/renodx) |
 | ReShade | [crosire](https://reshade.me/) |
 | iMMERSE and qUINT | [Marty McFly](https://github.com/martymcmodding/iMMERSE) |

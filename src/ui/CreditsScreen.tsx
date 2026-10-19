@@ -6,12 +6,8 @@ import { useCore } from './useCore'
 
 const AUTHORS = [
   {
-    group: 'OptiScaler forks',
-    people: [
-      { name: 'SirenBrink', url: 'https://github.com/SirenBrink/OptiScaler_DLSSNR_Multipass_MFG_FFXIV' },
-      { name: 'y4my4my4m', url: 'https://github.com/y4my4my4m/OptiScaler_DLSSNR_Multipass_MFG' },
-      { name: 'Dagherbou', url: 'https://github.com/Dagherbou/OptiScaler_DLSSNR' },
-    ],
+    group: 'OptiScaler',
+    people: [{ name: 'OptiScaler-FFXIV', url: 'https://github.com/arnaudcouturier/OptiScaler-FFXIV' }],
   },
   { group: 'AMD FidelityFX', people: [{ name: 'AMD', url: 'https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK' }] },
   { group: 'Intel XeSS', people: [{ name: 'Intel', url: 'https://github.com/intel/xess' }] },

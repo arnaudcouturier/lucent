@@ -35,8 +35,7 @@ Tiers are data in the manifest, not code. Lucent always picks the discrete GPU (
 | Tier | Payload | Status at launch |
 |---|---|---|
 | RTX 50 | NVIDIA original `nvngx_dlssnr.dll` runtime + full stack | Community-verified (cannot be tested on dev machine) |
-| RTX 30/40 | ShortFuse compatibility runtime + full stack | Stable (tested on 4090) |
-| RTX 20 | Compatibility runtime + full stack | Experimental |
+| RTX 20/30/40 | ShortFuse compatibility runtime + full stack | Stable (tested on 4090; RTX 20 and 30 untested) |
 | Radeon | OptiScaler FSR upscaling + FSR frame gen + ReShade, no Neural Rendering | Experimental until a real Radeon owner confirms |
 | Anything else | ReShade + presets only | Stable |
 
@@ -240,7 +239,7 @@ Settled in a design grilling session on 2026-10-16 and built on 2026-10-17 (the 
 - **Never** add Defender exclusions. Submit each release to Microsoft for false-positive analysis.
 - A GitHub Pages site in the repo is the download page and explains the SmartScreen warning before users hit it.
 - **Diagnostics**: "Copy diagnostics" (versions, tier, file hashes, Windows/driver version, last 300 lines of `OptiScaler.log`) and "Report a bug" opening a pre-filled GitHub issue. Questions go in GitHub issues too (Discussions is not enabled).
-- **Credits** screen in the app and on the site: SirenBrink, y4my4my4m, Dagherbou (OptiScaler forks), AMD (FidelityFX), Intel (XeSS), ShortFuse / RenoDX (compatibility runtime), Marty McFly (iMMERSE), qUINT, SweetFX, the Alive author, ipsusu (ipsuShade). Upstream license files are deployed with their files. Courtesy heads-up to upstream authors before launch.
+- **Credits** screen in the app and on the site: OptiScaler-FFXIV (the maintainer's OptiScaler fork, whose own README credits its lineage), AMD (FidelityFX), Intel (XeSS), ShortFuse / RenoDX (compatibility runtime), Marty McFly (iMMERSE), qUINT, SweetFX, the Alive author, ipsusu (ipsuShade). Upstream license files are deployed with their files. Courtesy heads-up to upstream authors before launch.
 - Context: this community remembers GShade's 2023 malware incident; open source and zero telemetry are selling points.
 
 ## Visual direction
@@ -275,6 +274,15 @@ Settled by the look prototype on 2026-10-12: variant **D · Ember**, kept as the
   - It reflows rather than zooms: text stays the same size, the rail stays 248px, and the pane's column grows to 720px wide and 880px tall, centred, so lists such as Scan's files get more room. Settings → Apps' uninstall window stays a fixed 460×340.
   - Drag regions cover the rail and the title strip; a double-click on either maximizes or restores.
   - It keeps the native Windows 11 shadow and rounded corners. Still to be verified: `shadow: true`, and how it looks on Windows 10.
+
+## OptiScaler-FFXIV and the 310.9.16 runtimes (settled 2026-10-18)
+
+- **OptiScaler source**: [OptiScaler-FFXIV](https://github.com/arnaudcouturier/OptiScaler-FFXIV), the maintainer's own GPL-3.0 fork that tracks upstream OptiScaler nightly, replaces SirenBrink's fork. Lucent still mirrors: players download hash-named files from Lucent's `content-…` releases, never from the fork. The publisher takes the fork's release zip, after checking its SHA-256 and the package's own `SHA256SUMS.txt`. Content 2026.10.19 is the first built on it: the fork's first release, tag `ffxiv-2026.10.19-d9b62110` (commit `d8e27f79`, on upstream `d9b62110`); the package's `winmm.dll` is the build's `OptiScaler.dll`.
+- **What is deployed**: the package's files (`winmm.dll`, the forwarder, the `OptiScaler/` libraries, `Licenses/` as `licenses/`, `NOTICE.txt` as `licenses/OptiScaler-FFXIV_NOTICE.txt`) plus what its INSTALL.txt lists as bring-your-own and the manifest still needs. That is `nvngx_dlss.dll` (only in `OptiScaler\`; the game's own at the root stays), `nvngx_dlssg.dll` and five Streamline plugins from NVIDIA's [Streamline 2.14.16](https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16) release (the production, signed builds, with its MIT notice), and the Neural Rendering runtime. Every RTX 40 frame generation option outputs through DLSS-G, so those files stay. No longer deployed: `INSTALL.txt` and `SHA256SUMS.txt` (they describe a manual install), `nvngx_dlssd.dll`, the Streamline plugins the fork never loads, and `nvfp4/`. `libxell.dll` stays, from the Intel component, because RTX 30's Windows HDR alternative is XeFG.
+- **Tiers**: `rtx-30-40` becomes **`rtx-20-30-40`** (one set of game files for three generations), everywhere including the published versions, with no migration because the only installs were the maintainer's; the separate `rtx-20` tier is gone. `rtx-50` gets its own recipe with NVIDIA's original `nvngx_dlssnr.dll` 310.9.16, while `rtx-20-30-40` takes the patched 310.9.16 compatibility build. RTX 50 frame generation is Off, 2× to 6× and Dynamic natively, all Experimental and with no unlock switch, since the maintainer can't play it. RTX 20 gets Off only.
+- **OptiScaler.ini** starts from the fork's packaged ini (every value `auto`), with the maintainer's own saved values carried over (his `OptiScaler.ini` of 2026-10-19), except what the install writes from the player's choices, logging (`LogToFile` ships off, `LogLevel = 2` is kept) and a dragged menu height. The saved ini is how the defaults should read, so a key it leaves at `auto` goes back to `auto` even where the fork's template pins the same default. The site guide documents every option that ships on or off, the fork's additions included. Whatever he has switched on in game ships on, the fork's newer options included: HUD-less frame generation, window mode, automatic mipmap bias, nameplate interpolation, the character preview's Neural Rendering before DLSS, and the experimental or diagnostic jitter and HUD-less switches. The automatic multiplier (`[DLSSG] AutoMFG`) is off in his ini, so it ships off. The menu theme is part of it: charcoal `#141519` at 0.92 alpha, accent `#FF640A` (the ReShade style's own values) and Segoe UI 13. It applies to new installs and Reset only, since `addMissingKeys` leaves an existing ini's colours alone.
+- **An update restores originals**: when a new content version stops deploying a file that had replaced one of the game's own (the root `nvngx_dlss.dll`), the update puts the original back instead of deleting it. It ships in app 0.3.0-beta.7, which content 2026.10.19 requires.
+- Rejected: a tier rename with a migration (nobody else is installed yet); keeping every file Lucent hosted before (the NVFP4 hybrid files, `nvngx_dlssd.dll`, unused Streamline plugins), since the fork never loads them.
 
 ## Deferred
 

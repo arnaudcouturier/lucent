@@ -11,7 +11,7 @@ The FFXIV directory that holds the game executable; the place a deployment is ap
 _Avoid_: installation, install dir, game path
 
 **Tier**:
-The class of GPU a deployment targets (RTX 50, RTX 30/40, RTX 20, Radeon, Other), which decides the recipe.
+The class of GPU a deployment targets (RTX 50, RTX 20/30/40, Radeon, Other), which decides the recipe.
 _Avoid_: GPU profile, hardware profile
 
 **Tier status**:
@@ -53,7 +53,7 @@ One piece of third-party software Lucent deploys: an OptiScaler build, a Neural 
 _Avoid_: package, mod, dependency
 
 **Upstream**:
-The original author or source of a component, such as SirenBrink, ShortFuse or ipsusu.
+The original author or source of a component, such as OptiScaler-FFXIV, ShortFuse or ipsusu.
 
 **Upstream round**:
 SirenBrink's name for its own releases ("ROUND 5"). Used only when talking about upstream.
