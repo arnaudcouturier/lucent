@@ -1,0 +1,96 @@
+{
+  "basedOnContent": "2026.10.17",
+  "id": "2026.10.19",
+  "channel": "beta",
+  "minAppVersion": "0.3.0-beta.7",
+  "changelog": [
+    "OptiScaler now comes from OptiScaler-FFXIV, the maintainer's own fork: its first release, 2026.10.19, built on upstream OptiScaler d9b62110 (tag ffxiv-2026.10.19-d9b62110).",
+    "NVIDIA DLSS, frame generation and Neural Rendering are updated to 310.9.16, with Streamline 2.14.16.",
+    "RTX 20, 30 and 40 now share one tier, RTX 20/30/40. RTX 50 gets its own tier, community-verified: its Neural Rendering runtime is NVIDIA's own file, and the maintainer cannot test it.",
+    "Lucent no longer replaces the game's own nvngx_dlss.dll in the game folder, and drops the files OptiScaler-FFXIV doesn't use: the NVFP4 hybrid files, nvngx_dlssd.dll and the Streamline plugins it never loads.",
+    "The OptiScaler menu has a new look: charcoal with the Crunchyroll orange accent, in Segoe UI. It applies to new installs and Reset; an existing OptiScaler.ini keeps its own colours.",
+    "New installs and Reset also start with the fork's newer options on: HUD-less frame generation, window mode, automatic mipmap bias, nameplate interpolation and the character preview's Neural Rendering before DLSS. The game jitter correction and the HUD-less diagnostics are on as well; both are experimental or for diagnosis, and the log says what they do."
+  ],
+  "fork": {
+    "component": "OptiScaler-FFXIV",
+    "tag": "ffxiv-2026.10.19-d9b62110",
+    "commit": "d8e27f79",
+    "zipName": "OptiScaler-FFXIV-2026.10.19-d9b62110.zip",
+    "zipSha256": "6e50d2fa158e04a8452c4ad1d3c580078e7d4c076f35970a459450c5395d8636",
+    "winmmSha256": "7925581599f5b9b9aaf5f4d8f572945fcc3bdcbfc6a25c7e8a073cf8623d1440",
+    "iniSha256": "8208b8a4ac3562f58ff2f5ea8fed9396f1f5b4d33a47da638f7e434459534e69"
+  },
+  "streamline": {
+    "component": "NVIDIA Streamline",
+    "tag": "v2.14.16",
+    "zipName": "streamline-sdk-v2.14.16.zip",
+    "zipSha256": "32041e51db0cab709a271b72a352281b690c2abbd669a827809401a5dd23956b",
+    "files": [
+      { "from": "bin/x64/nvngx_dlss.dll", "to": "OptiScaler/nvngx_dlss.dll", "sha256": "d00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e" },
+      { "from": "bin/x64/nvngx_dlssg.dll", "to": "OptiScaler/nvngx_dlssg.dll", "sha256": "8d59d49b36410dd6b62fef2503a5871d347415bd85d943fa0848563a95dd50c7" },
+      { "from": "bin/x64/sl.common.dll", "to": "OptiScaler/streamline/sl.common.dll", "sha256": "38eea3b4209afc455636ea372b5933d65fcc13becec6c84d101dcfc4d8648f75" },
+      { "from": "bin/x64/sl.dlss_g.dll", "to": "OptiScaler/streamline/sl.dlss_g.dll", "sha256": "3ed9538df724993bea8a050195a6a78b9c8c8a566d5b05ade477aab3c390e90f" },
+      { "from": "bin/x64/sl.interposer.dll", "to": "OptiScaler/streamline/sl.interposer.dll", "sha256": "b1d7395aebd7b9722841d64dcf7433680020b6a8e421f851c16d5ba0c2182edf" },
+      { "from": "bin/x64/sl.pcl.dll", "to": "OptiScaler/streamline/sl.pcl.dll", "sha256": "5698c38e722318681f215c9fe68e45b9bedd51378acc699d8eee26e961e57770" },
+      { "from": "bin/x64/sl.reflex.dll", "to": "OptiScaler/streamline/sl.reflex.dll", "sha256": "443577e869352436ff7ec8f4d9c90418d3e95368436ce219261e0f4f07a38122" },
+      { "from": "bin/x64/nvngx_dlss.license.txt", "to": "OptiScaler/streamline/nvngx_dlss.license.txt", "sha256": "3027f23ca5a46dd9cb8183fbd522983a86f64d7daac5982912bf9f214671f294" },
+      { "from": "bin/x64/reflex.license.txt", "to": "OptiScaler/streamline/reflex.license.txt", "sha256": "ebf83c07fb3b2939908c3795d887afde3161c89a28ba391724efc784ce1bdabe" },
+      { "from": "license.txt", "to": "licenses/Streamline_LICENSE.txt", "sha256": "7b6f23e7d6f3ad6292f9308d2b42cdc3d82ae4e9b2abb55f230279d83bedd43d" }
+    ]
+  },
+  "neuralRendering": {
+    "rtx-20-30-40": {
+      "component": "Neural Rendering compatibility runtime",
+      "file": "20-30-40 series patched/nvngx_dlssnr.dll",
+      "size": 276162560,
+      "sha256": "cdfa6c1ec784867182164c7836f324f087b5c9f374d0c9fe46f54999feabf3ed"
+    },
+    "rtx-50": {
+      "component": "NVIDIA DLSS Neural Rendering runtime",
+      "file": "50 series/nvngx_dlssnr.dll",
+      "size": 266424944,
+      "sha256": "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f"
+    }
+  },
+  "newComponents": [
+    {
+      "name": "OptiScaler-FFXIV",
+      "upstream": "arnaudcouturier",
+      "licence": "GPL-3.0",
+      "source": "https://github.com/arnaudcouturier/OptiScaler-FFXIV/tree/ffxiv-2026.10.19-d9b62110"
+    },
+    {
+      "name": "NVIDIA Streamline",
+      "upstream": "NVIDIA",
+      "licence": "MIT (Streamline); NVIDIA DLSS SDK License (nvngx runtimes)",
+      "source": "https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16"
+    },
+    {
+      "name": "NVIDIA DLSS Neural Rendering runtime",
+      "upstream": "NVIDIA",
+      "licence": "NVIDIA DLSS SDK License",
+      "source": "https://developer.nvidia.com/rtx/dlss"
+    }
+  ],
+  "tunedIni": {
+    "sha256": "492c314334fb53a893e4d31666d7521731d3517ae402aef8dfe08e036f4b26ec",
+    "description": "The maintainer's OptiScaler.ini as it stood on 2026-10-19 18:12, backed up by builds\\Install-Build.ps1 before it installed the 2026.10.19 release (backup-game-20261019-1834-release-20261019)."
+  },
+  "iniNotCarried": [
+    { "section": "Log", "key": "LogToFile", "reason": "Ships with logging off: the log reached 125 MB." },
+    { "section": "Menu", "key": "Height", "reason": "A menu size dragged out on one screen." }
+  ],
+  "iniOverrides": [
+    { "section": "Menu", "key": "AccentColorR", "value": "1.000000" },
+    { "section": "Menu", "key": "AccentColorG", "value": "0.392157" },
+    { "section": "Menu", "key": "AccentColorB", "value": "0.039216" },
+    { "section": "Menu", "key": "BGColorR", "value": "0.078431" },
+    { "section": "Menu", "key": "BGColorG", "value": "0.082353" },
+    { "section": "Menu", "key": "BGColorB", "value": "0.098039" },
+    { "section": "Menu", "key": "BGColorA", "value": "0.92" },
+    { "section": "Menu", "key": "OverlaysUseTheme", "value": "true" },
+    { "section": "Menu", "key": "TTFFontPath", "value": "C:\\\\Windows\\\\Fonts\\\\segoeui.ttf" },
+    { "section": "Menu", "key": "FontSize", "value": "13.0" },
+    { "section": "Log", "key": "LogToFile", "value": "false" }
+  ]
+}
