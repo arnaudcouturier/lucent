@@ -49,7 +49,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ACTIVATE_KEYBOARD_LAYOUT_FLAGS, HKL, MAPVK_VK_TO_VSC_EX,
 };
 use windows::Win32::UI::Shell::{
-    FOLDERID_Documents, SHGetKnownFolderPath, ShellExecuteW, KNOWN_FOLDER_FLAG,
+    FOLDERID_Documents, FOLDERID_Pictures, SHGetKnownFolderPath, ShellExecuteW, KNOWN_FOLDER_FLAG,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId, SW_SHOWNORMAL,
@@ -352,8 +352,10 @@ pub fn write_user_gpu_preferences(
 
 /// Well-known folders, as Windows resolves them for the current user.
 pub fn env_folder(folder: &str) -> Result<String> {
-    if folder == "Documents" {
-        return documents_folder();
+    match folder {
+        "Documents" => return known_folder(&FOLDERID_Documents),
+        "Pictures" => return known_folder(&FOLDERID_Pictures),
+        _ => {}
     }
     let var = match folder {
         "AppData" => "APPDATA",
@@ -372,12 +374,12 @@ pub fn env_folder(folder: &str) -> Result<String> {
         .map_err(|_| PlatformError::new(ErrorKind::NotFound, format!("{var} is not set"), None))
 }
 
-fn documents_folder() -> Result<String> {
+fn known_folder(id: &windows::core::GUID) -> Result<String> {
     use windows::Win32::System::Com::{
         CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
     };
 
-    // SHGetKnownFolderPath resolves the current user's redirected Documents location.
+    // SHGetKnownFolderPath resolves the current user's folder wherever the profile redirects it (Documents, Pictures).
     // SAFETY: COM is initialized for this synchronous call; the returned CoTaskMem string
     // is converted and freed before returning. An existing apartment is left untouched.
     unsafe {
@@ -390,7 +392,7 @@ fn documents_folder() -> Result<String> {
             ));
         }
 
-        let path = SHGetKnownFolderPath(&FOLDERID_Documents, KNOWN_FOLDER_FLAG(0), None);
+        let path = SHGetKnownFolderPath(id, KNOWN_FOLDER_FLAG(0), None);
         if initialized.is_ok() {
             CoUninitialize();
         }
@@ -2161,7 +2163,9 @@ mod tests {
             let path = env_folder(folder).unwrap();
             assert!(Path::new(&path).is_dir(), "{folder} → {path}");
         }
-        assert!(Path::new(&env_folder("Documents").unwrap()).is_absolute());
+        for folder in ["Documents", "Pictures"] {
+            assert!(Path::new(&env_folder(folder).unwrap()).is_absolute(), "{folder}");
+        }
         assert_eq!(env_folder("Desktop").unwrap_err().kind, ErrorKind::Unknown);
     }
 

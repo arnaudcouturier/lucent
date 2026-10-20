@@ -180,6 +180,13 @@ Steps support `copy` (`file` hash and `to` path), `rename` (`from`, `to`), `ini_
 (`file` path, `section`, `key`, string `value`), and `delete`
 (`path`). A step may have `when: "reshade"`; it is omitted when the player excludes ReShade.
 Each path list contains `{ "path": "...", "when": "reshade" }` objects, with `when` optional.
+An `ini_set` value may contain `{Pictures}`, which the app replaces with the player's Pictures folder
+(as Windows reports it, so a redirected one is followed) when it writes the file, on install and in
+any baseline an update or repair writes: `{ "kind": "ini_set", "file": "ReShade.ini", "section":
+"SCREENSHOT", "key": "SavePath", "value": "{Pictures}\\FFXIV Screenshots", "when": "reshade" }`.
+Needs app 0.3.0-beta.8; an older app would write the token as it is, so content that uses it sets
+that `minAppVersion`. A `generatedFiles` path may name a folder (`OptiScaler/hudless-diag`): Uninstall
+removes it with everything in it.
 For example, part of an OptiScaler recipe is:
 
 ```json

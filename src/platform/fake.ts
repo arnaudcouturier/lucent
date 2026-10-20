@@ -38,6 +38,7 @@ export interface Machine {
 
 export const DEFAULT_ENV: Record<EnvFolder, string> = {
   Documents: 'C:\\Users\\Player\\Documents',
+  Pictures: 'C:\\Users\\Player\\Pictures',
   AppData: 'C:\\Users\\Player\\AppData\\Roaming',
   LocalAppData: 'C:\\Users\\Player\\AppData\\Local',
   ProgramFiles: 'C:\\Program Files',

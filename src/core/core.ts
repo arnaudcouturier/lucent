@@ -13,7 +13,7 @@ import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, pa
 export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
-import { joinPath, normalizePath } from './paths'
+import { joinPath, normalizePath, parentPath } from './paths'
 import { type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type HdrOption, type MfgUnlock, type NeuralRenderingChoice, type NeuralRenderingControls, type PerformanceProfile, type ProfileId, type Tier, type TierRecipe } from '../shared/manifest'
 import { frameGenerationOptionsForUnlock, mfgUnlockFor, normalizeNeuralRendering } from './neuralRendering'
 import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
@@ -275,8 +275,15 @@ export function createCore(platform: Platform): Core {
   /** The player's account when an administrator relaunch carried it, since Windows Auto HDR is per user. */
   let playerUserSid: string | undefined
   platform = new Proxy(nativePlatform, { get(target, key) {
-    if (key === 'envFolder') return (folder: Parameters<Platform['envFolder']>[0]) => folder === 'LocalAppData' && playerLocalAppData
-      ? Promise.resolve(playerLocalAppData) : target.envFolder(folder)
+    if (key === 'envFolder') return async (folder: Parameters<Platform['envFolder']>[0]) => {
+      if (!playerLocalAppData) return target.envFolder(folder)
+      if (folder === 'LocalAppData') return playerLocalAppData
+      // Relaunched as another administrator account, the process's Pictures is not the player's; the same account keeps its own, redirected or not.
+      if (folder === 'Pictures' && normalizePath(await target.envFolder('LocalAppData')).toLowerCase() !== normalizePath(playerLocalAppData).toLowerCase()) {
+        return joinPath(parentPath(parentPath(normalizePath(playerLocalAppData))), 'Pictures')
+      }
+      return target.envFolder(folder)
+    }
     return Reflect.get(logged, key) ?? Reflect.get(target, key)
   } })
   // The activity log lives in the player's data folder, so it is opened on the port that knows where that is.

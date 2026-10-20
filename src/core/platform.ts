@@ -36,7 +36,7 @@ export interface CopyItem { from: string; to: string; replace: boolean }
 export type RegistryHive = 'HKCU' | 'HKLM'
 
 /** Well-known folders, as Windows resolves them for the current user. */
-export type EnvFolder = 'Documents' | 'AppData' | 'LocalAppData' | 'ProgramFiles' | 'ProgramFilesX86'
+export type EnvFolder = 'Documents' | 'Pictures' | 'AppData' | 'LocalAppData' | 'ProgramFiles' | 'ProgramFilesX86'
 
 export interface GpuAdapter {
   name: string

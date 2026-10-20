@@ -12,6 +12,7 @@ import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 import { storedSelection } from './choices'
+import { expandUserFolders } from './userFolders'
 import { profilesForRecipe, selectProfileForUpdate } from './profileValues'
 import { autoHdrDisableWasApplied, disableAutoHdr, isAutoHdrOnlyChange, latestAutoHdrDisableIndex, restoreAutoHdr, restoreAutoHdrTransition } from './hdr'
 
@@ -360,6 +361,36 @@ export function releaseAsset(file: ContentVersion['files'][number]): string {
   return `https://github.com/arnaudcouturier/lucent/releases/download/${file.release}/${file.sha256}`
 }
 
+/**
+ * A generated entry can be a folder, such as the diagnostics a tool writes under a new name on every run: Uninstall removes it
+ * with everything in it, files first and then the folders that emptied, deepest first. Anything in it a tool wrote is generated.
+ */
+async function removeGeneratedFolders(platform: Platform, gameFolder: string, folders: string[]) {
+  const root = joinPath(gameFolder, 'game')
+  const prefixes = folders.map((folder) => `${fileKey(folder).replace(/\/+$/, '')}/`)
+  const files = (await platform.listFiles(root)).filter((file) => prefixes.some((prefix) => fileKey(file).startsWith(prefix)))
+  if (files.length) await platform.removeMany(await platform.resolveGamePaths(root, files))
+  // Every folder that held them, up to the game folder; a folder that is still in use, or gained a file, stays.
+  const directories = new Set(folders.map((folder) => folder.replace(/[\\/]+$/, '').replace(/\\/g, '/')))
+  for (const file of files) {
+    const parts = file.replace(/\\/g, '/').split('/').slice(0, -1)
+    for (let n = parts.length; n > 0; n--) directories.add(parts.slice(0, n).join('/'))
+  }
+  await undoDirectories(platform, gameFolder, [...directories])
+}
+
+/** Every folder above a path the journal touched, relative to the game folder. */
+function journalFolders(record: DeploymentRecord): string[] {
+  const folders = new Set<string>()
+  for (const entry of record.journal) {
+    for (const path of Object.keys(entry.before)) {
+      const parts = path.replace(/\\/g, '/').split('/').slice(0, -1)
+      for (let n = parts.length; n > 0; n--) folders.add(parts.slice(0, n).join('/'))
+    }
+  }
+  return [...folders]
+}
+
 async function undoDirectories(platform: Platform, gameFolder: string, created: string[]) {
   if (!created.length) return
   const root = joinPath(gameFolder, 'game')
@@ -463,6 +494,8 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     const targets = await platform.resolveGamePaths(root, record.generatedFiles)
     const stats = await platform.statMany(targets)
     await platform.removeMany(targets.filter((_, i) => stats[i]?.kind === 'file'))
+    const folders = record.generatedFiles.filter((_, i) => stats[i]?.kind === 'dir')
+    if (folders.length) await removeGeneratedFolders(platform, record.gameFolder, folders)
   }
   // Newest first, in batches whose entries touch different paths: within a batch no undo depends on another.
   // A batch interrupted before its checkpoint is simply undone again, since an undone file already matches `before`.
@@ -482,6 +515,9 @@ export async function undoDeployment(platform: Platform, record: DeploymentRecor
     for (const index of batch) record.journal[index].undone = true
     await checkpoint(batch)
   }
+  // An Uninstall that puts nothing back (vanilla) leaves the folders of the removed files empty: the old setup's own, which
+  // Lucent never created. Only a folder that is empty goes; one holding a carried-over preset or the player's file stays.
+  if (record.uninstalling && record.leaveOriginals) await undoDirectories(platform, record.gameFolder, journalFolders(record))
   if (record.changeStart !== undefined) {
     record.journal.length = start
     delete record.changeStart
@@ -803,7 +839,7 @@ async function applyStep({ platform, record, save, owned, firstDeployment }: Exe
   let configText: string | null = null
   if (step.kind === 'ini_set') {
     const config = readIni(await platform.readText(await platform.resolveGamePath(root, step.file)))
-    config.set(step.section, step.key, step.value)
+    config.set(step.section, step.key, await expandUserFolders(platform, step.value))
     configText = config.toString()
   }
   const after: JournalEntry['after'] = step.kind === 'copy' ? { [step.to]: step.file }

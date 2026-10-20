@@ -4,6 +4,7 @@ import { readIni } from './ini'
 import { joinPath } from './paths'
 import { fileKey, type Plan } from './planner'
 import { PlatformError, type Platform } from './platform'
+import { expandUserFolders } from './userFolders'
 
 /** `keep` when the content gives the file no rule. */
 export const updateRule = (config: ConfigPath): ConfigUpdateRule => config.update ?? 'keep'
@@ -41,7 +42,7 @@ export async function configBaselines(platform: Platform, cache: string, plan: P
       if (!entry) continue
       if (entry.text === undefined) entry.text = await platform.readText(joinPath(cache, entry.hash!))
       const config = readIni(entry.text)
-      config.set(step.section, step.key, step.value)
+      config.set(step.section, step.key, await expandUserFolders(platform, step.value))
       entry.text = config.toString()
       delete entry.hash
     }

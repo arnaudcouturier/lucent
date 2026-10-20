@@ -34,6 +34,10 @@ interface ForkRecipe {
   iniNotCarried: { section: string; key: string; reason: string }[]
   /** Optional: writes the Ember palette (the fork's own dump, content/ember/palette.json) over the [STYLE] of the base ReShade.ini, so ReShade's menu matches OptiScaler's. */
   reshadeStyle?: { palette: string; baseIniSha256: string }
+  /** Optional ReShade.ini keys the install sets after it copies the file; a value may name `{Pictures}`, which the app resolves to the player's Pictures folder. */
+  reshadeSettings?: { section: string; key: string; value: string }[]
+  /** Optional folders the mods fill while the game runs, which Uninstall removes with everything in them (relative to the game folder). */
+  generatedFolders?: string[]
   iniOverrides: IniOverride[]
 }
 type PublishTier = PublishInput['tiers'][string]
@@ -196,8 +200,10 @@ async function main() {
     nrRoots[id] = join(sources, 'neural-rendering', id)
     await stage(join(nrFolder, nr.file), join(nrRoots[id], 'nvngx_dlssnr.dll'))
   }
+  const reshadeSettings: Step[] = (recipe.reshadeSettings ?? []).map((s) => ({ kind: 'ini_set', file: 'ReShade.ini', section: s.section, key: s.key, value: s.value, when: 'reshade' }))
   const tier = (id: string, nrComponent: { component: string }, base: PublishTier): PublishTier => ({
     ...base,
+    generatedFiles: [...(base.generatedFiles ?? []), ...(recipe.generatedFolders ?? []).map((path) => ({ path }))],
     sources: [
       { folder: forkRoot, component: recipe.fork.component },
       ...retained,
@@ -207,7 +213,7 @@ async function main() {
       { folder: nrRoots[id], component: nrComponent.component },
       { folder: configRoot, component: recipe.fork.component },
     ],
-    recipe: [...optiscaler, ...reshade],
+    recipe: [...optiscaler, ...reshade, ...reshadeSettings],
   })
   const nr = recipe.neuralRendering
   const modern = tier('rtx-20-30-40', nr['rtx-20-30-40'], baseTier)

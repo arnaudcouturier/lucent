@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { MACHINES, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, existingSetup, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
 import { readableBackupPath, readDeployment, replacedOriginals } from './deployment'
@@ -76,6 +76,33 @@ it('removes the files the mods generated', async () => {
   await platform.writeText(`${GAME}\\ReShade.log`, 'log')
   await core.uninstall()
   expect(await snapshot(platform)).toEqual(before)
+})
+
+it('removes a generated folder with everything the mods wrote in it, and the folders that emptied', async () => {
+  // OptiScaler's HUD-less diagnostics write a new folder of files on every run.
+  const diagnostics = { ...TEST_MANIFEST, versions: TEST_MANIFEST.versions.map((v) => ({ ...v, tiers: Object.fromEntries(Object.entries(v.tiers).map(([id, tier]) =>
+    [id, { ...tier, generatedFiles: [...tier.generatedFiles, { path: 'OptiScaler/hudless-diag' }] }])) })) }
+  const platform = createFakePlatform(deploymentMachine(diagnostics))
+  const before = await snapshot(platform)
+  const core = await deployed(platform)
+  await platform.writeText(`${GAME}\\OptiScaler\\hudless-diag\\20261019-205236\\cost.txt`, 'cost')
+  await platform.writeText(`${GAME}\\OptiScaler\\hudless-diag\\20261019-205236\\shaders.csv`, 'shaders')
+  await platform.writeText(`${GAME}\\OptiScaler\\hudless-diag\\reshade-20261019-205229\\reshade-probe.txt`, 'probe')
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await snapshot(platform)).toEqual(before)
+})
+
+it('a vanilla uninstall also removes the folders an old setup left empty, but keeps the carried-over presets', async () => {
+  const platform = createFakePlatform(machine(deploymentMachine(), existingSetup(ROOT, 'gshade')))
+  const core = await deployed(platform)
+  await core.uninstall(false)
+  expect(core.getState().error).toBeNull()
+  const directories = await platform.listDirectories(GAME)
+  // gshade-presets held only the presets and config Lucent took over; gshade-shaders still holds a shader that was never touched.
+  expect(directories.filter((directory) => directory.startsWith('gshade-presets'))).toEqual([])
+  expect(directories).toContain('gshade-shaders\\shaders')
+  expect(await platform.listFiles(GAME)).toEqual(expect.arrayContaining(['reshade-presets\\custom\\sunset.ini']))
 })
 
 it('removes configs the mods rewrote since the deployment', async () => {
