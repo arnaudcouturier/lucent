@@ -14,6 +14,7 @@ import { parseArgs } from 'node:util'
 import type { Component, FrameGenerationOption, Step } from '../src/shared/manifest'
 import { runCommand } from './command'
 import { mergeIni, type IniKey, type IniOverride } from './candidate-ini'
+import { applyReshadeStyle, type EmberPalette } from './ember-style'
 import { publishContent, type PublishInput } from './publish-content'
 
 interface Hashed { sha256: string }
@@ -31,6 +32,8 @@ interface ForkRecipe {
   tunedIni: { sha256: string; description: string }
   /** Saved values that stay at the fork's default although the ini sets them, each with why. */
   iniNotCarried: { section: string; key: string; reason: string }[]
+  /** Optional: writes the Ember palette (the fork's own dump, content/ember/palette.json) over the [STYLE] of the base ReShade.ini, so ReShade's menu matches OptiScaler's. */
+  reshadeStyle?: { palette: string; baseIniSha256: string }
   iniOverrides: IniOverride[]
 }
 type PublishTier = PublishInput['tiers'][string]
@@ -155,6 +158,22 @@ async function main() {
     await stage(join(old.folder, step.file), join(carriedRoot, step.file))
     carried.push(step.file)
   }
+  // ReShade's menu in the Ember palette: the base ReShade.ini with its [STYLE] rewritten from the fork's palette dump.
+  const reshadeStyleRoot = join(sources, 'reshade-style')
+  let reshadeStyleReport: { changed: string[]; palette: string } | null = null
+  if (recipe.reshadeStyle) {
+    const palette = JSON.parse(await readFile(resolve(dirname(recipePath), recipe.reshadeStyle.palette), 'utf8')) as EmberPalette
+    const base = (await Promise.all(baseTier.sources.map(async (source) => {
+      const path = source.folder && join(source.folder, 'ReShade.ini')
+      try { return path && await sha256(path) === recipe.reshadeStyle!.baseIniSha256 ? path : null } catch { return null }
+    }))).find(Boolean)
+    if (!base) throw new Error(`No base source holds the ReShade.ini ${recipe.reshadeStyle.baseIniSha256}.`)
+    const styled = applyReshadeStyle(await readFile(base, 'utf8'), palette)
+    if (styled.unmapped.length) throw new Error(`The ReShade.ini has no [STYLE] key for: ${styled.unmapped.join(', ')}.`)
+    await mkdir(reshadeStyleRoot, { recursive: true })
+    await writeFile(join(reshadeStyleRoot, 'ReShade.ini'), styled.text, 'utf8')
+    reshadeStyleReport = { changed: styled.changed, palette: recipe.reshadeStyle.palette }
+  }
   const copy = (file: string, to = file): Step => ({ kind: 'copy', file, to })
   const optiscaler: Step[] = [
     ...licences.map((name) => copy(`Licenses/${name}`, `licenses/${name}`)),
@@ -183,6 +202,7 @@ async function main() {
       { folder: forkRoot, component: recipe.fork.component },
       ...retained,
       ...(carried.length ? [{ folder: carriedRoot, component: 'Alive NEXT' }] : []),
+      ...(recipe.reshadeStyle ? [{ folder: reshadeStyleRoot, component: 'ReShade', when: 'reshade' as const }] : []),
       { folder: streamlineRoot, component: recipe.streamline.component },
       { folder: nrRoots[id], component: nrComponent.component },
       { folder: configRoot, component: recipe.fork.component },
@@ -211,6 +231,7 @@ async function main() {
     savedIni: { sha256: recipe.tunedIni.sha256, carried: merge.carried, leftToTheInstall: merge.skipped, overridden: merge.overridden, lost: merge.lost },
     droppedFromPrevious: dropped,
     carriedLicences: carried,
+    reshadeStyle: reshadeStyleReport,
     dryRun: true,
     remotePublicationPerformed: false,
   }, null, 2)}\n`, 'utf8')
