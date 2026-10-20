@@ -17,6 +17,8 @@ export interface DeploymentScan {
   ownedFiles: string[]
   cachedFiles: string[]
   existingSetups?: ExistingSetup[]
+  /** The hash (by `fileKey`) of each existing-setup preset that sits where the content writes a file; the rest of the presets are not hashed. */
+  presetHashes?: Record<string, string>
   /** What each path held before the deployment first wrote it, as the hash of that file; a path that held nothing has none. */
   originals?: Record<string, string>
 }
@@ -143,7 +145,7 @@ export function planDeployment(
   const initial = new Set(scan.files.map(fileKey))
   const owned = new Set(scan.ownedFiles.map(fileKey))
   const existingSetups = scan.existingSetups ?? []
-  const { carries, takenOver } = takeOver(existingSetups, contentSteps, initial)
+  const { carries, takenOver } = takeOver(existingSetups, contentSteps, initial, scan.presetHashes ?? {})
   for (const path of takenOver) owned.add(fileKey(path))
   const steps: PlanStep[] = [...carries, ...takenOver.map((path) => ({ kind: 'delete' as const, path })), ...contentSteps]
   const present = new Map([...initial].map((p) => [p, null as string | null]))
@@ -237,10 +239,17 @@ export function planDeployment(
 /**
  * An existing setup's files are removed, and so are its kept files and presets where the content writes.
  * Its presets outside Lucent's preset folder, or in the way of a shipped one, are carried over under a free name first,
- * keeping the folders below their top-level one.
+ * keeping the folders below their top-level one. One in the way that is byte for byte the shipped file isn't carried: nothing
+ * of the player's would be lost, and the original still comes back through the backup on Uninstall.
  */
-function takeOver(setups: ExistingSetup[], steps: Step[], initial: Set<string>) {
+function takeOver(setups: ExistingSetup[], steps: Step[], initial: Set<string>, presetHashes: Record<string, string>) {
   const writes = new Set(steps.flatMap((s) => s.kind === 'copy' || s.kind === 'rename' ? [fileKey(s.to)] : []))
+  // What each path ends up holding when it is a plain copy of a content file (a later rename or copy replaces an earlier one).
+  const shipped = new Map<string, string | null>()
+  for (const step of steps) {
+    if (step.kind === 'copy') shipped.set(fileKey(step.to), step.file)
+    else if (step.kind === 'rename') { shipped.set(fileKey(step.from), null); shipped.set(fileKey(step.to), null) }
+  }
   const removed = new Map<string, string>()
   for (const setup of setups) {
     for (const path of setup.files) removed.set(fileKey(path), path)
@@ -250,6 +259,8 @@ function takeOver(setups: ExistingSetup[], steps: Step[], initial: Set<string>) 
   const carries: PlanStep[] = []
   for (const from of setups.flatMap((s) => s.presets)) {
     if (fileKey(from).startsWith(`${PRESET_FOLDER}/`) && !removed.has(fileKey(from))) continue
+    const shippedHash = shipped.get(fileKey(from))
+    if (shippedHash && presetHashes[fileKey(from)] === shippedHash) continue
     const parts = from.replace(/\\/g, '/').split('/')
     const folder = [PRESET_FOLDER, ...parts.slice(1, -1)].join('/')
     const name = parts.at(-1)!

@@ -221,7 +221,9 @@ runs:
 
 - presets outside `reshade-presets\`, or at a path the content writes, are copied there first under
   a free name (`<name> (previous).ini` when taken), keeping the folders below their top-level
-  one; presets already there stay put;
+  one; presets already there stay put. A preset in the way that is byte for byte the file the
+  content writes there is not copied: nothing of the player's would be lost (Scan hashes only
+  those, and the backup still holds the original);
 - then journaled delete steps back up and remove the setup's files, and its kept files and presets
   where the content writes, so its configs are replaced whole and a colliding shader survives only
   in the backup. A taken-over log counts as generated, so Uninstall removes the mods' new log

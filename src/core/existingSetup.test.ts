@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
 import { EXISTING_SETUPS, existingSetup, graphicsCard, machine, vanillaGame, xivLauncher, type ExistingSetupFixture } from '../platform/fixtures'
-import { CONFIG_HASH, FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
+import { CONFIG_HASH, FIXTURE_ASSETS, PRESET_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
 import { dataPaths } from './deployment'
 import { PlatformError } from './platform'
@@ -119,6 +119,35 @@ describe('Review', () => {
     const plan = core.getState().plan!
     expect(keys(listed.backedUp.map((f) => f.path))).toEqual(keys(plan.filesToBackup))
     expect(listed.carried).toEqual(plan.steps.flatMap((s) => s.kind === 'carry' ? [{ from: s.from, to: s.to }] : []))
+  })
+
+  it('carries no copy of a preset that is byte for byte the shipped one, but still backs it up and restores it', async () => {
+    // The player's Example.ini is what the content ships, so only their other root preset needs carrying.
+    const platform = createFakePlatform(machine(setupMachine('reshade'), { files: { [`${GAME}\\reshade-presets\\Example.ini`]: FIXTURE_ASSETS[PRESET_HASH] } }))
+    const before = await snapshot(platform)
+    const core = createCore(platform)
+    await core.scan()
+    await core.review(true)
+    const plan = core.getState().plan!
+    expect(plan.steps.flatMap((s) => s.kind === 'carry' ? [key(s.to)] : [])).toEqual(['reshade-presets/reshadepreset.ini'])
+    expect(keys(plan.filesToBackup)).toContain('reshade-presets/example.ini')
+    expect(core.getState().folderChanges!.carried.map((c) => key(c.to))).toEqual(['reshade-presets/reshadepreset.ini'])
+    await core.deploy()
+    core.finish()
+    expect(core.getState().error).toBeNull()
+    expect(Object.keys(await snapshot(platform)).filter((path) => path.includes('(previous)'))).toEqual([])
+    await core.uninstall()
+    expect(core.getState().error).toBeNull()
+    expect(await snapshot(platform)).toEqual({ ...before, 'reshade-presets/reshadepreset.ini': '[Root preset]\n' })
+  })
+
+  it('still carries a preset in the way that differs from the shipped one by a single byte', async () => {
+    const platform = createFakePlatform(machine(setupMachine('reshade'), { files: { [`${GAME}\\reshade-presets\\Example.ini`]: `${FIXTURE_ASSETS[PRESET_HASH]}\n` } }))
+    const core = createCore(platform)
+    await core.scan()
+    await core.review(true)
+    expect(core.getState().plan!.steps.flatMap((s) => s.kind === 'carry' ? [key(s.to)] : []).sort())
+      .toEqual(['reshade-presets/example (previous).ini', 'reshade-presets/reshadepreset.ini'])
   })
 
   it('lists on Scan what Include ReShade on the Profile step leaves out', async () => {

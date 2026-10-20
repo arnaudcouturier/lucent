@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, migrationNote, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -413,7 +413,8 @@ export function createCore(platform: Platform): Core {
     if (!scanned || !content || !tier || state.deployment) { set({ folderChanges: null }); return }
     const { gameFolder, files } = scanned
     try {
-      const plan = planDeployment(content, tier, state.includeReShade, { files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups }, state.selectedProfile, true,
+      const presetHashes = await presetsInTheWay(platform, joinPath(gameFolder, 'game'), content, state.existingSetups)
+      const plan = planDeployment(content, tier, state.includeReShade, { files, ownedFiles: [], cachedFiles: [], existingSetups: state.existingSetups, presetHashes }, state.selectedProfile, true,
         { ...planSelection(content, tier), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
       const changes = folderChanges(plan, await readableBackupPath(platform, gameFolder, await backupFolderName(platform, gameFolder)))
       if (scanned?.gameFolder === gameFolder) set({ folderChanges: changes })

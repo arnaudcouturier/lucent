@@ -2,7 +2,7 @@ import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
 import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
-import { detectExistingSetups } from './existingSetup'
+import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { addMissingKeys, readIni } from './ini'
 import { configBaselineAssets, configBaselines, readConfig, readableText, updateRule } from './configs'
@@ -337,7 +337,23 @@ export async function scanDeployment(platform: Platform, gameFolder: string, con
   const hashes = await platform.hashMany(sized.map((file) => joinPath(cache, file.sha256)))
   const cachedFiles = sized.filter((file, i) => hashes[i] === file.sha256).map((file) => file.sha256)
   const ownedFiles = record?.status === 'complete' ? Object.keys(record.files) : []
-  return { files, cachedFiles, ownedFiles, existingSetups: detectExistingSetups(signatures, files, ownedFiles), originals: record?.status === 'complete' ? originalHashes(record) : {} }
+  const existingSetups = detectExistingSetups(signatures, files, ownedFiles)
+  return {
+    files, cachedFiles, ownedFiles, existingSetups, presetHashes: await presetsInTheWay(platform, root, content, existingSetups),
+    originals: record?.status === 'complete' ? originalHashes(record) : {},
+  }
+}
+
+/**
+ * The hash of each existing-setup preset that sits where some tier of the content writes a file, by `fileKey`. A plan compares it
+ * with the file it writes there: a preset the player never edited is the shipped one, and carrying a copy of it would only add a duplicate.
+ */
+export async function presetsInTheWay(platform: Platform, root: string, content: ContentVersion, setups: ExistingSetup[]): Promise<Record<string, string>> {
+  const written = new Set(Object.values(content.tiers).flatMap((t) => t.recipe.flatMap((s) => s.kind === 'copy' ? [fileKey(s.to)] : [])))
+  const paths = [...new Set(setups.flatMap((s) => s.presets).filter((p) => written.has(fileKey(p))))]
+  if (!paths.length) return {}
+  const hashes = await platform.hashMany(await platform.resolveGamePaths(root, paths))
+  return Object.fromEntries(paths.map((path, i) => [fileKey(path), hashes[i]]))
 }
 
 export function releaseAsset(file: ContentVersion['files'][number]): string {
