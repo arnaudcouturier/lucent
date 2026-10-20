@@ -2,7 +2,7 @@
 
 `palette.json` is the palette of OptiScaler-FFXIV's Ember menu style (`ext/menu/EmberPalette.h` in the fork) for Lucent's accent, `#FF640A`, and window opacity, `0.92`. It is not written by hand: the fork's `ember_palette` test dumps it. `scripts/ember-style.ts` renames its slots to ReShade's `[STYLE]` keys, so ReShade's menu carries exactly the colours and corner rounding OptiScaler's does. ReShade has no keys for padding or spacing, so only colours and rounding carry over; the font stays Segoe UI at 13 in both.
 
-Built from fork commit `923120f0` (branch `ember-style`). To regenerate after the palette changes, from the fork checkout:
+Built from fork commit `923120f0`; the palette is unchanged in the release tag `ffxiv-2026.10.20-d9b62110` (commit `e9114013`). To regenerate after the palette changes, from the fork checkout:
 
 ```powershell
 $env:EMBER_PALETTE_JSON = 'C:\path\to\lucent\content\ember\palette.json'
