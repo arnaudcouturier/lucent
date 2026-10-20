@@ -30102,7 +30102,7 @@
       "channel": "beta",
       "minAppVersion": "0.3.0-beta.7",
       "changelog": [
-        "OptiScaler's menu has a new Ember style: flat charcoal surfaces and hairline borders, with the Crunchyroll orange only marking state (check marks, sliders, the selected tab, the focus ring) instead of tinting every button and the title bar brown. It is on for new installs and Reset (`[Menu] Style = ember`).",
+        "OptiScaler's menu has a new Ember style: flat charcoal surfaces and hairline borders, with the Crunchyroll orange only marking state (check marks, sliders, the selected tab, the focus ring) instead of tinting every button and the title bar brown. It is on for new installs and Reset (`[Menu] Style = ember`). An update adds it to an existing OptiScaler.ini too, which keeps its own accent colour; set `Style = classic` to go back.",
         "ReShade's menu carries the same palette and corner rounding as OptiScaler's, so the two overlays look like one. New installs and Reset only.",
         "OptiScaler-FFXIV is updated to 2026.10.20 (tag ffxiv-2026.10.20-d9b62110). Everything else is 2026.10.19 unchanged."
       ],

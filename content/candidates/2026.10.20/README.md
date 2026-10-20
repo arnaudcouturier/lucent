@@ -14,7 +14,7 @@
 
 - **OptiScaler:** `[Menu] Style = ember` is added to `iniOverrides` with the theme and `LogToFile=false`. The accent, background opacity and font stay what 2026.10.19 set, and Ember reads the accent and `BGColorA` from them. The fork's default stays `classic`, so a player who writes nothing sees upstream's look.
 - **ReShade:** `reshadeStyle` rewrites `[STYLE]` of the base `ReShade.ini` from the palette (58 keys change: the colours and the corner rounding). The result ships in place of that file as a source with `when: 'reshade'`. ReShade has no padding keys, so only colour and rounding carry over, and the font stays Segoe UI at 13 in both menus.
-- **Who gets it:** new installs and Reset. `OptiScaler.ini` updates with `addMissingKeys` and `ReShade.ini` is `keep`, so an existing install keeps its own colours.
+- **Who gets it:** `[Menu] Style` is a key the 2026.10.19 ini lacks, so `addMissingKeys` adds `Style = ember` to an existing install on update, next to the accent and opacity it already has (those are never rewritten). ReShade does not follow: `ReShade.ini` is `keep`, so only new installs and Reset get its palette, and an updated install shows Ember in OptiScaler and its old colours in ReShade until it resets.
 
 ## Assemble and dry-run
 
