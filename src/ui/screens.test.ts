@@ -289,3 +289,13 @@ it('Versions lists every changelog line of a version, not only the first', async
   expect(text).toContain('OptiScaler 2 with sharper Neural Rendering.')
   expect(text).toContain('Drops the example shader.')
 })
+
+it('Review says why Install waits above the summary, not under the pinned footer where it was found in the real window', async () => {
+  const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT), { gameRunning: true })
+  const core = createCore(createFakePlatform(m))
+  await core.scan()
+  await core.review()
+  const text = visibleText(createElement(ReviewScreen), core)
+  expect(text).toContain('XIV is running')
+  expect(text.indexOf('XIV is running')).toBeLessThan(text.indexOf('Files backed up'))
+})

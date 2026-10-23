@@ -44,6 +44,9 @@ export function ReviewScreen() {
   return <Screen title="Review" sub={setupMode === 'reset' ? 'Here’s the tested setup Lucent will write again.' : setupMode === 'tier' ? 'Here’s the setup for this graphics card.' : 'Here’s what Lucent will put in your game folder.'}>
     {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
     {setupMode !== 'install' && resetBackupPath && <div className="destination"><span>Your current config files will be backed up first at</span><Path path={resetBackupPath} /></div>}
+    {/* Above the summary: under it, the reason Install is waiting sat below the fold, behind the pinned footer. */}
+    <StatusCard />
+    <FlowError />
     <dl className="card plan-numbers">
       <div><dt>Files backed up</dt><dd>{plan.counts.backedUp}</dd></div>
       <div><dt>Files added</dt><dd>{plan.counts.added}</dd></div>
@@ -58,8 +61,6 @@ export function ReviewScreen() {
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
     </dl>
     {spaceWarning && <SpaceWarning shortfalls={spaceWarning} />}
-    <StatusCard />
-    <FlowError />
     <footer className="screen-actions is-pinned">
       <button className="btn is-ghost" disabled={busy} onClick={() => core.backToProfile()}>Back</button>
       {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />{setupMode === 'install' ? 'Install' : 'Apply setup'}</button>}
