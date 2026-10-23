@@ -8,6 +8,10 @@ import { configPresent } from './configs'
 export interface Drift {
   /** Game-folder paths, relative to `game\`, that are missing or no longer what Lucent deployed. */
   files: string[]
+  /** The part of `files` that is gone: not found, or no longer a file. */
+  missing: string[]
+  /** The rest of `files`: there, but not what Lucent deployed (another hash, or a config that can't be read). */
+  changed: string[]
   /** The new game version when it changed since the last healthy check. */
   patch: string | null
 }
@@ -25,6 +29,10 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
   const configs = new Set(record.recipe.ownedConfigs.map((c) => fileKey(c.path)))
   const presets = new Set(record.recipe.shippedPresets.map((p) => fileKey(p.path)))
   const files: string[] = []
+  const missing: string[] = []
+  const changed: string[] = []
+  // Every drifted path goes in `files`, in the order it was found, and in one of the two halves.
+  const drifted = (relative: string, half: string[]) => { files.push(relative); half.push(relative) }
   let restamped = false
   const entries = Object.entries(record.files)
   progress?.(0, entries.length)
@@ -32,10 +40,10 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
   const toHash: { relative: string; path: string; stat: FileStat }[] = []
   for (const [index, [relative, expected]] of entries.entries()) {
     const { path, stat } = located[index]
-    if (path === null || stat?.kind !== 'file') { files.push(relative); continue }
+    if (path === null || stat?.kind !== 'file') { drifted(relative, missing); continue }
     if (presets.has(fileKey(relative))) continue
     if (configs.has(fileKey(relative))) {
-      if (!await configPresent(platform, path)) files.push(relative)
+      if (!await configPresent(platform, path)) drifted(relative, changed)
       continue
     }
     if (!full && stat.size === expected.size && stat.modifiedMs === expected.modifiedMs) continue
@@ -49,7 +57,7 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
     const hashes = await platform.hashMany(batch.map((file) => file.path))
     batch.forEach(({ relative, stat }, k) => {
       const expected = record.files[relative]
-      if (hashes[k] !== expected.sha256) { files.push(relative); return }
+      if (hashes[k] !== expected.sha256) { drifted(relative, changed); return }
       if (stat.size !== expected.size || stat.modifiedMs !== expected.modifiedMs) {
         record.files[relative] = { ...stat, sha256: expected.sha256 }
         restamped = true
@@ -57,7 +65,7 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
     })
   }
   progress?.(entries.length, entries.length)
-  if (files.length) return { files, patch: patched && gameVersion && record.gameVersion !== undefined ? gameVersion : null }
+  if (files.length) return { files, missing, changed, patch: patched && gameVersion && record.gameVersion !== undefined ? gameVersion : null }
   if ((patched || restamped) && options.persist !== false) {
     record.gameVersion = gameVersion
     await platform.writeText((await dataPaths(platform, record.gameFolder)).record, JSON.stringify(record, null, 2))

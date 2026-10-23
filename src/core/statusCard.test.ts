@@ -6,15 +6,15 @@ import { PROFILE_MANIFEST } from '../platform/contentFixture'
 const deployment = (patch: Partial<Extract<Activity, { kind: 'deployment' }>>): State =>
   ({ activity: { kind: 'deployment', enabled: true, drift: null, update: null, operation: null, ...patch }, deploymentProgress: null }) as State
 
-const drift = { files: ['winmm.dll', 'ReShade64.dll'], patch: '2026.10.20.0000.0000' }
+const drift = { files: ['winmm.dll', 'ReShade64.dll'], missing: ['ReShade64.dll'], changed: ['winmm.dll'], patch: '2026.10.20.0000.0000' }
 
 it('shows a repair in progress over the drift it is repairing', () => {
   expect(statusCard({ ...deployment({ drift, operation: 'repair' }), deploymentProgress: { phase: 'applying', progress: 0.5, file: 'winmm.dll' } }))
     .toEqual({ kind: 'busy', operation: 'repair', progress: 0.5 })
 })
 
-it('shows drift with its file count and patch over healthy', () => {
-  expect(statusCard(deployment({ drift }))).toEqual({ kind: 'drift', files: 2, patch: '2026.10.20.0000.0000' })
+it('shows drift with its file count, patch, and which files are missing or changed, over healthy', () => {
+  expect(statusCard(deployment({ drift }))).toEqual({ kind: 'drift', files: 2, patch: '2026.10.20.0000.0000', missing: ['ReShade64.dll'], changed: ['winmm.dll'] })
 })
 
 it('shows healthy when nothing else applies', () => {
@@ -33,7 +33,7 @@ it('shows Disabled with no action when the deployment is off', () => {
 
 it('shows drift and an update ahead of Disabled', () => {
   const update = { version: '2026.11.02', changelog: ['Sharper Neural Rendering.'], downloadSize: 12 }
-  expect(statusCard(deployment({ enabled: false, drift }))).toEqual({ kind: 'drift', files: 2, patch: '2026.10.20.0000.0000' })
+  expect(statusCard(deployment({ enabled: false, drift }))).toEqual({ kind: 'drift', files: 2, patch: '2026.10.20.0000.0000', missing: ['ReShade64.dll'], changed: ['winmm.dll'] })
   expect(statusCard(deployment({ enabled: false, update }))).toEqual({ kind: 'update', ...update })
 })
 

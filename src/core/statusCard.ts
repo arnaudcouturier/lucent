@@ -1,4 +1,5 @@
 import type { Activity, AppUpdate, ContentUpdate, State, TierChange } from './core'
+import type { Drift } from './health'
 
 /** The one state the main screen's status card shows. Later states slot into `statusCard`'s priority order. */
 type CardState =
@@ -6,7 +7,7 @@ type CardState =
   | { kind: 'game-check-failed' }
   | { kind: 'busy'; operation: 'deploy' | 'app-update' | NonNullable<Extract<Activity, { kind: 'deployment' }>['operation']>; progress: number }
   | { kind: 'folder-missing'; path: string }
-  | { kind: 'drift'; files: number; patch: string | null }
+  | ({ kind: 'drift'; files: number } & Pick<Drift, 'patch' | 'missing' | 'changed'>)
   | ({ kind: 'switch-tier' } & TierChange)
   | ({ kind: 'update' } & ContentUpdate)
   | ({ kind: 'app-update' } & AppUpdate)
@@ -55,7 +56,10 @@ function cardState(state: Readonly<State>): CardState | null {
   if (activity.kind === 'scan' && !state.recoveryRequired && state.appUpdate) return { kind: 'app-update', ...state.appUpdate }
   if (activity.kind !== 'deployment') return null
   if (state.gameFolder?.status === 'missing') return { kind: 'folder-missing', path: state.gameFolder.path }
-  if (activity.drift) return { kind: 'drift', files: activity.drift.files.length, patch: activity.drift.patch }
+  if (activity.drift) {
+    const { files, patch, missing, changed } = activity.drift
+    return { kind: 'drift', files: files.length, patch, missing, changed }
+  }
   if (activity.tierChange) return { kind: 'switch-tier', ...activity.tierChange }
   if (state.appUpdate) return { kind: 'app-update', ...state.appUpdate }
   if (activity.update) return { kind: 'update', ...activity.update }

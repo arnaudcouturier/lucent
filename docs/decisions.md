@@ -368,6 +368,7 @@ judgement the maintainer can overrule; the review file lists the finding behind 
 
 **Built from the review's candidate list (2026-10-23)**
 - Versions shows every changelog line of a version, not only the first: a single line stays a paragraph and several become the same bullet list the status card uses.
+- The drift card has a quiet **Show files** toggle (collapsed by default) that lists what drifted: **Missing** (gone from the game folder) and **Changed** (there, with other bytes), up to 12 per group and then "and N more". When a file is missing, a line says that can mean Windows Security moved it away and that Repair puts it back; it never mentions exclusions or turning protection off (Trust). A config that exists but is zero bytes, unreadable or locked counts as Changed. `Drift.files` keeps its contents and order, so the auto-repair notification and everything else that reads it are unchanged. The card's `role="alert"` moved to its heading and text, so opening the list does not make a screen reader read the whole card again.
 
 **Declined after the review (2026-10-23), with the reason**
 - CFG-4, anchoring the GPU name patterns in `manifest.json`: only "Quadro RTX 5000" and "RTX 5000 Ada" are misclassified (into `rtx-50`); anchoring on "GeForce" would break Quadro RTX 4000 and RTX 2000 Ada, which are right today. A correct fix is a negative guard on `rtx-50` plus explicit workstation patterns, in the manifest and in a new content version. Very few players use these cards and a mistake in a tier pattern breaks matching for everyone from `main`.

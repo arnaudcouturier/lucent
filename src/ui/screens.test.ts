@@ -13,6 +13,7 @@ import { VersionsScreen } from './VersionsScreen'
 import { Rail } from './Rail'
 import { SectionContext, type Section } from './Window'
 import { whyGameActionsWait } from './gameWaiting'
+import { statusCard } from '../core/statusCard'
 
 const ROOT = 'C:\\Games\\XIV'
 const RADEON = graphicsCard('AMD Radeon RX 7900 XTX', 0x1002).gpus!
@@ -156,6 +157,24 @@ it('the config files the tier switch card promises to back up are in the folder 
   expect(core.getState().error).toBeNull()
   expect(await platform.readText(`${backup}\\OptiScaler.ini`)).toBe('[Upscalers]\nDx11Upscaler=player-choice\n')
   expect(await platform.readText(`${backup}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=.\\reshade-presets\\Mine.ini\n')
+})
+
+it('the drift card offers its files behind a collapsed Show files, so the card stays short until asked', async () => {
+  const { platform } = await deployedOnRtx()
+  await platform.writeText(`${ROOT}\\game\\winmm.dll`, 'Patched')
+  await platform.removeFile(`${ROOT}\\game\\ReShade64.dll`)
+  const core = await reopen(platform)
+  const card = statusCard(core.getState())
+  expect(card).toMatchObject({ kind: 'drift', missing: ['ReShade64.dll'], changed: ['winmm.dll'] })
+  const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(StatusCard)))
+  expect(markup).toContain('<button type="button" class="row-toggle" aria-expanded="false">Show files')
+  // Only the news is announced; opening the list must not have the whole card read out again.
+  expect(markup).toContain('<div role="alert"><h2>2 files need repair</h2><p>Something changed or removed what Lucent deployed.</p></div><button type="button" class="row-toggle"')
+  const text = visibleText(createElement(StatusCard), core)
+  expect(text).toContain('2 files need repair Something changed or removed what Lucent deployed. Show files')
+  expect(text).not.toContain('winmm.dll')
+  expect(text).not.toContain('ReShade64.dll')
+  expect(text).not.toContain('Windows Security')
 })
 
 it('Versions lists every changelog line of a version, not only the first', async () => {

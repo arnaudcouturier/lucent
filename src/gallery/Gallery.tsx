@@ -180,6 +180,34 @@ const patched = (stage: 'drift' | 'repairing') => async () => {
   return reopened
 }
 
+/** Drift's Show files with both lists: a game patch replaced OptiScaler's DLL and a texture, and ReShade and its shaders
+    are gone, more of them than the list shows. The fixture content is tiny, so the record gains the shaders and the
+    texture a real content version deploys, with long paths for the narrowest window. */
+const driftDetail = async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const folder = core.getState().gameFolder
+  if (folder.status !== 'found') throw new Error('Gallery game folder missing')
+  const game = `${folder.path}\\game`
+  const record = (await readDeployment(platform, folder.path))!
+  const stamp = { ...record.files['winmm.dll'], sha256: '0'.repeat(64) }
+  const shaders = ['LAUNCHPAD', 'MXAO', 'SMAA', 'SHARPEN', 'LONGEXPOSURE', 'SOLARIS', 'CLARITY', 'BLOOM', 'LUTMANAGER', 'TONEMAP', 'MOTIONBLUR', 'DOF', 'VIGNETTE']
+    .map((name) => `reshade-shaders/Shaders/iMMERSE/MartysMods_${name}.fx`)
+  const texture = 'reshade-shaders/Textures/iMMERSE/MartysMods/mmx_bluenoise_tiled_256x256_rgba_temporal.png'
+  for (const path of [...shaders, texture]) record.files[path] = stamp
+  await platform.writeText((await dataPaths(platform, folder.path)).record, JSON.stringify(record))
+  await platform.writeText(`${game}\\${texture.replace(/\//g, '\\')}`, 'Patched')
+  await platform.writeText(`${game}\\winmm.dll`, 'Patched')
+  await platform.removeFile(`${game}\\ReShade64.dll`)
+  await platform.writeText(`${game}\\ffxivgame.ver`, '2026.10.20.0000.0000')
+  const reopened = createCore(platform)
+  await reopened.scan()
+  return reopened
+}
+
 /** Drift no longer hides a pending update outright: both show, drift as the primary card, the app and
     content updates as slim secondary rows beneath it. */
 const driftWithUpdates = async () => {
@@ -499,6 +527,7 @@ const STATES: GalleryState[] = [
   { key: 'reset-confirmation', label: 'Settings · Reset setup confirmation', setup: resetFlow('confirmation'), settingsPreview: true, openReset: true },
   { key: 'reset-profile', label: 'Profile · Reset setup prefilled', setup: resetFlow('profile') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
+  { key: 'drift-detail', label: 'Main · Drift, missing and changed files behind Show files', setup: driftDetail },
   { key: 'drift-with-updates', label: 'Main · Drift, with an app and content update pending', setup: driftWithUpdates },
   { key: 'repairing', label: 'Main · Repairing', setup: patched('repairing') },
   { key: 'new-gpu', label: 'Main · New graphics card', setup: newGraphicsCard },
@@ -529,12 +558,12 @@ const STATES: GalleryState[] = [
   crystalPreview('done', 'Done', { kind: 'done' }, 'The lit state after deployment completes.'),
   crystalPreview('lit', 'Healthy', deployment(), 'A lit spire with a slow spin, orbiting shards and a gentle float.'),
   crystalPreview('update', 'Update available', deployment({ update: AN_UPDATE }), 'A swelling glow announces an available update.'),
-  crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and shards move faster during repair.'),
+  crystalPreview('repair', 'Repair running', deployment({ drift: { files: ['winmm.dll'], missing: [], changed: ['winmm.dll'], patch: null }, operation: 'repair' }), 'The spire and shards move faster during repair.'),
   crystalPreview('busy-update', 'Update running', deployment({ update: AN_UPDATE, operation: 'update' }), 'The same fast spin during an update.'),
   crystalPreview('rollback', 'Rollback running', deployment({ operation: 'rollback' }), 'The same fast spin during rollback.'),
-  crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], patch: null } }), 'Dark facets, a slowed spin and a falling shard.'),
+  crystalPreview('drift', 'Drift', deployment({ drift: { files: ['winmm.dll'], missing: [], changed: ['winmm.dll'], patch: null } }), 'Dark facets, a slowed spin and a falling shard.'),
   crystalPreview('disabled', 'Disabled', deployment({ enabled: false }), 'A frozen steel crystal.'),
-  crystalPreview('disabled-repair', 'Disabled during repair', deployment({ enabled: false, drift: { files: ['winmm.dll'], patch: null }, operation: 'repair' }), 'Disabled stays frozen during repair, update and rollback.'),
+  crystalPreview('disabled-repair', 'Disabled during repair', deployment({ enabled: false, drift: { files: ['winmm.dll'], missing: [], changed: ['winmm.dll'], patch: null }, operation: 'repair' }), 'Disabled stays frozen during repair, update and rollback.'),
 ]
 
 /** DEV ONLY: project future activities onto a real Scan core, without adding fixture setters to production. */

@@ -6,6 +6,7 @@ import { dataPaths, readDeployment } from './deployment'
 import { PlatformError } from './platform'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { statusCard } from './statusCard'
+import { checkHealth } from './health'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -32,7 +33,23 @@ it('shows drift naming the patch when a game patch replaces a deployed DLL', asy
   await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
   await platform.writeText(`${GAME}\\ffxivgame.ver`, PATCH)
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: PATCH })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: PATCH, missing: [], changed: ['winmm.dll'] })
+})
+
+it('tells a file that is gone from one that is there with other bytes, and lists each drifted file once', async () => {
+  const platform = await deployed()
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
+  await platform.removeFile(`${GAME}\\ReShade64.dll`)
+  await platform.writeText(`${GAME}\\ReShade.ini`, '\0\0\0')
+  // A folder where a deployed file was is as gone as the file.
+  await platform.removeFile(`${GAME}\\reshade-shaders\\Shaders\\Example.fx`)
+  await platform.writeText(`${GAME}\\reshade-shaders\\Shaders\\Example.fx\\notes.txt`, 'Mine')
+  const record = (await readDeployment(platform, ROOT))!
+  const drift = (await checkHealth(platform, record, record.gameVersion ?? null, true))!
+  expect(drift.missing).toEqual(['ReShade64.dll', 'reshade-shaders/Shaders/Example.fx'])
+  expect(drift.changed).toEqual(['ReShade.ini', 'winmm.dll'])
+  expect([...drift.missing, ...drift.changed].sort()).toEqual([...drift.files].sort())
+  expect(drift.files).toHaveLength(4)
 })
 
 it('repairs a patched DLL from the cache and returns to healthy, keeping the player’s config changes', async () => {
@@ -59,7 +76,7 @@ it('treats an edited shipped preset as the player’s, and a deleted one as drif
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
   await platform.removeFile(preset)
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null, missing: ['reshade-presets/Example.ini'], changed: [] })
   await core.repair()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
   expect(await platform.readText(preset)).toBe('Preset')
@@ -88,7 +105,7 @@ it('leaves the game folder as it was when Repair can’t download, and keeps sho
   platform.downloadFile = async () => { throw new PlatformError('network', 'Offline') }
   await core.repair()
   expect(core.getState().error).toMatch(/download/)
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 2, patch: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 2, patch: null, missing: ['ReShade64.dll'], changed: ['winmm.dll'] })
   expect(await snapshot(platform)).toEqual(before)
 })
 
@@ -97,7 +114,7 @@ it('writes a config left as nothing but zero bytes, as a crash mid-write leaves 
   const written = await platform.readText(`${GAME}\\OptiScaler.ini`)
   await platform.writeText(`${GAME}\\OptiScaler.ini`, '\0\0\0')
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null, missing: [], changed: ['OptiScaler.ini'] })
   await core.repair()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
   expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).toBe(written)
@@ -137,7 +154,7 @@ it('trusts a matching size and modified time until the game version changes, the
   platform.setModifiedTime(`${GAME}\\winmm.dll`, stamp.modifiedMs)
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
   await platform.writeText(`${GAME}\\ffxivgame.ver`, PATCH)
-  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'drift', files: 1, patch: PATCH })
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'drift', files: 1, patch: PATCH, missing: [], changed: ['winmm.dll'] })
 })
 
 it('undoes a repair that fails partway, leaving the game folder as it was', async () => {
@@ -155,7 +172,7 @@ it('undoes a repair that fails partway, leaving the game folder as it was', asyn
   await core.repair()
   platform.copyFile = copy
   expect(core.getState()).toMatchObject({ recoveryRequired: false, error: expect.stringMatching(/disk space.*restored the game folder/) })
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 2, patch: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 2, patch: null, missing: ['ReShade64.dll'], changed: ['winmm.dll'] })
   expect(await snapshot(platform)).toEqual(before)
   await core.repair()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
@@ -178,7 +195,7 @@ it('Scan finds a file changed while Lucent is open, without reopening it, and Re
   platform.setModifiedTime(dll, stamp.modifiedMs)
   await core.checkFiles()
   expect(core.getState()).toMatchObject({ busy: false, error: null, notice: null })
-  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null })
+  expect(statusCard(core.getState())).toEqual({ kind: 'drift', files: 1, patch: null, missing: [], changed: ['winmm.dll'] })
   await core.repair()
   expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
   expect(await platform.readText(dll)).toBe('OptiScaler')

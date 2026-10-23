@@ -1,5 +1,5 @@
-import { Fragment, type ReactNode } from 'react'
-import { ArrowDownToLine, BookOpen, Check, CircleCheck, Cpu, Download, ExternalLink, FolderX, LoaderCircle, ScanSearch, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
+import { Fragment, useState, type ReactNode } from 'react'
+import { ArrowDownToLine, BookOpen, Check, ChevronDown, CircleCheck, Cpu, Download, ExternalLink, FolderX, LoaderCircle, ScanSearch, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import { GUIDE_URL, type KeyBinding } from '../core/hotkeys'
 import type { DeploymentPhase } from '../core/deployment'
 import { statusCard, type StatusCard as Card, type UpdateCardState } from '../core/statusCard'
@@ -13,6 +13,7 @@ import { sizeLabel } from '../core/format'
 import { frameGenerationLabel, hdrLabel } from '../core/choices'
 import { neuralRenderingExtras, neuralRenderingSummary } from '../core/neuralRendering'
 import { frameGenerationDescription } from '../core/frameGeneration'
+import { driftFileList } from './driftFiles'
 import type { HdrMode } from '../shared/manifest'
 
 export function FlowError() {
@@ -209,6 +210,35 @@ export function UpdateCard({ card }: { card: UpdateCardState }) {
   </div>
 }
 
+/** Drift with Repair, and which files behind a quiet Show files: the ones gone from the game folder, then the changed ones. */
+function DriftCard({ card }: { card: Extract<Card, { kind: 'drift' }> }) {
+  const [state, core] = useCore()
+  const [open, setOpen] = useState(false)
+  const { groups, note } = driftFileList(card.missing, card.changed)
+  return <div className="health-card is-drift">
+    <TriangleAlert size={20} />
+    <div className="health-body">
+      {/* Only the news is the alert: the list opening inside it would have the whole card read out again. */}
+      <div role="alert"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
+        <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
+      <button type="button" className="row-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? 'Hide files' : 'Show files'}<ChevronDown size={13} strokeWidth={1.75} />
+      </button>
+      {open && <div className="drift-files">
+        {groups.map((group) => <div key={group.label} className="drift-group">
+          <h3>{group.label}</h3>
+          <ul>
+            {group.files.map((path) => <li key={path} className="path">{path}</li>)}
+            {group.more && <li className="drift-more">{group.more}</li>}
+          </ul>
+        </div>)}
+        {note && <p className="drift-note">{note}</p>}
+      </div>}
+    </div>
+    <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
+  </div>
+}
+
 function StatusCardContent({ card }: { card: Card }) {
   const [state, core] = useCore()
   if (card.kind === 'game-running' || card.kind === 'game-check-failed') {
@@ -238,12 +268,7 @@ function StatusCardContent({ card }: { card: Card }) {
       <p className="update-size">Enabled stays as it is, and your earlier choices carry over where {card.to} offers them. Your config files are backed up, then written again.</p></div>
     <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.switchTier()}><Cpu size={14} />{card.sameTier ? 'Refresh for this GPU' : 'Switch tier'}</button>
   </div>
-  if (card.kind === 'drift') return <div className="health-card is-drift" role="alert">
-    <TriangleAlert size={20} />
-    <div className="health-body"><h2>{card.files === 1 ? '1 file needs repair' : `${card.files} files need repair`}</h2>
-      <p>{card.patch ? `Game patch ${card.patch} changed what Lucent deployed.` : 'Something changed or removed what Lucent deployed.'}</p></div>
-    <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.repair()}><Wrench size={14} />Repair</button>
-  </div>
+  if (card.kind === 'drift') return <DriftCard card={card} />
   if (card.kind === 'app-update' || card.kind === 'update') return <UpdateCard card={card} />
   if (card.kind === 'disabled') return <div className="health-card is-disabled">
     <Snowflake size={20} />

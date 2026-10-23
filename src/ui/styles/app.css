@@ -527,6 +527,16 @@
 .changelog li + li { margin-top: var(--space-1); }
 .health-card .update-size { color: var(--ink-3); font-size: var(--text-label); }
 .update-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+/* Drift's Show files: short mono lists of what is missing and what changed. Icon and Repair stay at the top, so they
+   don't move when the list opens. */
+.health-card.is-drift { align-items: flex-start; }
+.health-card .row-toggle { margin-top: var(--space-2); }
+.drift-files { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
+.drift-group h3 { margin: 0 0 var(--space-1); color: var(--ink-3); font: 500 var(--text-label-sm)/1.2 var(--sans); }
+.drift-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.drift-group li { color: var(--ink-2); font: 400 12px/1.5 var(--mono); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.drift-group .drift-more { color: var(--ink-3); font-family: var(--sans); letter-spacing: 0; }
+.health-card .drift-note { color: var(--ink-3); font-size: var(--text-label); }
 
 /* An update the primary status card is hiding (behind drift, or while the game runs): a slim row instead
    of the full changelog card, so it stays visible without competing with the primary card. */
