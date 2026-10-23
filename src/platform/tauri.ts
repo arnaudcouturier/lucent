@@ -67,6 +67,7 @@ export function createTauriPlatform(): Platform {
     launchExe: (path) => call('platform_launch_exe', { path }),
     startProgram: (path) => call('platform_start_program', { path }),
     openSteamGame: (appId) => call('platform_open_steam_game', { appId }),
+    openFolder: (path) => call('platform_open_folder', { path }),
     isProcessRunning: (exeName) => call<boolean>('platform_is_process_running', { exeName }),
     isExeRunningElsewhere: (path) => call<boolean>('platform_is_exe_running_elsewhere', { path }),
     notify: (title, body) => call('platform_notify', { title, body }),

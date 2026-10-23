@@ -174,6 +174,11 @@ export interface Platform {
   startProgram(path: string): Promise<void>
   /** Asks Steam to start a game by its app id. */
   openSteamGame(appId: number): Promise<void>
+  /**
+   * Shows a folder in File Explorer. The real port opens only an existing folder named `X:\…`, with no `.` or `..` and
+   * not itself a junction or symbolic link; anything else, a file included, is refused.
+   */
+  openFolder(path: string): Promise<void>
   /** Creates or replaces a Windows shortcut (.lnk) at `path` that starts `target`. */
   createShortcut(path: string, target: string): Promise<void>
   /** Creates or updates this user's Settings → Apps entry `id`; strings and DWORD numbers, no admin. */

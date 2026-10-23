@@ -110,6 +110,18 @@ async fn platform_open_steam_game(
         .map_err(|e| PlatformError::new(ErrorKind::Unknown, e.to_string(), None))?;
     platform::open_steam_game(app_id, owner)
 }
+
+// A string, not a PathBuf: the check reads the path exactly as the webview wrote it.
+#[tauri::command]
+async fn platform_open_folder(
+    window: tauri::WebviewWindow,
+    path: String,
+) -> Result<(), PlatformError> {
+    let owner = window
+        .hwnd()
+        .map_err(|e| PlatformError::new(ErrorKind::Unknown, e.to_string(), None))?;
+    platform::open_folder(&path, owner)
+}
 #[tauri::command]
 async fn platform_start_program(path: PathBuf) -> Result<(), PlatformError> {
     platform::start_program(&path)
@@ -423,6 +435,7 @@ pub fn run() {
             platform_write_file_bytes,
             platform_remove_directories_if_empty,
             platform_open_steam_game,
+            platform_open_folder,
             platform_start_program,
             platform_download_file,
             platform_is_game_running,

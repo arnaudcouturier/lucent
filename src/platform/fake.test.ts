@@ -27,4 +27,18 @@ describe('fake platform', () => {
     await expect(withWindow.isExeRunningElsewhere('C:\\Users\\Player\\AppData\\Local\\Lucent')).resolves.toBe(false)
     await expect(withWindow.isProcessRunning('Lucent.exe')).resolves.toBe(true)
   })
+
+  it('opens only a folder that exists, as the real port does, and records it as asked', async () => {
+    const platform = createFakePlatform({ files: { [CONFIG]: '{}' }, directories: ['D:\\Empty folder'] })
+    await platform.openFolder('C:\\Users\\Player\\AppData\\Roaming\\XIVLauncher')
+    await platform.openFolder('D:\\Empty folder')
+    expect(platform.openedFolders).toEqual(['C:\\Users\\Player\\AppData\\Roaming\\XIVLauncher', 'D:\\Empty folder'])
+    await expect(platform.openFolder('C:\\Users\\Player\\AppData\\Roaming\\Gone')).rejects.toMatchObject({ kind: 'not-found' })
+    // A file is refused, and so is every path that isn't `X:\…`, even one naming a folder that is there.
+    await expect(platform.openFolder(CONFIG)).rejects.toMatchObject({ kind: 'unknown' })
+    for (const path of ['\\\\server\\share', '\\\\?\\D:\\Empty folder', '\\\\.\\D:\\Empty folder', 'D:Empty folder', '\\Empty folder', 'D:\\Empty folder\\..\\Empty folder']) {
+      await expect(platform.openFolder(path), path).rejects.toMatchObject({ kind: 'access-denied' })
+    }
+    expect(platform.openedFolders).toHaveLength(2)
+  })
 })

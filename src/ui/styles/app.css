@@ -338,6 +338,11 @@
   box-shadow: none;
   color: var(--ink);
 }
+/* A path with Open folder after it (Path.tsx): the path still wraps after a backslash, never between its last name and
+   the button, and the 28px target's negative margins keep the line's height. */
+.folder-path { white-space: nowrap; }
+.folder-path > .path { white-space: normal; }
+.folder-path > .open-folder { width: 28px; height: 28px; padding: 0; margin: -6px 0 -6px 2px; vertical-align: middle; }
 /* A disabled primary or danger button falls back to the quiet secondary surface:
    dimming the accent fill instead reads as a muddy, desaturated brown or rust. */
 .btn.is-primary:disabled,
@@ -1025,7 +1030,10 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 }
 .terminal-file { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--ink-2); font: 500 12px/1 var(--mono); letter-spacing: -0.01em; }
 .terminal-idle { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+/* A notice above the terminal (an Open folder or Copy that failed) keeps its distance from it. */
+.callout + .terminal { margin-top: var(--space-3); }
 .terminal-copy { height: 28px; padding: 0 10px; gap: 6px; font-size: var(--text-label); }
+.terminal-actions { flex: none; display: flex; align-items: center; gap: 2px; }
 .terminal-view {
   flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4) var(--space-4);
   color: var(--ink-2); font: 400 12px/1.65 var(--mono); letter-spacing: -0.01em; overflow-wrap: anywhere; user-select: text;

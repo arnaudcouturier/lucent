@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { CircleCheck, LoaderCircle, Trash2, TriangleAlert, X } from 'lucide-react'
 import { closeWindow, dragWindow, interceptClose } from './shell'
 import { useCore, useGameRunningRefresh } from './useCore'
-import { Path } from './Path'
+import { FolderPath } from './Path'
 
 export function UninstallWindow() {
   const [{ busy, error, notice, gameRunning, appUninstalled, appUninstallBackups, lucentOpenElsewhere }, core] = useCore()
@@ -38,7 +38,7 @@ export function UninstallWindow() {
         <header className="screen-head">
           <h1>{appUninstalled ? 'Lucent is uninstalled' : 'Uninstall Lucent'}</h1>
           <p>{appUninstalled ? 'Lucent has been removed from this PC. Its folder goes when you close this window.' : 'Removes Lucent, its Start menu shortcut, its XIVLauncher add-ons and its data from this PC.'}</p>
-          {!appUninstalled && backups && <p>That includes the copies of files Lucent replaced in your game folder, in <Path path={backups} />. Move them elsewhere first to keep them.</p>}
+          {!appUninstalled && backups && <p>That includes the copies of files Lucent replaced in your game folder, in <FolderPath path={backups} />. Move them elsewhere first to keep them.</p>}
         </header>
         {!appUninstalled && <label className="card option-row">
           <input type="checkbox" checked={restore} disabled={busy} onChange={(e) => setRestore(e.target.checked)} />

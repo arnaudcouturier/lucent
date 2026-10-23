@@ -159,6 +159,8 @@ export interface State {
   resetBackupPath: string | null
   /** The Mods section: the Starter set and which of its plugins and mods this PC has. Independent of any deployment. */
   starterSet: StarterSetState
+  /** Lucent's data folder, which holds `lucent.log` and the readable backups; null until Scan or the uninstall window has opened the log. */
+  dataFolder: string | null
 }
 
 export interface Core {
@@ -247,6 +249,11 @@ export interface Core {
   /** Copies those lines to the clipboard, as written. Resolves to whether there was a log to copy. */
   copyLog(source: LogSource): Promise<boolean>
   openLink(url: string): Promise<void>
+  /**
+   * Shows a folder in File Explorer: Lucent's data folder or a folder in it, or a game folder Lucent selected or deployed to.
+   * Any other path is ignored; a folder Windows won't open gives a notice. Works while Lucent is busy.
+   */
+  openFolder(path: string): Promise<void>
   /** Reads what the Mods section shows. Waits for the manifest; the section calls it again when the manifest arrives. */
   refreshStarterSet(): Promise<void>
   /** Fetches the named Starter set plugins from their repos and places them in Dalamud. XIV and XIVLauncher must be closed. */
@@ -254,6 +261,7 @@ export interface Core {
 }
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
+const OPEN_FOLDER_FAILED = 'Lucent couldn’t open that folder.'
 
 type FirstRunChoices = Pick<State, 'setupMode' | 'resetBackupPath' | 'includeReShade' | 'addToStartMenu' | 'profiles' | 'selectedProfile' | 'recommendedProfile'
   | 'frameGenerationOptions' | 'frameGenerationMode' | 'neuralRenderingControls' | 'neuralRendering' | 'mfgUnlock' | 'mfgUnlocked' | 'hdrOptions' | 'hdrMode'>
@@ -330,7 +338,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' },
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -347,6 +355,8 @@ export function createCore(platform: Platform): Core {
   const openLog = async (elevated: boolean) => {
     if (logOpened) return
     logOpened = true
+    // After the elevation resume: an administrator relaunch's data folder is the player's, not its own.
+    set({ dataFolder: await lucentFolder(platform) })
     await trimActivityLog(platform)
     log.write('info', `Lucent ${APP_VERSION} started${elevated ? ' with administrator access' : ''}`)
   }
@@ -897,6 +907,23 @@ export function createCore(platform: Platform): Core {
     } catch { return { path, withRestore: true } }
   }
   /**
+   * Whether Open folder may show this folder: Lucent's data folder or one inside it, or exactly a game folder Lucent selected
+   * or deployed to. The Rust command is the boundary; this keeps the window from asking it for anything else.
+   */
+  const showsFolder = async (path: string) => {
+    const key = (folder: string) => normalizePath(folder).toLowerCase()
+    // `normalizePath` keeps `.` and `..`, which would walk out of the data folder past a prefix check.
+    if (!path || path.split(/[\\/]/).some((part) => part === '.' || part === '..')) return false
+    const folder = key(path)
+    const data = key(await lucentFolder(platform))
+    if (folder === data || folder.startsWith(`${data}\\`)) return true
+    if ('path' in state.gameFolder && key(state.gameFolder.path) === folder) return true
+    try {
+      for await (const record of deploymentRecords(platform)) if (key(record.gameFolder) === folder) return true
+    } catch { /* A record that can't be read names no folder. */ }
+    return false
+  }
+  /**
    * XIVLauncher's add-on is one pair of entries for every copy, repairing whichever deployment its game path leads to, so
    * it needs administrator access when any deployed game folder does. A folder whose game is gone has nothing to repair.
    */
@@ -950,6 +977,17 @@ export function createCore(platform: Platform): Core {
         await platform.openUrl(link.href)
       } catch (error) { set({ error: `Could not open the link. ${message(error)}` }) }
       finally { set({ busy: false }) }
+    },
+    async openFolder(path) {
+      if (!await showsFolder(path)) return
+      try {
+        await platform.openFolder(normalizePath(path))
+        // A retry that works takes its own failure off the screen, and nothing else.
+        if (state.notice === OPEN_FOLDER_FAILED) set({ notice: null })
+      } catch (error) {
+        log.write('warning', `Couldn’t open ${path}: ${message(error)}`)
+        set({ notice: OPEN_FOLDER_FAILED })
+      }
     },
     async refreshStarterSet() {
       const { manifest } = state

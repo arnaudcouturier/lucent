@@ -1236,6 +1236,43 @@ pub fn open_steam_game(app_id: u32, owner: HWND) -> Result<()> {
     Ok(())
 }
 
+/// Shows a folder in File Explorer. The validated folder is the shell's file, with no parameters: nothing here builds
+/// a command line or hands Explorer arguments to parse.
+pub fn open_folder(path: &str, owner: HWND) -> Result<()> {
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+    };
+    let folder = crate::files::validate_open_folder(path)?;
+    let target = HSTRING::from(folder.as_os_str());
+    let operation = HSTRING::from("open");
+    // SAFETY: the HSTRING values stay alive for the call and `owner` is Tauri's live window. The folder's open verb is
+    // a COM handler, so COM is initialized as the shell asks, and uninitialized only if this call initialized it.
+    let result = unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                initialized.to_string(),
+                Some(&folder),
+            ));
+        }
+        let result = ShellExecuteW(Some(owner), &operation, &target, None, None, SW_SHOWNORMAL);
+        if initialized.is_ok() {
+            CoUninitialize();
+        }
+        result
+    };
+    let code = result.0 as usize;
+    if code <= 32 {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            format!("Windows could not open the folder (ShellExecuteW error {code})"),
+            Some(&folder),
+        ));
+    }
+    Ok(())
+}
+
 /// Starts a program from its own folder without waiting for it; unlike `launch_exe`, Lucent keeps running.
 pub fn start_program(path: &Path) -> Result<()> {
     let mut command = std::process::Command::new(path);

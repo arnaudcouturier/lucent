@@ -1,7 +1,7 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, FolderOpen, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, FolderPen, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard, UpdateCard } from './DeploymentScreens'
@@ -9,7 +9,7 @@ import { KeysScreen } from './KeysScreen'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
 import { Credits } from './CreditsScreen'
-import { Path } from './Path'
+import { FolderPath, Path } from './Path'
 import { returnFocus } from './focus'
 import { GAME_WAITING, whyGameActionsWait } from './gameWaiting'
 import { SOURCE_LABEL } from './ScanScreen'
@@ -182,10 +182,10 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
     {gameFolder.status === 'found' && <SettingsGroup title="Game folder">
       <div className="card settings-folder">
         <div>
-          <Path path={gameFolder.path} />
+          <FolderPath path={gameFolder.path} />
           <small>{SOURCE_LABEL[gameFolder.source]} · game {gameFolder.version ?? 'version unknown'}</small>
         </div>
-        <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.changeGameFolder()}><FolderOpen size={14} strokeWidth={1.75} />Change…</button>
+        <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.changeGameFolder()}><FolderPen size={14} strokeWidth={1.75} />Change…</button>
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.checkFiles()}><ScanSearch size={14} strokeWidth={1.75} />Scan</button>
       </div>
       {state.rejectedFolder && <p className="callout" role="alert">

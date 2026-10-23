@@ -68,6 +68,8 @@ export interface FakePlatform extends Platform {
   readonly started: string[]
   readonly clipboard: string | null
   readonly openedUrls: string[]
+  /** Folders shown in File Explorer, in order, as the port was asked. */
+  readonly openedFolders: string[]
   /** Every Windows notification shown, in order. */
   readonly notifications: { title: string; body: string }[]
   readonly exited: boolean
@@ -127,6 +129,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
   const started: string[] = []
   let clipboard: string | null = null
   const openedUrls: string[] = []
+  const openedFolders: string[] = []
   const notifications: { title: string; body: string }[] = []
   let exited = false
   const elevationRequests: string[] = []
@@ -162,6 +165,7 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     started,
     get clipboard() { return clipboard },
     openedUrls,
+    openedFolders,
     notifications,
     get exited() { return exited },
     get removedOnExit() { return removedOnExit },
@@ -310,6 +314,15 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       started.push(path)
     },
     async openSteamGame(appId) { await gate; started.push(`steam://rungameid/${appId}`) },
+    async openFolder(path) {
+      await gate
+      // The real port's rules: `X:\` only, never `.` or `..`, and an existing folder, not a file.
+      if (!/^[a-z]:\\/i.test(path) || path.split(/[\\/]/).some((part) => part === '.' || part === '..')) throw new PlatformError('access-denied', `Lucent opens only a folder on this PC: ${path}`, path)
+      const p = norm(path)
+      if (files.has(p)) throw new PlatformError('unknown', 'This is a file, not a folder.', path)
+      if (!isDir(p)) throw new PlatformError('not-found', `Not found: ${path}`, path)
+      openedFolders.push(path)
+    },
     async createShortcut(path, target) { await this.writeText(path, `Shortcut to ${target}`) },
     async setUninstallEntry(id, values) {
       await gate

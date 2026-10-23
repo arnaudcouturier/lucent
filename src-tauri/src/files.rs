@@ -272,6 +272,41 @@ pub fn resolve_game_paths(root: &Path, relatives: &[String]) -> Result<Vec<PathB
         .collect()
 }
 
+/// The folder an Open folder button may show, checked before Windows is asked to open it. The webview names the path,
+/// so this is the boundary, not the TypeScript check before it: only `X:\` on this PC, every name a plain one (no `.`
+/// or `..`, stream, wildcard or device), and a folder that exists and is not itself a junction or symbolic link.
+pub fn validate_open_folder(path: &str) -> Result<PathBuf> {
+    let refuse = |why: &str| {
+        PlatformError::new(
+            ErrorKind::AccessDenied,
+            format!("Lucent opens only a folder on this PC: {why}."),
+            Some(Path::new(path)),
+        )
+    };
+    // Two leading separators are a network share (`\\server`), a device (`\\.\`) or a verbatim path (`\\?\`).
+    let names = match path.as_bytes() {
+        [drive, b':', b'\\', ..] if drive.is_ascii_alphabetic() => &path[3..],
+        _ => return Err(refuse("the path doesn’t start with a drive letter")),
+    };
+    if let Some(why) = names.split(['\\', '/']).find_map(unsafe_path_part) {
+        return Err(refuse(why));
+    }
+    let folder = Path::new(path);
+    let meta = fs::symlink_metadata(folder).map_err(|e| PlatformError::io(e, Some(folder)))?;
+    // A junction counts too: std reports every name-surrogate reparse point as a link.
+    if meta.file_type().is_symlink() {
+        return Err(refuse("it is a junction or symbolic link"));
+    }
+    if !meta.is_dir() {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "This is a file, not a folder.",
+            Some(folder),
+        ));
+    }
+    Ok(folder.to_path_buf())
+}
+
 /// Runs `work` over the items on up to eight threads and returns the results in item order. After a failure no new
 /// item starts; the first failure in item order is returned once the running items finish.
 fn in_parallel<T: Sync, R: Send>(
@@ -1842,5 +1877,156 @@ mod tests {
             ErrorKind::Unknown
         );
         assert!(!to.exists());
+    }
+
+    fn text(path: &Path) -> String {
+        path.to_str().unwrap().to_owned()
+    }
+
+    /// Refused for how it is written, before the file system is asked anything.
+    fn refused_by_name(path: &str) {
+        let error = validate_open_folder(path).expect_err(&format!("{path:?} must be refused"));
+        assert_eq!(
+            error.kind,
+            ErrorKind::AccessDenied,
+            "{path:?}: {}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn open_folder_accepts_an_existing_local_folder_as_it_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("FINAL FANTASY XIV Online");
+        fs::create_dir(&folder).unwrap();
+        assert_eq!(validate_open_folder(&text(&folder)).unwrap(), folder);
+        assert_eq!(validate_open_folder(&text(dir.path())).unwrap(), dir.path());
+    }
+
+    #[test]
+    fn open_folder_refuses_every_path_that_is_not_drive_letter_colon_backslash() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = text(dir.path());
+        let after_drive = &local[2..];
+        for path in [
+            String::new(),
+            // Network shares, and both device namespaces, even when they name the same local folder.
+            r"\\server\share".to_owned(),
+            r"\\server\share\Lucent".to_owned(),
+            "//server/share".to_owned(),
+            format!(r"\\?\{local}"),
+            format!(r"\\.\{local}"),
+            r"\\?\UNC\server\share".to_owned(),
+            r"\\localhost\C$\Windows".to_owned(),
+            // Relative to the current folder, to the current drive's root, or to the drive's current folder.
+            "Games".to_owned(),
+            r"Games\XIV".to_owned(),
+            r".\Games".to_owned(),
+            after_drive.to_owned(),
+            format!("{}{}", &local[..2], &after_drive[1..]),
+            "C:".to_owned(),
+            // A drive's root names no folder Lucent shows.
+            r"C:\".to_owned(),
+            // Only a letter, a colon and a backslash start the path.
+            format!("{}/{}", &local[..2], &after_drive[1..]),
+            r"1:\Games".to_owned(),
+        ] {
+            refused_by_name(&path);
+        }
+    }
+
+    #[test]
+    fn open_folder_refuses_dot_and_dot_dot_even_when_they_lead_to_a_real_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = dir.path().join("inner");
+        fs::create_dir(&inner).unwrap();
+        let local = text(dir.path());
+        for path in [
+            format!(r"{local}\inner\.."),
+            format!(r"{local}\inner\..\inner"),
+            format!(
+                r"{local}\..\{}",
+                dir.path().file_name().unwrap().to_str().unwrap()
+            ),
+            format!(r"{local}\.\inner"),
+            format!(r"{local}\inner\."),
+            format!("{local}/inner/.."),
+        ] {
+            refused_by_name(&path);
+        }
+    }
+
+    #[test]
+    fn open_folder_refuses_streams_wildcards_devices_and_control_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = text(dir.path());
+        for path in [
+            // The directory's own index stream opens as the folder itself.
+            format!("{local}::$INDEX_ALLOCATION"),
+            format!(r"{local}\inner:stream"),
+            format!(r"{local}\*"),
+            format!(r"{local}\in?er"),
+            format!("{local}\\\"quoted\""),
+            format!(r"{local}\CON"),
+            format!(r"{local}\nul.txt"),
+            format!("{local}\0"),
+            format!("{local}\0\\..\\..\\Windows"),
+            format!("{local}\r\ncalc"),
+            format!("{local}\\"),
+            format!(r"{local}\\inner"),
+            format!(r"{local}\inner."),
+            format!(r"{local}\inner "),
+        ] {
+            refused_by_name(&path);
+        }
+    }
+
+    #[test]
+    fn open_folder_refuses_a_file_and_a_missing_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("lucent.log");
+        fs::write(&file, "log").unwrap();
+        assert_eq!(
+            validate_open_folder(&text(&file)).unwrap_err().kind,
+            ErrorKind::Unknown
+        );
+        let exe = dir.path().join("Lucent.exe");
+        fs::write(&exe, "MZ").unwrap();
+        assert_eq!(
+            validate_open_folder(&text(&exe)).unwrap_err().kind,
+            ErrorKind::Unknown
+        );
+        let missing = validate_open_folder(&text(&dir.path().join("gone"))).unwrap_err();
+        assert_eq!(missing.kind, ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn open_folder_refuses_a_junction_and_a_symbolic_link_but_not_a_folder_inside_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        fs::create_dir(elsewhere.path().join("inner")).unwrap();
+        let junction = dir.path().join("junction");
+        make_junction(&junction, elsewhere.path());
+        let refused = validate_open_folder(&text(&junction)).map_err(|e| e.kind);
+        // Only the final name is checked: a folder under a junction is a plain folder.
+        let inside = validate_open_folder(&text(&junction.join("inner"))).is_ok();
+        fs::remove_dir(&junction).unwrap();
+        assert_eq!(
+            refused,
+            Err(ErrorKind::AccessDenied),
+            "a junction must be refused"
+        );
+        assert!(inside);
+        // Creating a symbolic link can need a Windows privilege; the refusal is what matters where allowed.
+        let link = dir.path().join("link");
+        if std::os::windows::fs::symlink_dir(elsewhere.path(), &link).is_ok() {
+            let refused = validate_open_folder(&text(&link)).map_err(|e| e.kind);
+            fs::remove_dir(&link).unwrap();
+            assert_eq!(
+                refused,
+                Err(ErrorKind::AccessDenied),
+                "a symbolic link must be refused"
+            );
+        }
     }
 }

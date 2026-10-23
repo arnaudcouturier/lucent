@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createCore, type Activity, type Core } from '../core/core'
 import { crystalState } from '../core/crystal'
 import { createFakePlatform, FAKE_EXE_PATH, type Machine } from '../platform/fake'
-import { MACHINES, frameGenerationContentHost, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { MACHINES, fixtureContentHost, frameGenerationContentHost, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
 import { UninstallWindow } from '../ui/UninstallWindow'
 import { CoreContext } from '../ui/useCore'
@@ -539,6 +539,13 @@ const STATES: GalleryState[] = [
       await core.changeGameFolder()
       return core
     },
+    settingsPreview: true,
+  },
+  {
+    // Open folder follows the path's last name; check the wrap at 880×600.
+    key: 'settings-long-folder',
+    label: 'Settings · long game folder path, with Open folder',
+    setup: workflow('healthy', machine(fixtureContentHost(), graphicsCard(), steam({ libraries: [LONG_LIBRARY], game: LONG_LIBRARY }), vanillaGame(steamGameFolder(LONG_LIBRARY)))),
     settingsPreview: true,
   },
   { key: 'reset-profile', label: 'Profile · Reset setup prefilled', setup: resetFlow('profile') },

@@ -4,6 +4,8 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, Check, ClipboardCopy } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen } from './Window'
+import { FlowError } from './DeploymentScreens'
+import { OpenFolder } from './Path'
 import { LUCENT_LOG, logSources, type LogSource } from '../core/log'
 import { keyLines, type KeyedLine } from './logKeys'
 
@@ -20,6 +22,8 @@ export function LogsScreen() {
     actions={sources.length > 1 && <div className="segmented" role="group" aria-label="Log">
       {sources.map(({ id, label }) => <button key={id} aria-pressed={id === source.id} onClick={() => setSourceId(id)}>{label}</button>)}
     </div>}>
+    {/* Open folder and Copy say here when they fail. */}
+    <FlowError />
     <Terminal key={source.id} source={source} />
   </Screen>
 }
@@ -49,7 +53,7 @@ function useLogTail(source: LogSource) {
 }
 
 function Terminal({ source }: { source: LogSource }) {
-  const [, core] = useCore()
+  const [{ dataFolder }, core] = useCore()
   const lines = useLogTail(source)
   const view = useRef<HTMLDivElement>(null)
   const [following, setFollowing] = useState(true)
@@ -66,9 +70,13 @@ function Terminal({ source }: { source: LogSource }) {
   return <section className="terminal" aria-label={`${source.label} log`}>
     <header className="terminal-bar">
       <span className="terminal-file">{lines?.length ? <span className="live-dot" aria-hidden /> : <span className="terminal-idle" aria-hidden />}{source.file}</span>
-      <button className="btn is-ghost terminal-copy" disabled={!lines?.length} onClick={() => void core.copyLog(source).then(setCopied)}>
-        {copied ? <Check size={13} strokeWidth={2} /> : <ClipboardCopy size={13} strokeWidth={1.75} />}{copied ? 'Copied' : 'Copy'}
-      </button>
+      <div className="terminal-actions">
+        {/* The data folder that holds lucent.log; a deployment's record lives there too, so it exists whenever Logs shows. */}
+        {lucent && dataFolder && <OpenFolder path={dataFolder} labelled className="terminal-copy" />}
+        <button className="btn is-ghost terminal-copy" disabled={!lines?.length} onClick={() => void core.copyLog(source).then(setCopied)}>
+          {copied ? <Check size={13} strokeWidth={2} /> : <ClipboardCopy size={13} strokeWidth={1.75} />}{copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
     </header>
     {lines === undefined ? <div className="terminal-view" />
       : !lines?.length ? <p className="terminal-empty">{lucent ? 'Nothing logged yet.'

@@ -4,12 +4,14 @@ import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { createCore, type Core } from '../core/core'
-import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { createFakePlatform, DEFAULT_ENV, type FakePlatform } from '../platform/fake'
+import { existingSetup, fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { CoreContext } from './useCore'
 import { Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
 import { SettingsScreen } from './MainScreens'
 import { VersionsScreen } from './VersionsScreen'
+import { LogsScreen } from './LogsScreen'
+import { UninstallWindow } from './UninstallWindow'
 import { Rail } from './Rail'
 import { SectionContext, type Section } from './Window'
 import { whyGameActionsWait } from './gameWaiting'
@@ -184,6 +186,57 @@ it('the drift card offers its files behind a collapsed Show files, so the card s
   expect(text).not.toContain('winmm.dll')
   expect(text).not.toContain('ReShade64.dll')
   expect(text).not.toContain('Windows Security')
+})
+
+describe('Open folder sits beside the folders that exist now, and only those', () => {
+  const markupOf = (element: ReactElement, core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, element))
+  const OPEN = '<button type="button" class="btn is-ghost open-folder" aria-label="Open folder" title="Open in File Explorer">'
+  const openButtons = (markup: string) => markup.match(/aria-label="Open folder"/g)?.length ?? 0
+
+  it('in Settings, right after the game folder’s last name, in the wrapper that keeps them on one line', async () => {
+    const { platform } = await deployedOnRtx()
+    const markup = markupOf(createElement(SettingsScreen), await reopen(platform))
+    expect(openButtons(markup)).toBe(1)
+    expect(markup).toMatch(new RegExp(`<div class="card settings-folder"><div><span class="folder-path"><span class="mono path [^"]*">C:.*\\\\<wbr/>XIV</span>${OPEN}`))
+  })
+
+  it('on Logs, beside Copy, for Lucent’s own log', async () => {
+    const { platform } = await deployedOnRtx()
+    const markup = markupOf(createElement(LogsScreen), await reopen(platform))
+    expect(openButtons(markup)).toBe(1)
+    expect(markup).toMatch(/<div class="terminal-actions"><button type="button" class="btn is-ghost open-folder terminal-copy" aria-label="Open folder" title="Open in File Explorer">.*Open folder<\/button><button class="btn is-ghost terminal-copy"/)
+  })
+
+  it('in the uninstall window, after the folder of copies it names', async () => {
+    const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT), existingSetup(ROOT, 'reshade'))
+    const platform = createFakePlatform(m)
+    const deployed = createCore(platform)
+    await deployed.scan()
+    await deployed.review()
+    await deployed.deploy()
+    deployed.finish()
+    // A vanilla uninstall leaves the originals out and keeps their copies.
+    await deployed.uninstall(false)
+    m.exePath = `${DEFAULT_ENV.LocalAppData}\\Lucent\\Lucent.exe`
+    m.headlessMode = 'uninstall'
+    const core = createCore(platform)
+    await core.openAppUninstall()
+    const markup = markupOf(createElement(UninstallWindow), core)
+    expect(openButtons(markup)).toBe(1)
+    expect(markup).toContain(`\\<wbr/>Backups</span>${OPEN}`)
+    expect(markup).toContain('<span class="folder-path"><span class="mono path ">C:')
+    expect(visibleText(createElement(UninstallWindow), core)).toContain(`in ${DEFAULT_ENV.LocalAppData}\\Lucent\\Backups . Move them elsewhere first to keep them.`)
+  })
+
+  it('not beside a folder that doesn’t exist yet, such as the one Reset backs up to', async () => {
+    const { platform } = await deployedOnRtx()
+    const core = await reopen(platform)
+    await core.resetSetup()
+    await core.review()
+    const markup = markupOf(createElement(ReviewScreen), core)
+    expect(markup).toContain('Your current config files will be backed up first at')
+    expect(openButtons(markup)).toBe(0)
+  })
 })
 
 it('Versions lists every changelog line of a version, not only the first', async () => {
