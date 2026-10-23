@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { announcedAppUpdate, APP_RELEASES_URL, parseAppReleases } from './appUpdate'
+import { announcedAppUpdate, APP_RELEASES_URL, compareAppVersions, parseAppReleases } from './appUpdate'
 import { createCore } from './core'
 import { statusCard } from './statusCard'
 import { createFakePlatform, FAKE_EXE_PATH } from '../platform/fake'
@@ -312,4 +312,14 @@ it('still updates from a window that was merely opened as administrator by the p
   await core.scan()
   await core.updateApp()
   expect(platform.downloads).toContain(downloadUrl('0.2.0'))
+})
+
+describe('comparing app versions', () => {
+  it('ranks beta numbers as numbers, so beta.10 follows beta.9', () => {
+    expect(compareAppVersions('0.3.0-beta.10', '0.3.0-beta.9')).toBeGreaterThan(0)
+    expect(compareAppVersions('0.3.0-beta.9', '0.3.0-beta.10')).toBeLessThan(0)
+    expect(compareAppVersions('0.3.0-beta.10', '0.3.0-beta.10')).toBe(0)
+    expect(compareAppVersions('0.3.0', '0.3.0-beta.10')).toBeGreaterThan(0)
+    expect(compareAppVersions('0.3.0-beta.10', '0.2.9')).toBeGreaterThan(0)
+  })
 })
