@@ -496,6 +496,9 @@ const STATES: GalleryState[] = [
   { key: 'review-existing-setup', label: 'Review · existing setup replaced', setup: workflow('review', MACHINES.existing) },
   { key: 'review-user-file', label: 'Review · user file protected', setup: workflow('review', machine(MACHINES.xivlauncher, { files: { 'C:\\Games\\FFXIV\\game\\winmm.dll': 'User mod' } })) },
   { key: 'review-failed', label: 'Review · download failed', setup: failedDeployment },
+  // Lucent's data folder is on C: and this Steam library on D:; Install stays available either way.
+  { key: 'review-low-disk', label: 'Review · low disk space on C:', setup: workflow('review', machine(MACHINES.steam, { freeSpace: { 'C:': 40 * 1024 ** 2 } })) },
+  { key: 'review-low-disk-both', label: 'Review · low disk space on C: and D:', setup: workflow('review', machine(MACHINES.steam, { freeSpace: { 'C:': 40 * 1024 ** 2, 'D:': 12 * 1024 ** 2 } })) },
   { key: 'scan-recovered', label: 'Scan · unfinished deployment recovered', setup: recoveredDeployment() },
   { key: 'scan-recovery-blocked', label: 'Scan · recovery needs attention', setup: recoveredDeployment(true) },
   ...(['downloading', 'backing-up', 'applying', 'checking'] as const).map((phase) => ({ key: `install-${phase}`, label: `Install · ${phase}`, setup: installStage(phase) })),

@@ -130,6 +130,11 @@ export interface Platform {
    */
   extractZip(zip: string, to: string): Promise<void>
   hashFile(path: string): Promise<string>
+  /**
+   * The bytes this user can still write on the drive that holds `path`, read from the nearest folder above it that exists.
+   * Null when it can't be read (a network share, a drive that isn't there); it never fails.
+   */
+  freeSpace(path: string): Promise<number | null>
   /** Resolves a relative path, rejecting traversal and reparse points in every existing ancestor. */
   resolveGamePath(root: string, relative: string): Promise<string>
   // Batches: one call for many files, run in parallel by the real port. A deployment touches a thousand files, and a

@@ -2,6 +2,7 @@ import { Fragment, useState, type ReactNode } from 'react'
 import { ArrowDownToLine, BookOpen, Check, ChevronDown, CircleCheck, Cpu, Download, ExternalLink, FolderX, LoaderCircle, ScanSearch, Search, Snowflake, TriangleAlert, Wrench } from 'lucide-react'
 import { GUIDE_URL, type KeyBinding } from '../core/hotkeys'
 import type { DeploymentPhase } from '../core/deployment'
+import { spaceLabels, type SpaceShortfall } from '../core/diskSpace'
 import { statusCard, type StatusCard as Card, type UpdateCardState } from '../core/statusCard'
 import { Screen } from './Window'
 import { useCore } from './useCore'
@@ -34,7 +35,7 @@ const hdrNote = (mode: HdrMode, hdrSupported: boolean) => mode !== 'off' ? <smal
 /** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
   const [state, core] = useCore()
-  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen, setupMode, resetBackupPath } = state
+  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen, setupMode, resetBackupPath, spaceWarning } = state
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   const profile = profiles.find((p) => p.id === plan.profile)
@@ -56,6 +57,7 @@ export function ReviewScreen() {
       <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
     </dl>
+    {spaceWarning && <SpaceWarning shortfalls={spaceWarning} />}
     <StatusCard />
     <FlowError />
     <footer className="screen-actions is-pinned">
@@ -63,6 +65,14 @@ export function ReviewScreen() {
       {!error && <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.deploy()}><Download size={14} />{setupMode === 'install' ? 'Install' : 'Apply setup'}</button>}
     </footer>
   </Screen>
+}
+
+/** A drive looks too full for the plan: a line for each, then what happens if it does fill. It never holds Install up. */
+function SpaceWarning({ shortfalls }: { shortfalls: SpaceShortfall[] }) {
+  return <p className="callout space-warning" role="status"><TriangleAlert size={14} strokeWidth={1.75} /><span>
+    {shortfalls.map((short) => <Fragment key={short.drive}>This needs about {spaceLabels(short).needed} free on {short.drive} and there is {spaceLabels(short).free}.<br /></Fragment>)}
+    If the disk fills up, Lucent stops and puts everything back.
+  </span></p>
 }
 
 const PHASES: { key: DeploymentPhase; label: string }[] = [

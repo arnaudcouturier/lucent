@@ -14,7 +14,7 @@ export const SQUARE_ENIX_UNINSTALL_KEY =
 
 /** Merges machine parts; later parts win on conflicts. */
 export function machine(...parts: Machine[]): Machine {
-  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], monitors: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], readOnlyFiles: [], elevated: false, elevationCancelled: false, elevationResumePath: null, userSid: 'S-1-5-21-100-200-300-1001', processes: [], headlessMode: null, operationLocks: new Set<string>() }
+  const out: Required<Machine> = { files: {}, directories: [], registry: {}, env: {}, gpus: [], monitors: [], remoteText: {}, devContent: null, gameRunning: false, exePath: FAKE_EXE_PATH, windowsVersion: 'Windows 11 24H2 (build 26100.2033)', readOnlyDirectories: [], readOnlyFiles: [], elevated: false, elevationCancelled: false, elevationResumePath: null, userSid: 'S-1-5-21-100-200-300-1001', processes: [], headlessMode: null, operationLocks: new Set<string>(), freeSpace: {} }
   for (const p of parts) {
     Object.assign(out.files, p.files)
     out.directories.push(...(p.directories ?? []))
@@ -36,6 +36,7 @@ export function machine(...parts: Machine[]): Machine {
     if (p.processes) out.processes = p.processes
     if (p.headlessMode !== undefined) out.headlessMode = p.headlessMode
     if (p.operationLocks !== undefined) out.operationLocks = p.operationLocks
+    Object.assign(out.freeSpace, p.freeSpace)
   }
   return out
 }

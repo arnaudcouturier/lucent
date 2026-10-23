@@ -31,6 +31,8 @@ export interface Machine {
   /** The running Lucent exe on this machine; an app update renames and replaces this file. */
   exePath?: string
   windowsVersion?: string
+  /** Free bytes by upper-case drive (`C:`); null where it can't be read. A drive not listed has plenty (`FAKE_FREE_SPACE`). */
+  freeSpace?: Record<string, number | null>
   /** Share this set between simulated processes to model leases for the same player's data folder. */
   operationLocks?: Set<string>
   /** How Settings → Apps started this exe; null or absent for the main window. */
@@ -57,6 +59,8 @@ function parseFakeZip(text: string, path: string): Record<string, string> {
 }
 
 export const FAKE_EXE_PATH = 'C:\\Users\\Player\\Downloads\\Lucent.exe'
+/** A drive the machine doesn't list has a terabyte free, so no test meets a space warning it didn't ask for. */
+export const FAKE_FREE_SPACE = 1024 ** 4
 const uninstallKey = (id: string) => norm(`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${id}`)
 
 export interface FakePlatform extends Platform {
@@ -258,6 +262,13 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       }
       addParents(`${to}\\x`)
       for (const [name, text] of Object.entries(archive)) { const path = `${to}\\${name.replace(/\//g, '\\')}`; addParents(path); files.set(norm(path), text); touch(norm(path)) }
+    },
+    async freeSpace(path) {
+      await gate
+      // The real port reads only a local drive, from whatever folder on the path exists.
+      if (!/^[a-z]:[\\/]/i.test(path)) return null
+      const free = machine.freeSpace?.[path.slice(0, 2).toUpperCase()]
+      return free === undefined ? FAKE_FREE_SPACE : free
     },
     async hashFile(path) {
       const bytes = new TextEncoder().encode(await this.readText(path))

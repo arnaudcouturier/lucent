@@ -31,6 +31,7 @@ import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
 import { STAGING_FOLDER, SeedInterruptedError, closedGuard, scanStarterSet, seedPlugins, type StarterSetState } from './starterSet'
+import { spaceLabels, spaceShortfalls, type SpaceShortfall } from './diskSpace'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -161,6 +162,8 @@ export interface State {
   starterSet: StarterSetState
   /** Lucent's data folder, which holds `lucent.log` and the readable backups; null until Scan or the uninstall window has opened the log. */
   dataFolder: string | null
+  /** The drives Review warns are too full for its plan; null when every one has room. A warning only: Install still runs. */
+  spaceWarning: SpaceShortfall[] | null
 }
 
 export interface Core {
@@ -338,7 +341,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -906,6 +909,14 @@ export function createCore(platform: Platform): Core {
       return { path, withRestore: folders.size > 0 }
     } catch { return { path, withRestore: true } }
   }
+  /** Review's free-space warning for a plan; a reading that fails warns of nothing, since the warning never holds Install up. */
+  const shortOfSpace = async (plan: Plan, gameFolder: string, firstDeployment: boolean) => {
+    try {
+      const short = await spaceShortfalls(platform, plan, { data: await lucentFolder(platform), game: gameFolder }, firstDeployment)
+      if (short.length) log.write('warning', `Low disk space: ${short.map((drive) => `${drive.drive} needs about ${spaceLabels(drive).needed}, ${spaceLabels(drive).free} free`).join('; ')}`)
+      return short.length ? short : null
+    } catch { return null }
+  }
   /**
    * Whether Open folder may show this folder: Lucent's data folder or one inside it, or exactly a game folder Lucent selected
    * or deployed to. The Rust command is the boundary; this keeps the window from asking it for anything else.
@@ -1425,7 +1436,7 @@ export function createCore(platform: Platform): Core {
     },
     async review(includeReShade = state.includeReShade) {
       if (state.busy || state.recoveryRequired || (state.deployment && state.setupMode === 'install')) return
-      set({ busy: true, error: null })
+      set({ busy: true, error: null, spaceWarning: null })
       try {
         const existing = state.setupMode !== 'install' ? state.deployment : null
         const pending = existing ? pendingSetup : null
@@ -1444,7 +1455,7 @@ export function createCore(platform: Platform): Core {
             neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen,
           })
           reviewedPaths = plan.filesToBackup
-          set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
+          set({ plan, includeReShade: plan.includeReShade, spaceWarning: await shortOfSpace(plan, state.gameFolder.path, false), activity: { kind: 'review' } })
         } else {
           if (!scanned || scanned.gameFolder !== state.gameFolder.path) throw new UnreviewedFilesError([])
           const selection = planSelection(content, tier)
@@ -1454,7 +1465,7 @@ export function createCore(platform: Platform): Core {
           const plan = planDeployment(content, tier, includeReShade, scan, state.selectedProfile, true, selection)
           assertReviewedTakeovers(plan, acknowledged)
           reviewedPaths = [...plan.filesToBackup]
-          set({ plan, includeReShade: plan.includeReShade, activity: { kind: 'review' } })
+          set({ plan, includeReShade: plan.includeReShade, spaceWarning: await shortOfSpace(plan, state.gameFolder.path, true), activity: { kind: 'review' } })
         }
       } catch (error) {
         if (error instanceof UnreviewedFilesError) requireNewScan()

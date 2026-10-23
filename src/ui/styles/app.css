@@ -588,6 +588,8 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 
 /* ---------- Review: what was chosen, read only ---------- */
 .summary-list { margin: 0 0 var(--space-4); padding: 0; }
+/* Review's free-space caution sits with the summary it qualifies, spaced like the cards around it. */
+.callout.space-warning { margin: 0 0 var(--space-4); }
 .summary-list > div { display: grid; grid-template-columns: 108px 1fr; gap: var(--space-3); padding: var(--row-padding); }
 .summary-list > div + div { box-shadow: inset 0 1px 0 var(--line); }
 .summary-list dt { color: var(--ink-2); }

@@ -239,6 +239,49 @@ describe('Open folder sits beside the folders that exist now, and only those', (
   })
 })
 
+describe('Review warns when a drive looks too full, and installs anyway', () => {
+  const MB = 1024 ** 2
+  const GB = 1024 ** 3
+  const reviewOn = async (game: string, freeSpace: Record<string, number | null>) => {
+    const core = createCore(createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(game), xivLauncher(game), { freeSpace })))
+    await core.scan()
+    await core.review()
+    return core
+  }
+  /** The same core, showing a warning a real plan of this size would give. */
+  const showing = (core: Core, spaceWarning: NonNullable<ReturnType<Core['getState']>['spaceWarning']>): Core => {
+    const state = { ...core.getState(), spaceWarning }
+    return { ...core, getState: () => state }
+  }
+
+  it('says how much the drive needs and has, under the summary, with Install still there', async () => {
+    const core = await reviewOn(ROOT, { 'C:': 10 * MB })
+    const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ReviewScreen)))
+    expect(markup).toMatch(/<\/dl><p class="callout space-warning" role="status"><svg[^>]*lucide-triangle-alert/)
+    const text = visibleText(createElement(ReviewScreen), core)
+    // 64 MB of margin and a few bytes of fixture content, rounded up.
+    expect(text).toContain('This needs about 64.1 MB free on C: and there is 10.0 MB. If the disk fills up, Lucent stops and puts everything back.')
+    expect(text).toContain('Install')
+    expect(visibleText(createElement(ReviewScreen), showing(core, [{ drive: 'C:', needed: Math.round(1.35 * GB), free: Math.round(1.15 * GB) }])))
+      .toContain('This needs about 1.4 GB free on C: and there is 1.1 GB.')
+    // Figures that would round alike: the need rounds up and the free space down.
+    expect(visibleText(createElement(ReviewScreen), showing(core, [{ drive: 'C:', needed: Math.round(1.41 * GB), free: Math.round(1.39 * GB) }])))
+      .toContain('This needs about 1.5 GB free on C: and there is 1.3 GB.')
+  })
+
+  it('gives each short drive its own line', async () => {
+    const core = await reviewOn('D:\\Games\\XIV', { 'C:': 2 * MB, 'D:': 3 * MB })
+    const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ReviewScreen)))
+    expect(markup).toContain('This needs about 64.1 MB free on C: and there is 2.0 MB.<br/>This needs about 64.1 MB free on D: and there is 3.0 MB.<br/>If the disk fills up')
+  })
+
+  it('shows nothing when every drive has room', async () => {
+    const core = await reviewOn(ROOT, {})
+    expect(visibleText(createElement(ReviewScreen), core)).not.toContain('This needs about')
+    expect(renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ReviewScreen)))).not.toContain('space-warning')
+  })
+})
+
 it('Versions lists every changelog line of a version, not only the first', async () => {
   const { platform, m } = await deployedOnRtx()
   Object.assign(m.remoteText!, nextContentHost().remoteText)

@@ -307,6 +307,46 @@ pub fn validate_open_folder(path: &str) -> Result<PathBuf> {
     Ok(folder.to_path_buf())
 }
 
+/// The bytes the current user can still write on the drive that holds `path`, after any disk quota
+/// (`GetDiskFreeSpaceExW`'s space available to the caller). The folders a deployment writes may not exist yet, so the
+/// nearest folder above `path` that does is asked. Only a path on a local drive (`X:\…`) is read.
+pub fn free_space(path: &Path) -> Result<u64> {
+    use std::path::{Component, Prefix};
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let mut components = path.components();
+    let local = matches!(components.next(), Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_)))
+        && components.next() == Some(Component::RootDir);
+    if !local {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            "Free space is read only for a folder on a local drive.",
+            Some(path),
+        ));
+    }
+    let folder = path
+        .ancestors()
+        .find(|ancestor| fs::metadata(ancestor).is_ok_and(|meta| meta.is_dir()))
+        .ok_or_else(|| {
+            PlatformError::new(
+                ErrorKind::NotFound,
+                "No folder on this path exists.",
+                Some(path),
+            )
+        })?;
+    let mut available = 0u64;
+    // SAFETY: the HSTRING outlives the call, which writes only the one u64 it is given.
+    unsafe {
+        GetDiskFreeSpaceExW(
+            &windows::core::HSTRING::from(folder.as_os_str()),
+            Some(&mut available),
+            None,
+            None,
+        )
+    }
+    .map_err(|e| PlatformError::new(ErrorKind::Unknown, e.to_string(), Some(folder)))?;
+    Ok(available)
+}
+
 /// Runs `work` over the items on up to eight threads and returns the results in item order. After a failure no new
 /// item starts; the first failure in item order is returned once the running items finish.
 fn in_parallel<T: Sync, R: Send>(
@@ -1892,6 +1932,53 @@ mod tests {
             "{path:?}: {}",
             error.message
         );
+    }
+
+    #[test]
+    fn free_space_reads_the_drive_from_the_nearest_folder_that_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let free = free_space(dir.path()).unwrap();
+        assert!(free > 0, "a temp folder's drive has room");
+        // A deployment's folders may not exist yet: the space is read from the folder above them that does.
+        let missing = dir.path().join("Lucent").join("deployments").join("cache");
+        let walked = free_space(&missing).unwrap();
+        assert!(walked > 0);
+        // Other programs write meanwhile, so the two readings only have to be close.
+        assert!(
+            free.abs_diff(walked) < 1024 * 1024 * 1024,
+            "{free} and {walked}"
+        );
+        assert!(!missing.exists(), "reading the space creates nothing");
+        let file = dir.path().join("lucent.log");
+        fs::write(&file, "log").unwrap();
+        assert!(free_space(&file.join("child")).unwrap() > 0);
+    }
+
+    #[test]
+    fn free_space_refuses_a_path_that_is_not_on_a_local_drive() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = text(dir.path());
+        for path in [
+            String::new(),
+            r"\\server\share\Lucent".to_owned(),
+            format!(r"\\?\{local}"),
+            r"Games\XIV".to_owned(),
+            local[2..].to_owned(),
+            format!("{}{}", &local[..2], &local[3..]),
+        ] {
+            assert!(
+                free_space(Path::new(&path)).is_err(),
+                "{path:?} must be refused"
+            );
+        }
+        // A drive letter with nothing behind it has no folder to read the space from.
+        let unused = ('D'..='Z')
+            .rev()
+            .find(|letter| !Path::new(&format!(r"{letter}:\")).exists());
+        if let Some(letter) = unused {
+            let error = free_space(Path::new(&format!(r"{letter}:\Games\XIV"))).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::NotFound, "{}", error.message);
+        }
     }
 
     #[test]

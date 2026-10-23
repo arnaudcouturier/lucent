@@ -211,6 +211,10 @@ async fn platform_extract_zip(zip: PathBuf, to: PathBuf) -> Result<(), PlatformE
 async fn platform_hash_file(path: PathBuf) -> Result<String, PlatformError> {
     files::hash_file(&path)
 }
+#[tauri::command]
+async fn platform_free_space(path: PathBuf) -> Result<u64, PlatformError> {
+    files::free_space(&path)
+}
 /// Batch primitives run on a blocking thread: a thousand-file copy must not tie up the async runtime.
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, PlatformError> + Send + 'static,
@@ -426,6 +430,7 @@ pub fn run() {
             platform_list_folders,
             platform_extract_zip,
             platform_hash_file,
+            platform_free_space,
             platform_resolve_game_path,
             platform_resolve_game_paths,
             platform_stat_many,

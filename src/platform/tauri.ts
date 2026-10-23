@@ -50,6 +50,7 @@ export function createTauriPlatform(): Platform {
     listFolders: (root) => call('platform_list_folders', { root }),
     extractZip: (zip, to) => call('platform_extract_zip', { zip, to }),
     hashFile: (path) => call('platform_hash_file', { path }),
+    freeSpace: (path) => call<number>('platform_free_space', { path }).catch(() => null),
     resolveGamePath: (root, relative) => call('platform_resolve_game_path', { root, relative }),
     resolveGamePaths: (root, relatives) => relatives.length ? call('platform_resolve_game_paths', { root, relatives }) : Promise.resolve([]),
     statMany: (paths) => paths.length ? call('platform_stat_many', { paths }) : Promise.resolve([]),
