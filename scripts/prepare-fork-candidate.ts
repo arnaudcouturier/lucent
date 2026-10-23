@@ -11,7 +11,7 @@ import { createReadStream, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import type { Component, FrameGenerationOption, Step } from '../src/shared/manifest'
+import type { Component, FrameGenerationOption, SettingChoice, Step } from '../src/shared/manifest'
 import { runCommand } from './command'
 import { prepareOutputFolder } from './candidate-output'
 import { mergeIni, type IniKey, type IniOverride } from './candidate-ini'
@@ -39,6 +39,11 @@ interface ForkRecipe {
   reshadeSettings?: { section: string; key: string; value: string }[]
   /** Optional folders the mods fill while the game runs, which Uninstall removes with everything in them (relative to the game folder). */
   generatedFolders?: string[]
+  /**
+   * Optional first-install choices for both tiers (the DLSS-G preset, the UI mode). Their keys are left out of `chosenAtInstall` on purpose:
+   * the base ini keeps the maintainer's values, so an app that predates the field installs what the content shipped before.
+   */
+  settingChoices?: SettingChoice[]
   iniOverrides: IniOverride[]
 }
 type PublishTier = PublishInput['tiers'][string]
@@ -210,6 +215,7 @@ async function main() {
   const tier = (id: string, nrComponent: { component: string }, base: PublishTier): PublishTier => ({
     ...base,
     generatedFiles: [...(base.generatedFiles ?? []), ...(recipe.generatedFolders ?? []).map((path) => ({ path }))],
+    ...(recipe.settingChoices ? { settingChoices: recipe.settingChoices } : {}),
     sources: [
       { folder: forkRoot, component: recipe.fork.component },
       ...retained,

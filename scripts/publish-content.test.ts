@@ -192,6 +192,13 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
       { id: 'hdr', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'HdrMode', value: 'hdr' }] },
       { id: 'scene-hdr', experimental: true, settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'HdrMode', value: 'scene-hdr' }] },
     ]
+    tier.settingChoices = [{
+      id: 'choice-mode', label: 'Choice mode', defaultOption: 'quiet',
+      options: [
+        { id: 'quiet', label: 'Quiet', description: 'The quiet option.', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'ChoiceMode', value: 'quiet' }] },
+        { id: 'loud', label: 'Loud', description: 'The loud option.', settings: [{ file: 'ReShade.ini', section: 'GENERAL', key: 'ChoiceMode', value: 'loud' }] },
+      ],
+    }]
   })
   const result = await publishContent(input, { manifestPath, host: remote.host })
   expect(remote.releases).toMatchObject([{ tag: 'content-2026.10.12', draft: false }])
@@ -203,6 +210,7 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
     frameGenerationOptions: [{ id: 'off' }, { id: '2x', experimental: true, hdrSettings: [{ key: 'FrameHDRMode' }] }],
     screenDerivedSettings: [{ key: 'FrameCap', value: 'frameCap' }, { key: 'PeakNits', value: 'peakNits' }],
     hdrOptions: [{ id: 'off' }, { id: 'hdr' }, { id: 'scene-hdr', experimental: true }],
+    settingChoices: [{ id: 'choice-mode', defaultOption: 'quiet', options: [{ id: 'quiet' }, { id: 'loud' }] }],
   })
   const root = 'C:\\Games\\XIV'
   const platform = createFakePlatform(machine(vanillaGame(root), xivLauncher(root), graphicsCard('Intel Arc A770', 0x8086), { remoteText: { [MANIFEST_URL]: result.manifestText, ...remote.assets } }))
@@ -216,7 +224,10 @@ it('publishes the fixture and deploys it through the core to a healthy game fold
     frameGenerationOptions: [{ id: 'off' }, { id: '2x', hdrSettings: [{ key: 'FrameHDRMode' }] }],
     screenDerivedSettings: [{ key: 'FrameCap', value: 'frameCap' }, { key: 'PeakNits', value: 'peakNits' }],
     hdrOptions: [{ id: 'off' }, { id: 'hdr' }, { id: 'scene-hdr', experimental: true }],
+    settingChoices: [{ id: 'choice-mode' }],
   })
+  expect(core.getState().deployment?.settingChoices).toEqual({ 'choice-mode': 'quiet' })
+  expect(await platform.readText(`${root}\\game\\ReShade.ini`)).toContain('ChoiceMode=quiet')
   expect(await platform.readText(`${root}\\game\\ReShade.ini`)).toContain('ProfileValue=balanced-4k')
   expect(await platform.readText(`${root}\\game\\ReShade.ini`)).toContain('FrameMode=off')
   expect(await platform.readText(`${root}\\game\\dxgi.dll`)).toBe('Inert ReShade fixture\n')

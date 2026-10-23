@@ -140,7 +140,7 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         generatedFiles: tier.generatedFiles, overlay: tier.overlay, performanceProfiles: tier.performanceProfiles,
         performanceProfilesV2: tier.performanceProfilesV2, frameGenerationOptions: tier.frameGenerationOptions,
         screenDerivedSettings: tier.screenDerivedSettings, hdrOptions: tier.hdrOptions,
-        neuralRenderingControls: tier.neuralRenderingControls, mfgUnlock: tier.mfgUnlock,
+        neuralRenderingControls: tier.neuralRenderingControls, mfgUnlock: tier.mfgUnlock, settingChoices: tier.settingChoices,
       }
     }
     // Only what a recipe copies is published; a source file no tier deploys is never uploaded.
