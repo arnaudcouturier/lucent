@@ -8,11 +8,12 @@
 //     --nr-folder C:\Users\arnaudc\Desktop\nvngx_dlssnr --tuned-ini <the maintainer's saved OptiScaler.ini> --output C:\LucentContent\candidate-2026.10.19
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { access, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import type { Component, FrameGenerationOption, Step } from '../src/shared/manifest'
 import { runCommand } from './command'
+import { prepareOutputFolder } from './candidate-output'
 import { mergeIni, type IniKey, type IniOverride } from './candidate-ini'
 import { applyReshadeStyle, type EmberPalette } from './ember-style'
 import { publishContent, type PublishInput } from './publish-content'
@@ -91,7 +92,6 @@ async function main() {
       if (!values[name]) throw new Error(`Missing --${name}.`)
       return resolve(values[name]!)
     })
-  if (!isAbsolute(outputRoot)) throw new Error('The output folder must be an absolute path.')
   const recipe = JSON.parse(await readFile(recipePath, 'utf8')) as ForkRecipe
   const input = JSON.parse((await readFile(basePath, 'utf8')).replace(/^\uFEFF/, '')) as PublishInput
   if (input.id !== recipe.basedOnContent) throw new Error(`Expected the input for ${recipe.basedOnContent}; found ${input.id}.`)
@@ -102,8 +102,14 @@ async function main() {
   await verified(streamlineZip, recipe.streamline.zipSha256, streamlineZip)
   for (const [tier, nr] of Object.entries(recipe.neuralRendering)) await verified(join(nrFolder, nr.file), nr.sha256, `${tier} Neural Rendering runtime`)
 
+  // Everything the build reads from here on, which emptying the output folder must never take with it.
+  const baseSources = baseTier.sources.flatMap((s) => [s.folder, s.archive].filter((path): path is string => !!path))
+  await prepareOutputFolder(outputRoot, [
+    basePath, recipePath, forkZip, streamlineZip, nrFolder, tunedIniPath, manifestPath,
+    ...baseSources.flatMap((path) => [resolve(dirname(basePath), path), resolve(path)]),
+    ...(recipe.reshadeStyle ? [resolve(dirname(recipePath), recipe.reshadeStyle.palette)] : []),
+  ])
   const sources = join(outputRoot, 'sources')
-  await rm(outputRoot, { recursive: true, force: true })
   await mkdir(sources, { recursive: true })
 
   // The fork's package: every file must match the package's own SHA256SUMS.txt, and the two it names in the release notes.
@@ -227,7 +233,8 @@ async function main() {
 
   const publishInputPath = join(outputRoot, 'publish.json')
   await writeFile(publishInputPath, `${JSON.stringify(input, null, 2)}\n`, 'utf8')
-  const { manifestText } = await publishContent(publishInputPath, { manifestPath, dryRun: true, dryRunFilesDirectory: join(outputRoot, 'files') })
+  const { manifestText, warnings } = await publishContent(publishInputPath, { manifestPath, dryRun: true, dryRunFilesDirectory: join(outputRoot, 'files') })
+  for (const warning of warnings) console.warn(`Warning: ${warning}`)
   await writeFile(join(outputRoot, 'manifest.json'), manifestText, 'utf8')
   await writeFile(join(outputRoot, 'provenance.json'), `${JSON.stringify({
     candidate: recipe.id,

@@ -4,7 +4,7 @@ import { access, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm,
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { assertGamePath, parseManifest, RESOLUTION_COLUMNS, validateManifest, type Component, type ContentFile, type ContentVersion, type IniSetting, type Manifest, type Step, type TierRecipe } from '../src/shared/manifest'
+import { assertGamePath, assertStableNeedsStableApp, parseManifest, RESOLUTION_COLUMNS, validateManifest, type Component, type ContentFile, type ContentVersion, type IniSetting, type Manifest, type Step, type TierRecipe } from '../src/shared/manifest'
 import { fileKey, planDeployment } from '../src/core/planner'
 import { runCommand } from './command'
 import { activeEffects, unusedShaderFiles } from './shader-usage'
@@ -39,8 +39,21 @@ export interface PublishResult {
   release: string
   uploads: ContentFile[]
   manifestText: string
+  /** Things worth a second look that do not stop the publication. */
+  warnings: string[]
 }
-export interface PublishOptions { manifestPath: string; dryRun?: boolean; dryRunFilesDirectory?: string; host?: PublishHost; sevenZip?: string }
+export interface PublishOptions {
+  manifestPath: string; dryRun?: boolean; dryRunFilesDirectory?: string; host?: PublishHost; sevenZip?: string
+  /** The clock a content id is checked against; tests set it. */
+  now?: Date
+}
+
+/**
+ * How far after today (UTC) a content id may be dated. One date holds one content version, so a second publication on the
+ * same day takes the next date, and ids run a few days ahead on purpose. A mistyped month or year is further out than this,
+ * and would sit above every later id, so Lucent would never announce the versions dated correctly after it.
+ */
+const MAX_DAYS_AHEAD = 7
 
 /** Local validation and an offline preview use exactly the manifest consumed by the app. */
 export async function publishContent(inputPath: string, options: PublishOptions): Promise<PublishResult> {
@@ -53,15 +66,29 @@ export async function publishContent(inputPath: string, options: PublishOptions)
     const input: PublishInput = JSON.parse((await readFile(inputPath, 'utf8')).replace(/^\uFEFF/, ''))
     if (options.dryRunFilesDirectory && !options.dryRun) throw new Error('Local dry-run files can only be materialized in dry-run mode.')
     if (!/^\d{4}\.\d{2}\.\d{2}$/.test(input.id) || new Date(`${input.id.replace(/\./g, '-')}T00:00:00Z`).toISOString().slice(0, 10) !== input.id.replace(/\./g, '-')) throw new Error('Content version must be a real date in YYYY.MM.DD form.')
+    const warnings: string[] = []
+    const today = (options.now ?? new Date()).toISOString().slice(0, 10)
+    if (input.id.replace(/\./g, '-') > new Date(Date.parse(`${today}T00:00:00Z`) + MAX_DAYS_AHEAD * 86_400_000).toISOString().slice(0, 10)) {
+      const problem = `Content version ${input.id} is more than ${MAX_DAYS_AHEAD} days after today (${today}).`
+      // A candidate is prepared with a dry run some days before its date; only a live publication refuses it.
+      if (!options.dryRun) throw new Error(`${problem} Check the date.`)
+      warnings.push(`${problem} A live publication refuses it until then.`)
+    }
+    assertStableNeedsStableApp(input.channel, String(input.minAppVersion))
     if (!Object.keys(input.tiers).length) throw new Error('Content needs at least one tested tier.')
     if (new Set(input.components.map((c) => c.name)).size !== input.components.length) throw new Error('Component names must be unique.')
     if (manifest.versions.some((v) => v.id === input.id)) throw new Error(`Content version ${input.id} already exists.`)
+    // Lucent announces a version only when its id is above the one the player has.
+    const newest = manifest.versions.reduce((latest, v) => v.id > latest ? v.id : latest, '')
+    if (input.id < newest) throw new Error(`Content version ${input.id} is not newer than ${newest}, so players on ${newest} would never be offered it.`)
     const release = `content-${input.id}`
     const knownUserShaders = new Set((input.knownUserShaders ?? []).map((path) => { assertGamePath(path); return shaderKey(path) }))
     const userShader = (path: string) => knownUserShaders.has(shaderKey(path)) || knownUserShaders.has(fileKey(path).split('/').at(-1)!)
     const staged = new Map<string, StagedFile>()
     const copyComponents = new Map<string, Map<number, Component>>()
     const shaders = new Map<string, string>()
+    // What each tier finally deploys, by lower-case file name: ReShade finds an include by name, not by full path.
+    const shaderNames = new Map<string, Map<string, { path: string; sha256: string }>>()
     const tiers: Record<string, TierRecipe> = Object.create(null)
     const published = new Map(manifest.versions.flatMap((v) => v.files.map((f) => [f.sha256, f] as const)))
     for (const [tierId, tier] of Object.entries(input.tiers)) {
@@ -155,6 +182,10 @@ export async function publishContent(inputPath: string, options: PublishOptions)
         }
         for (const file of plan.expectedFiles) {
           if (userShader(file.path)) throw new Error(`Recipe must not write user-supplied shader: ${file.path}`)
+          if (file.sha256 && /\.(fx|fxh)$/i.test(file.path)) {
+            const name = fileKey(file.path).split('/').at(-1)!
+            shaderNames.set(name, (shaderNames.get(name) ?? new Map()).set(fileKey(file.path), { path: file.path, sha256: file.sha256 }))
+          }
         }
         const available = new Set(knownUserShaders)
         for (const f of plan.expectedFiles.filter((f) => /\.fx$/i.test(f.path))) {
@@ -179,6 +210,12 @@ export async function publishContent(inputPath: string, options: PublishOptions)
           }
         }
       }
+    }
+    // A shader path held by different bytes stops the publication above. The same name in different folders is how a pack
+    // keeps its own copy of an include, which ReShade finds first from the including file's folder, so it only warns.
+    for (const [name, copies] of shaderNames) {
+      if (new Set([...copies.values()].map((c) => c.sha256)).size < 2) continue
+      warnings.push(`Different shader files share the name ${name}: ${[...copies.values()].map((c) => c.path).sort().join(', ')}. An include is found by name, so check that each effect reads the copy it expects.`)
     }
     // GitHub allows at most 1,000 assets per release, so a large content
     // version spans the main release plus numbered overflow releases. The
@@ -242,7 +279,7 @@ export async function publishContent(inputPath: string, options: PublishOptions)
       await replaceManifest(options.manifestPath, serialize(next))
     }
     const manifestText = serialize(next)
-    return { release, uploads, manifestText }
+    return { release, uploads, manifestText, warnings }
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }

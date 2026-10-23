@@ -64,6 +64,31 @@ describe('XIV screen resolution', () => {
     expect(resolveScreen([{ ...monitor('\\\\.\\DISPLAY1', 0, true, 60), refreshHz: 0 }], null)).toBeNull()
   })
 
+  it.each([0, 1, -1, Number.NaN])('treats a refresh rate of %d, Windows’ "hardware default", as unknown rather than a frame cap', (refreshHz) => {
+    expect(frameCapForRefresh(refreshHz)).toBeNull()
+    expect(resolveScreen([monitor('\\\\.\\DISPLAY1', 0, true, refreshHz)], null)).toBeNull()
+  })
+
+  it('derives the frame cap from an exact fractional refresh rate', () => {
+    expect(frameCapForRefresh(119.88)).toBe(115)
+    expect(frameCapForRefresh(59.94)).toBe(58)
+    expect(resolveScreen([monitor('\\\\.\\DISPLAY1', 0, true, 240.02)], null)).toMatchObject({ refreshHz: 240.02, frameCap: 224 })
+  })
+
+  it('places a window by its centre, so one snapped against a neighbour’s edge stays on its own monitor', () => {
+    const monitors = [monitor('\\\\.\\DISPLAY1', 0, true, 60), monitor('\\\\.\\DISPLAY2', 3840, false, 144)]
+    // Windows 10 and 11 frames have invisible borders: a window flush with DISPLAY2's left edge starts 7 px into DISPLAY1.
+    const windowed = (left: number, extra = '') => displayConfig(['MainAdapter', `ScreenLeft ${left}`, 'ScreenTop 0', 'ScreenMode 0', 'ScreenWidth 1280', 'ScreenHeight 720', extra].join('\n'))
+    expect(resolveScreen(monitors, windowed(3833))?.deviceName).toBe('\\\\.\\DISPLAY2')
+    expect(resolveScreen(monitors, windowed(3300))?.deviceName).toBe('\\\\.\\DISPLAY2')
+    expect(resolveScreen(monitors, windowed(2000))?.deviceName).toBe('\\\\.\\DISPLAY1')
+    // A centre off every monitor falls back to the window's corner.
+    expect(resolveScreen(monitors, windowed(7600))?.deviceName).toBe('\\\\.\\DISPLAY2')
+    // Outside windowed mode the saved size need not be the window's, so the corner decides as before.
+    const borderless = displayConfig(['MainAdapter', 'ScreenLeft 3833', 'ScreenTop 0', 'ScreenMode 2', 'ScreenWidth 1280', 'ScreenHeight 720'].join('\n'))
+    expect(resolveScreen(monitors, borderless)?.deviceName).toBe('\\\\.\\DISPLAY1')
+  })
+
   it.each([
     ['screen60Sdr', 60, 59, false, false, '\\\\.\\DISPLAY1'],
     ['screen144Hdr', 144, 138, true, true, '\\\\.\\DISPLAY1'],

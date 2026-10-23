@@ -5,7 +5,8 @@ import { MANIFEST_URL } from './manifest'
 import { statusCard } from './statusCard'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
-import { APP_RELEASE, appReleaseHost } from '../platform/appUpdateFixture'
+import { APP_BETA_EXE_URL, APP_BETA_RELEASE, APP_EXE_URL, APP_RELEASE, appBetaReleaseHost, appReleaseHost } from '../platform/appUpdateFixture'
+import { readSettings, writeSettings } from './settings'
 import { NEXT_CONTENT, PROFILE_MANIFEST } from '../platform/contentFixture'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -129,6 +130,54 @@ it('exposes the checking state while the sources are still loading', async () =>
   finishManifest(JSON.stringify(PROFILE_MANIFEST))
   await checking
   expect(core.getState().updateCheck.status).toBe('checked')
+})
+
+it('drops a Beta app release on a switch to Stable, even when GitHub can’t be reached', async () => {
+  const { core, m, platform } = await opened()
+  Object.assign(m.remoteText!, appBetaReleaseHost().remoteText)
+  await core.setChannel('beta')
+  expect(core.getState().appUpdate).toMatchObject({ version: '0.2.0-beta.2' })
+  delete m.remoteText![APP_RELEASES_URL]
+  await core.setChannel('stable')
+  expect(core.getState()).toMatchObject({ channel: 'stable', appUpdate: null })
+  await core.updateApp()
+  expect(platform.downloads).not.toContain(APP_BETA_EXE_URL)
+})
+
+it('announces again from the last releases GitHub returned when a later check fails', async () => {
+  const { core, m } = await opened()
+  const nextBeta = { ...APP_BETA_RELEASE, tag_name: 'app-v0.3.0-beta.1',
+    assets: APP_BETA_RELEASE.assets.map((asset) => ({ ...asset, browser_download_url: asset.browser_download_url.replace('app-v0.2.0-beta.2', 'app-v0.3.0-beta.1') })) }
+  m.remoteText![APP_RELEASES_URL] = JSON.stringify([nextBeta, APP_RELEASE])
+  await core.checkForUpdates()
+  expect(core.getState().appUpdate).toMatchObject({ version: '0.2.0' })
+  delete m.remoteText![APP_RELEASES_URL]
+  await core.setChannel('beta')
+  expect(core.getState()).toMatchObject({ channel: 'beta', appUpdate: { version: '0.3.0-beta.1' } })
+  await core.setChannel('stable')
+  expect(core.getState().appUpdate).toMatchObject({ version: '0.2.0' })
+})
+
+it('doesn’t install an app version skipped in another window', async () => {
+  const { core, m, platform } = await opened()
+  Object.assign(m.remoteText!, appReleaseHost().remoteText)
+  await core.checkForUpdates()
+  expect(core.getState().appUpdate).toMatchObject({ version: '0.2.0' })
+  await writeSettings(platform, { ...await readSettings(platform), skippedApp: ['0.2.0'] })
+  await core.updateApp()
+  expect(platform.downloads).not.toContain(APP_EXE_URL)
+  expect(core.getState()).toMatchObject({ appUpdate: null, error: null, notice: 'Lucent 0.2.0 was skipped, so it wasn’t installed.' })
+})
+
+it('takes a Skip into account while the manifest can’t be fetched', async () => {
+  const { core, m } = await opened()
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  await core.checkForUpdates()
+  expect(core.getState().activity).toMatchObject({ update: { version: NEXT_CONTENT.id } })
+  delete m.remoteText![MANIFEST_URL]
+  await core.skipUpdate()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'deployment', update: null } })
+  expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
 })
 
 it('works while XIV runs and never writes to the game folder', async () => {

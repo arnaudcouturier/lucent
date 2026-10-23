@@ -122,6 +122,20 @@ it('keeps the current content and two previous versions, prunes older assets, an
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toContain('PresetPath=')
 })
 
+it('removes what an interrupted download left in the cache once it is an hour old, and nothing else', async () => {
+  const { platform } = await deployed()
+  const cache = (await dataPaths(platform, ROOT)).cache
+  for (const name of ['.tmpAb12Cd', '.tmpEf34Gh', 'notes.txt']) await platform.writeText(`${cache}\\${name}`, 'partial')
+  platform.setModifiedTime(`${cache}\\.tmpAb12Cd`, Date.now() - 2 * 60 * 60 * 1000)
+  // Another Lucent may still be writing this one.
+  platform.setModifiedTime(`${cache}\\.tmpEf34Gh`, Date.now() - 5 * 60 * 1000)
+  platform.setModifiedTime(`${cache}\\notes.txt`, Date.now() - 2 * 60 * 60 * 1000)
+  await reopen(platform)
+  const left = await platform.listFiles(cache)
+  expect(left).not.toContain('.tmpab12cd')
+  expect(left).toEqual(expect.arrayContaining(['.tmpef34gh', 'notes.txt', OPTISCALER_HASH]))
+})
+
 it('applies a skipped version and another channel version from the list, downloading only missing files', async () => {
   const { platform, m } = await deployed()
   const second = await publish(m, '2026.11.02', 'Second OptiScaler')

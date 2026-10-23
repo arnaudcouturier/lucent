@@ -3,11 +3,12 @@ import type { Core, State } from '../core/core'
 
 export const CoreContext = createContext<Core | null>(null)
 
-/** The core's commands and its current state; re-renders on every state change. */
+/** The core's commands and its current state; re-renders on every state change. The third argument only matters
+    when a screen is rendered to markup (the tests do), where the same state is the server snapshot. */
 export function useCore(): [State, Core] {
   const core = useContext(CoreContext)
   if (!core) throw new Error('useCore needs a CoreContext provider')
-  return [useSyncExternalStore(core.subscribe, core.getState), core]
+  return [useSyncExternalStore(core.subscribe, core.getState, core.getState), core]
 }
 
 /** Polls whether XIV runs, so game actions come back once it closes. */

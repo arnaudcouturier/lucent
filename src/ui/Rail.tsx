@@ -61,6 +61,8 @@ export function Rail() {
   const steps = [{ kind: 'scan', title: 'Scan' }, ...(choices.any ? [{ kind: 'profile', title: choices.profiles ? 'Profile' : choices.neuralRendering ? 'Graphics' : 'Options' }] : []), { kind: 'review', title: 'Review' }, { kind: 'deploying', title: 'Install' }, { kind: 'done', title: 'Done' }]
   const step = steps.findIndex((s) => s.kind === state.activity.kind)
   const main = state.activity.kind === 'deployment'
+  // Mods opens over the setup steps (not during an install); the step keeps its marker but the row stops looking active.
+  const away = useSection().section === 'mods' && state.activity.kind !== 'deploying'
   return (
     <aside className={`rail${main ? ' is-main' : ''}`} onMouseDown={dragWindow}>
       <div className="brand">
@@ -73,7 +75,7 @@ export function Rail() {
       {main ? <Navigation /> : <>
         <ol className="steps" aria-label="Setup steps">
           {steps.map(({ title }, i) => (
-            <li key={title} className={i < step ? 'is-done' : i === step ? 'is-now' : ''} aria-current={i === step ? 'step' : undefined}>
+            <li key={title} className={i < step ? 'is-done' : i === step ? `is-now${away ? ' is-away' : ''}` : ''} aria-current={i === step && !away ? 'step' : undefined}>
               <span className="step-dot">{i < step && <Check size={10} strokeWidth={3} />}</span>
               {title}
             </li>

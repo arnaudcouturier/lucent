@@ -12,20 +12,21 @@ use windows::core::{Interface, HSTRING, PWSTR};
 use windows::Win32::Devices::Display::{
     DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes, QueryDisplayConfig,
     DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
-    DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO,
-    DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
+    DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_DEVICE_INFO_TYPE,
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_RATIONAL,
+    DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
 };
 use windows::Win32::Foundation::{
     CloseHandle, GlobalFree, LocalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE, HLOCAL, HWND, LPARAM,
-    RPC_E_CHANGED_MODE,
+    LUID, RPC_E_CHANGED_MODE,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
     DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, IDXGIDevice, IDXGIFactory1, IDXGIOutput6, DXGI_ADAPTER_FLAG_SOFTWARE,
-    DXGI_ERROR_NOT_FOUND,
+    CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, IDXGIFactory6, IDXGIOutput6,
+    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
 };
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, DEVMODEW, ENUM_CURRENT_SETTINGS,
@@ -89,6 +90,8 @@ pub struct FileStat {
     pub kind: &'static str,
     pub size: u64,
     pub modified_ms: u64,
+    /// The Windows read-only attribute, which a replacement clears.
+    pub read_only: bool,
 }
 
 impl PlatformError {
@@ -110,6 +113,8 @@ impl PlatformError {
         let kind = match (e.raw_os_error(), e.kind()) {
             (Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION), _) => ErrorKind::Locked,
             (Some(ERROR_HANDLE_DISK_FULL | ERROR_DISK_FULL), _) => ErrorKind::DiskFull,
+            // A temp file's writes come back re-wrapped with its path: the kind survives, the raw code does not.
+            (_, io::ErrorKind::StorageFull) => ErrorKind::DiskFull,
             (_, io::ErrorKind::NotFound) => ErrorKind::NotFound,
             (_, io::ErrorKind::PermissionDenied) => ErrorKind::AccessDenied,
             _ => ErrorKind::Unknown,
@@ -118,18 +123,48 @@ impl PlatformError {
     }
 }
 
-/// Reads a UTF-8 text file, without the byte order mark some Windows tools write.
+/// Reads a UTF-8 text file, without the byte order mark some Windows tools write. A UTF-16 byte order mark
+/// (Notepad's "UTF-16 LE" and "UTF-16 BE") is decoded as UTF-16 instead.
 pub fn read_text(path: &Path) -> Result<String> {
-    let text = fs::read_to_string(path).map_err(|e| PlatformError::io(e, Some(path)))?;
-    Ok(text
-        .strip_prefix('\u{feff}')
-        .map(str::to_owned)
-        .unwrap_or(text))
+    let bytes = fs::read(path).map_err(|e| PlatformError::io(e, Some(path)))?;
+    decode_text(bytes).map_err(|why| PlatformError::new(ErrorKind::Unknown, why, Some(path)))
+}
+
+fn decode_text(bytes: Vec<u8>) -> std::result::Result<String, &'static str> {
+    const NOT_UTF16: &str = "The file is not valid UTF-16 text.";
+    let utf16 = |bytes: &[u8], unit: fn([u8; 2]) -> u16| {
+        let (pairs, odd) = bytes.as_chunks::<2>();
+        if !odd.is_empty() {
+            return Err(NOT_UTF16);
+        }
+        char::decode_utf16(pairs.iter().map(|pair| unit(*pair)))
+            .collect::<std::result::Result<String, _>>()
+            .map_err(|_| NOT_UTF16)
+    };
+    match bytes.as_slice() {
+        [0xff, 0xfe, rest @ ..] => utf16(rest, u16::from_le_bytes),
+        [0xfe, 0xff, rest @ ..] => utf16(rest, u16::from_be_bytes),
+        _ => {
+            let text = String::from_utf8(bytes).map_err(|_| "The file is not valid UTF-8 text.")?;
+            Ok(text
+                .strip_prefix('\u{feff}')
+                .map(str::to_owned)
+                .unwrap_or(text))
+        }
+    }
 }
 
 /// Reads and normalizes only the last `max_lines` of a potentially large text log.
 /// A single terminal LF or CRLF is excluded, matching `readTextTail` in the fake platform.
 pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
+    read_text_tail_limited(path, max_lines, MAX_TAIL_BYTES)
+}
+
+/// The most of a log's end `read_text_tail` reads: the Logs section asks for 500 lines every second, and the
+/// activity log keeps 2,000. A log with few line breaks is cut here, from the start of a line where one is in reach.
+const MAX_TAIL_BYTES: u64 = 2 * 1024 * 1024;
+
+fn read_text_tail_limited(path: &Path, max_lines: usize, max_bytes: u64) -> Result<String> {
     const MAX_LINES: usize = 10_000;
     const SCAN_CHUNK_SIZE: u64 = 8 * 1024;
     if !(1..=MAX_LINES).contains(&max_lines) {
@@ -168,15 +203,16 @@ pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
         }
     }
 
-    // Scan backward until the byte after the max_lines-th preceding LF is found.
+    // Scan backward until the byte after the max_lines-th preceding LF is found, but never past the byte window.
     // This avoids decoding or allocating the potentially huge prefix of the log.
+    let window_start = content_end.saturating_sub(max_bytes);
     let mut cursor = content_end;
     let mut line_breaks = 0;
-    let mut tail_start = 0;
-    let mut found_start = false;
+    let mut earliest_break = None;
+    let mut found_start = None;
     let mut chunk = vec![0; SCAN_CHUNK_SIZE as usize];
-    while cursor > 0 {
-        let chunk_start = cursor.saturating_sub(SCAN_CHUNK_SIZE);
+    while cursor > window_start && found_start.is_none() {
+        let chunk_start = cursor.saturating_sub(SCAN_CHUNK_SIZE).max(window_start);
         let chunk_len = (cursor - chunk_start) as usize;
         file.seek(SeekFrom::Start(chunk_start))
             .map_err(|e| PlatformError::io(e, Some(path)))?;
@@ -185,29 +221,41 @@ pub fn read_text_tail(path: &Path, max_lines: usize) -> Result<String> {
 
         for (index, byte) in chunk[..chunk_len].iter().enumerate().rev() {
             if *byte == b'\n' {
+                let at = chunk_start + index as u64;
+                earliest_break = Some(at);
                 line_breaks += 1;
                 if line_breaks == max_lines {
-                    tail_start = chunk_start + index as u64 + 1;
-                    found_start = true;
+                    found_start = Some(at + 1);
                     break;
                 }
             }
         }
-        if found_start {
-            break;
-        }
         cursor = chunk_start;
     }
 
-    if !found_start {
-        tail_start = 0;
-    }
+    // Fewer lines than asked for: the whole file when the window holds it, otherwise the whole lines in the window,
+    // or, with no line break in reach, the window itself.
+    let (tail_start, mid_line) = match (found_start, earliest_break) {
+        (Some(start), _) => (start, false),
+        _ if window_start == 0 => (0, false),
+        (None, Some(at)) => (at + 1, false),
+        (None, None) => (window_start, true),
+    };
     file.seek(SeekFrom::Start(tail_start))
         .map_err(|e| PlatformError::io(e, Some(path)))?;
     let mut tail = Vec::new();
     file.take(content_end - tail_start)
         .read_to_end(&mut tail)
         .map_err(|e| PlatformError::io(e, Some(path)))?;
+    if mid_line {
+        // Start on a whole UTF-8 character: skip the continuation bytes of one the window cut.
+        let cut = tail
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte & 0xc0 == 0x80)
+            .count();
+        tail.drain(..cut);
+    }
 
     Ok(String::from_utf8_lossy(&tail).replace("\r\n", "\n"))
 }
@@ -223,6 +271,7 @@ pub fn stat(path: &Path) -> Result<FileStat> {
         kind: if meta.is_dir() { "dir" } else { "file" },
         size: meta.len(),
         modified_ms,
+        read_only: meta.permissions().readonly(),
     })
 }
 
@@ -427,10 +476,72 @@ pub struct MonitorInfo {
     pub peak_nits: Option<f32>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct AdvancedColorMetadata {
     supported: bool,
     enabled: bool,
+    /// From DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 (Windows 11 24H2 and later), which names HDR itself. The older
+    /// query says "a type of advanced color": from Windows 11 22H2 that also covers a provisioned wide-gamut SDR panel
+    /// under auto color management, so on those builds it can't tell WCG from HDR.
+    hdr_only: bool,
+}
+
+/// DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 as wingdi.h (Windows SDK 10.0.26100) declares it; windows 0.62 has no binding.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct AdvancedColorInfo2 {
+    header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
+    value: u32,
+    color_encoding: i32,
+    bits_per_color_channel: u32,
+    active_color_mode: i32,
+}
+
+const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: DISPLAYCONFIG_DEVICE_INFO_TYPE =
+    DISPLAYCONFIG_DEVICE_INFO_TYPE(15);
+const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: i32 = 2;
+
+/// INFO_2's flags: bit 4 is highDynamicRangeSupported; the active mode is SDR, WCG or HDR.
+fn advanced_color_from_info2(value: u32, active_color_mode: i32) -> AdvancedColorMetadata {
+    let enabled = active_color_mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
+    AdvancedColorMetadata {
+        supported: value & 0x10 != 0 || enabled,
+        enabled,
+        hdr_only: true,
+    }
+}
+
+/// The older struct packs supported and enabled into bits 0 and 1; bit 3 is force-disabled.
+/// Keep support independent of enabled.
+fn advanced_color_from_info(value: u32) -> AdvancedColorMetadata {
+    AdvancedColorMetadata {
+        supported: value & 0x1 != 0,
+        enabled: value & 0x2 != 0,
+        hdr_only: false,
+    }
+}
+
+/// What QueryDisplayConfig adds to the GDI monitor list, by GDI device name.
+#[derive(Debug, Clone, Copy, Default)]
+struct DisplayConfigFacts {
+    color: Option<AdvancedColorMetadata>,
+    refresh_rate: Option<DISPLAYCONFIG_RATIONAL>,
+}
+
+/// The refresh rate the monitor runs at, 0 when Windows reports none. QueryDisplayConfig's exact rate comes
+/// first (119.88 Hz, where DEVMODE says 119); a 0 or 1 from either source means "hardware default", not a rate.
+fn refresh_rate(exact: Option<DISPLAYCONFIG_RATIONAL>, display_frequency: Option<u32>) -> f64 {
+    let exact = exact
+        .filter(|rate| rate.Denominator != 0)
+        // Two decimals, as Windows names rates: 119.88 stays, a 143.9997 Hz timing is 144.
+        .map(|rate| {
+            (f64::from(rate.Numerator) / f64::from(rate.Denominator) * 100.0).round() / 100.0
+        });
+    exact
+        .into_iter()
+        .chain(display_frequency.map(f64::from))
+        .find(|hz| hz.is_finite() && *hz > 1.0)
+        .unwrap_or(0.0)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -450,12 +561,18 @@ fn combine_monitor_color(
     advanced: Option<AdvancedColorMetadata>,
     dxgi: Option<DxgiColorMetadata>,
 ) -> MonitorColorMetadata {
-    let advanced = advanced.unwrap_or_default();
     let dxgi_color = dxgi.unwrap_or_default();
+    let (hdr_supported, hdr_on) = match advanced.unwrap_or_default() {
+        advanced if advanced.hdr_only => (advanced.supported, advanced.enabled),
+        advanced => (
+            advanced.supported || dxgi_color.hdr_color_space,
+            // Prefer DXGI's current color space when available: advanced color can also be WCG.
+            dxgi.map_or(advanced.enabled, |color| color.hdr_color_space),
+        ),
+    };
     MonitorColorMetadata {
-        hdr_supported: advanced.supported || dxgi_color.hdr_color_space,
-        // Prefer DXGI's current color space when available: advanced color can also be WCG.
-        hdr_on: dxgi.map_or(advanced.enabled, |color| color.hdr_color_space),
+        hdr_supported,
+        hdr_on,
         peak_nits: dxgi_color
             .peak_nits
             .filter(|value| value.is_finite() && *value > 0.0),
@@ -602,10 +719,10 @@ fn dxgi_monitor_colors() -> Vec<(HMONITOR, DxgiColorMetadata)> {
     result
 }
 
-fn display_config_monitor_colors() -> HashMap<String, AdvancedColorMetadata> {
+fn display_config_facts() -> HashMap<String, DisplayConfigFacts> {
     let mut path_count = 0;
     let mut mode_count = 0;
-    let mut result = HashMap::new();
+    let mut result = HashMap::<String, DisplayConfigFacts>::new();
     // SAFETY: query buffers are sized by GetDisplayConfigBufferSizes and remain alive through
     // both query calls. Device-info headers point at properly sized Windows API structs.
     unsafe {
@@ -652,29 +769,51 @@ fn display_config_monitor_colors() -> HashMap<String, AdvancedColorMetadata> {
                 if DisplayConfigGetDeviceInfo(&mut source.header) != 0 {
                     continue;
                 }
-                let device_name = wide_string(&source.viewGdiDeviceName);
+                let facts = result
+                    .entry(wide_string(&source.viewGdiDeviceName))
+                    .or_default();
+                if facts.refresh_rate.is_none() {
+                    facts.refresh_rate = Some(path.targetInfo.refreshRate);
+                }
+                let header = |kind, size| DISPLAYCONFIG_DEVICE_INFO_HEADER {
+                    r#type: kind,
+                    size,
+                    adapterId: path.targetInfo.adapterId,
+                    id: path.targetInfo.id,
+                };
+                let mut color2 = AdvancedColorInfo2 {
+                    header: header(
+                        DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
+                        std::mem::size_of::<AdvancedColorInfo2>() as u32,
+                    ),
+                    value: 0,
+                    color_encoding: 0,
+                    bits_per_color_channel: 0,
+                    active_color_mode: 0,
+                };
                 let mut color = DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO {
-                    header: DISPLAYCONFIG_DEVICE_INFO_HEADER {
-                        r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-                        size: std::mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
-                        adapterId: path.targetInfo.adapterId,
-                        id: path.targetInfo.id,
-                    },
+                    header: header(
+                        DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+                        std::mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
+                    ),
                     ..Default::default()
                 };
-                if DisplayConfigGetDeviceInfo(&mut color.header) != 0 {
-                    continue;
-                }
-                // DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO packs supported and enabled into
-                // bits 0 and 1; bit 3 is force-disabled. Keep support independent of enabled.
-                let value = color.Anonymous.value;
-                let metadata = AdvancedColorMetadata {
-                    supported: value & 0x1 != 0,
-                    enabled: value & 0x2 != 0,
-                };
-                let current = result.entry(device_name).or_default();
-                current.supported |= metadata.supported;
-                current.enabled |= metadata.enabled;
+                // Builds before Windows 11 24H2 refuse INFO_2, so they fall back to the older query.
+                let advanced =
+                    if DisplayConfigGetDeviceInfo((&mut color2 as *mut AdvancedColorInfo2).cast())
+                        == 0
+                    {
+                        advanced_color_from_info2(color2.value, color2.active_color_mode)
+                    } else if DisplayConfigGetDeviceInfo(&mut color.header) == 0 {
+                        advanced_color_from_info(color.Anonymous.value)
+                    } else {
+                        continue;
+                    };
+                // One GDI device can drive several targets (cloned displays): any of them counts.
+                let current = facts.color.get_or_insert_default();
+                current.supported |= advanced.supported;
+                current.enabled |= advanced.enabled;
+                current.hdr_only |= advanced.hdr_only;
             }
             return result;
         }
@@ -722,7 +861,7 @@ pub fn monitors() -> Result<Vec<MonitorInfo>> {
         )
     })?;
     let native_monitors = enumerate_native_monitors()?;
-    let display_config = display_config_monitor_colors();
+    let display_config = display_config_facts();
     let dxgi = dxgi_monitor_colors();
     Ok(native_monitors
         .into_iter()
@@ -753,11 +892,15 @@ pub fn monitors() -> Result<Vec<MonitorInfo>> {
                     bounds_height
                 }
             });
-            let refresh_hz = mode
-                .as_ref()
-                .map_or(0.0, |mode| mode.dmDisplayFrequency as f64)
-                .max(0.0);
-            let advanced = display_config.get(&device_name).copied();
+            let facts = display_config
+                .get(&device_name)
+                .copied()
+                .unwrap_or_default();
+            let refresh_hz = refresh_rate(
+                facts.refresh_rate,
+                mode.as_ref().map(|mode| mode.dmDisplayFrequency),
+            );
+            let advanced = facts.color;
             let dxgi_color = dxgi
                 .iter()
                 .find(|(handle, _)| *handle == native.handle)
@@ -787,6 +930,34 @@ pub struct GpuAdapter {
     pub software: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub driver_version: Option<String>,
+    /// Where Windows ranks this adapter for high performance, 0 first: external, then discrete, then
+    /// integrated GPUs. Absent when Windows can't rank adapters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub high_performance_rank: Option<u32>,
+}
+
+/// Adapter LUIDs in DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE order; empty without IDXGIFactory6 (Windows 10 1803).
+fn high_performance_order(factory: &IDXGIFactory1) -> Vec<LUID> {
+    let mut order = Vec::new();
+    // SAFETY: the bindings manage the COM interfaces' lifetimes; GetDesc1 returns an owned descriptor.
+    unsafe {
+        let Ok(factory) = factory.cast::<IDXGIFactory6>() else {
+            return order;
+        };
+        for index in 0.. {
+            // The ranking is supplementary: any error, DXGI_ERROR_NOT_FOUND included, ends it.
+            let Ok(adapter) = factory.EnumAdapterByGpuPreference::<IDXGIAdapter1>(
+                index,
+                DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+            ) else {
+                break;
+            };
+            if let Ok(desc) = adapter.GetDesc1() {
+                order.push(desc.AdapterLuid);
+            }
+        }
+    }
+    order
 }
 
 /// Enumerates DXGI adapters. Choice and tier matching belong to the TypeScript core.
@@ -797,6 +968,7 @@ pub fn gpu_adapters() -> Result<Vec<GpuAdapter>> {
     // no raw pointer or interface leaves this thread.
     unsafe {
         let factory: IDXGIFactory1 = CreateDXGIFactory1().map_err(error)?;
+        let ranking = high_performance_order(&factory);
         let mut adapters = Vec::new();
         for index in 0.. {
             let adapter = match factory.EnumAdapters1(index) {
@@ -832,6 +1004,10 @@ pub fn gpu_adapters() -> Result<Vec<GpuAdapter>> {
                 dedicated_memory: desc.DedicatedVideoMemory as u64,
                 software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
                 driver_version,
+                high_performance_rank: ranking
+                    .iter()
+                    .position(|luid| *luid == desc.AdapterLuid)
+                    .map(|rank| rank as u32),
             });
         }
         Ok(adapters)
@@ -1076,24 +1252,124 @@ fn win32_error(error: windows::core::Error) -> PlatformError {
     PlatformError::new(ErrorKind::Unknown, error.to_string(), None)
 }
 
-/// Fetches text with a bounded wait. HTTP error bodies must never be parsed as manifests.
+/// As many redirects as reqwest's default policy follows.
+const MAX_REDIRECTS: usize = 10;
+
+const HELIOSPHERE_REFUSED: &str = "Heliosphere doesn’t allow other programs to download from it.";
+
+/// Heliosphere's terms bar other programs from its endpoints, so nothing on heliosphere.app or under it is fetched,
+/// however the host is spelt (`Repo.Heliosphere.App.`).
+fn is_heliosphere(url: &reqwest::Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        host == "heliosphere.app" || host.ends_with(".heliosphere.app")
+    })
+}
+
+/// Why a redirect to `next` must not be followed, `hops` being the addresses already visited, first one included.
+fn redirect_refusal(next: &reqwest::Url, hops: usize) -> Option<&'static str> {
+    if hops > MAX_REDIRECTS {
+        Some("The server redirected Lucent too many times.")
+    } else if next.scheme() != "https" {
+        Some("The server redirected Lucent to an address that doesn’t use HTTPS.")
+    } else if is_heliosphere(next) {
+        Some(HELIOSPHERE_REFUSED)
+    } else {
+        None
+    }
+}
+
+/// Checks every hop of every request. The first address is checked by `fetchable_url` before the request is sent.
+pub(crate) fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        // An error, never `stop`: a stopped redirect hands back its 3xx response, which error_for_status lets through.
+        match redirect_refusal(attempt.url(), attempt.previous().len()) {
+            Some(why) => attempt.error(why),
+            None => attempt.follow(),
+        }
+    })
+}
+
+/// Parses an address to fetch, refusing Heliosphere. The core requires HTTPS for the first address itself.
+pub(crate) fn fetchable_url(url: &str) -> Result<reqwest::Url> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| PlatformError::new(ErrorKind::Unknown, format!("Invalid URL: {e}"), None))?;
+    if is_heliosphere(&parsed) {
+        return Err(PlatformError::new(
+            ErrorKind::Unknown,
+            HELIOSPHERE_REFUSED,
+            None,
+        ));
+    }
+    Ok(parsed)
+}
+
+/// A redirect the policy refused, with its reason. It is not the network's fault, so the core must not retry it.
+pub(crate) fn refused_redirect(error: &reqwest::Error) -> Option<PlatformError> {
+    use std::error::Error;
+    error
+        .is_redirect()
+        .then(|| error.source())
+        .flatten()
+        .map(|why| PlatformError::new(ErrorKind::Unknown, why.to_string(), None))
+}
+
+/// The most text `fetch_text` reads. GitHub's releases list is about 2 MB and the manifest 1.6 MB, both growing
+/// with every content version; a cap they outgrew would stop every installed app from hearing of updates.
+const MAX_TEXT_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Fetches text with a bounded wait and size. HTTP error bodies must never be parsed as manifests.
 pub async fn fetch_text(url: &str) -> Result<String> {
-    let error = |e: reqwest::Error| PlatformError::new(ErrorKind::Network, e.to_string(), None);
+    fetch_text_limited(url, MAX_TEXT_BYTES).await
+}
+
+async fn fetch_text_limited(url: &str, max_bytes: u64) -> Result<String> {
+    let error = |e: reqwest::Error| {
+        refused_redirect(&e)
+            .unwrap_or_else(|| PlatformError::new(ErrorKind::Network, e.to_string(), None))
+    };
+    let too_large = || {
+        PlatformError::new(
+            ErrorKind::Unknown,
+            format!(
+                "The server sent more than {} MB.",
+                max_bytes.div_ceil(1024 * 1024)
+            ),
+            None,
+        )
+    };
+    let url = fetchable_url(url)?;
+    // The update check reads the releases list and the manifest at once: 3.5 MB, about 0.4 MB gzipped.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(45))
+        .gzip(true)
+        .redirect(redirect_policy())
         .user_agent(concat!("Lucent/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(error)?;
-    client
+    let mut response = client
         .get(url)
         .send()
         .await
         .map_err(error)?
         .error_for_status()
-        .map_err(error)?
-        .text()
-        .await
-        .map_err(error)
+        .map_err(error)?;
+    // A gzipped reply has no usable length, so the running count is the real limit.
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(error)? {
+        if (body.len() + chunk.len()) as u64 > max_bytes {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    // As reqwest's `text()` without its charset feature: bytes that aren't UTF-8 become U+FFFD.
+    Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
 #[derive(Debug, Serialize)]
@@ -1274,6 +1550,7 @@ fn headless_mode_from<I: IntoIterator<Item = std::ffi::OsString>>(args: I) -> Op
 }
 
 const AUMID: &str = "io.github.arnaudcouturier.lucent";
+const AUMID_KEY: &str = r"Software\Classes\AppUserModelId";
 
 fn xml_escape(text: &str) -> String {
     text.replace('&', "&amp;")
@@ -1289,7 +1566,7 @@ pub fn notify(title: &str, body: &str) -> Result<()> {
     use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
     use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
     let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
-        .create_subkey(format!(r"Software\Classes\AppUserModelId\{AUMID}"))
+        .create_subkey(format!(r"{AUMID_KEY}\{AUMID}"))
         .map_err(|e| PlatformError::io(e, None))?;
     key.set_value("DisplayName", &"Lucent")
         .map_err(|e| PlatformError::io(e, None))?;
@@ -1511,14 +1788,31 @@ pub fn set_uninstall_entry(
     Ok(())
 }
 
-/// Deletes the Settings -> Apps entry `id`; one that is already gone is success.
+/// Deletes the Settings -> Apps entry `id` and the toast registration `notify` makes; either one already gone is success.
 pub fn remove_uninstall_entry(id: &str) -> Result<()> {
+    remove_registration(id, AUMID)
+}
+
+fn remove_registration(id: &str, aumid: &str) -> Result<()> {
     let path = uninstall_key_path(id)?;
-    match RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&path) {
+    delete_user_key(&path)?;
+    // Only toasts read it, so a key that won't go must not stop an uninstall.
+    let _ = delete_user_key(&format!(r"{AUMID_KEY}\{aumid}"));
+    Ok(())
+}
+
+fn delete_user_key(path: &str) -> Result<()> {
+    match RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(PlatformError::io(e, None)),
     }
+}
+
+/// Characters cmd could expand (`%`, and `!` should delayed expansion be on) or end a quoted path on.
+fn unsafe_in_script(text: &str) -> bool {
+    text.chars()
+        .any(|c| matches!(c, '"' | '%' | '!') || c.is_control())
 }
 
 fn validate_removal_folder(folder: &Path, named_lucent: bool) -> Result<()> {
@@ -1533,7 +1827,7 @@ fn validate_removal_folder(folder: &Path, named_lucent: bool) -> Result<()> {
     let text = folder
         .to_str()
         .ok_or_else(|| invalid("the path is not UTF-8"))?;
-    if text.chars().any(|c| c == '"' || c == '%' || c.is_control()) {
+    if unsafe_in_script(text) {
         return Err(invalid("the path has unsafe characters"));
     }
     if !folder.is_absolute() {
@@ -1562,7 +1856,7 @@ fn validate_removal_folder(folder: &Path, named_lucent: bool) -> Result<()> {
     Ok(())
 }
 
-fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String> {
+fn build_removal_script(system32: &Path, folders: &[PathBuf], extra: &[PathBuf]) -> Result<String> {
     for folder in folders {
         validate_removal_folder(folder, true)?;
     }
@@ -1578,10 +1872,14 @@ fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String
         ));
     }
     // WebView2 child processes can hold files briefly after exit, so wait, then retry in rounds.
-    let mut steps = vec!["ping -n 3 127.0.0.1 >nul".to_owned()];
+    let wait = format!(
+        "\"{}\" -n 3 127.0.0.1 >nul",
+        system32.join("ping.exe").display()
+    );
+    let mut steps = vec![wait.clone()];
     for round in 0..3 {
         if round > 0 {
-            steps.push("ping -n 3 127.0.0.1 >nul".to_owned());
+            steps.push(wait.clone());
         }
         for folder in &all {
             steps.push(format!("rmdir /s /q \"{}\" 2>nul", folder.display()));
@@ -1590,20 +1888,40 @@ fn build_removal_script(folders: &[PathBuf], extra: &[PathBuf]) -> Result<String
     Ok(steps.join(" & "))
 }
 
-/// Spawns a hidden `cmd.exe` that deletes `folders` (plus `extra`, such as the WebView2 data folder)
-/// once this process has ended, then exits. Nothing is spawned if any folder is invalid.
-pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
+/// Windows' System32. The removal script names its programs there: run from a folder other programs can write to,
+/// cmd would prefer a planted `ping.com` beside it to the real `ping`.
+fn system32() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .filter(|root| {
+            root.is_absolute() && root.to_str().is_some_and(|text| !unsafe_in_script(text))
+        })
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join("System32")
+}
+
+fn removal_command(system32: &Path, script: &str) -> std::process::Command {
     use std::os::windows::process::CommandExt;
     // A hidden console, not DETACHED_PROCESS: without a console, each `ping` would open a visible one.
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let script = build_removal_script(folders, extra)?;
-    std::process::Command::new("cmd.exe")
-        .raw_arg(format!("/d /c \"{script}\""))
-        .current_dir(std::env::temp_dir())
+    let mut command = std::process::Command::new(system32.join("cmd.exe"));
+    // /d skips AutoRun commands and /v:off keeps `!` literal, whatever the registry enables.
+    command
+        .raw_arg(format!("/d /v:off /c \"{script}\""))
+        .current_dir(system32)
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    command
+}
+
+/// Spawns a hidden `cmd.exe` that deletes `folders` (plus `extra`, such as the WebView2 data folder)
+/// once this process has ended, then exits. Nothing is spawned if any folder is invalid.
+pub fn exit_and_remove(folders: &[PathBuf], extra: &[PathBuf]) -> Result<()> {
+    let system32 = system32();
+    let script = build_removal_script(&system32, folders, extra)?;
+    removal_command(&system32, &script)
         .spawn()
         .map_err(|e| PlatformError::io(e, None))?;
     std::process::exit(0)
@@ -1743,10 +2061,12 @@ mod tests {
 
     #[test]
     fn advanced_color_capability_survives_hdr_being_off() {
+        // The older query on a build without INFO_2: "a type of advanced color" counts as HDR support.
         let color = combine_monitor_color(
             Some(AdvancedColorMetadata {
                 supported: true,
                 enabled: true,
+                hdr_only: false,
             }),
             Some(DxgiColorMetadata {
                 hdr_color_space: false,
@@ -1780,6 +2100,153 @@ mod tests {
                 peak_nits: None,
             }
         );
+    }
+
+    #[test]
+    fn info2_tells_an_hdr_monitor_from_a_wide_gamut_sdr_panel() {
+        // wingdi.h: a 20-byte header, the flags, the color encoding, the bits per channel and the active mode.
+        assert_eq!(std::mem::size_of::<AdvancedColorInfo2>(), 36);
+        const SUPPORTED: u32 = 0x1;
+        const ACTIVE: u32 = 0x2;
+        const HDR_SUPPORTED: u32 = 0x10;
+        const HDR_USER_ENABLED: u32 = 0x20;
+        const WCG_SUPPORTED: u32 = 0x40;
+        const WCG_USER_ENABLED: u32 = 0x80;
+        let (sdr, wcg, hdr) = (0, 1, 2);
+        let hdr_facts = |supported, enabled| AdvancedColorMetadata {
+            supported,
+            enabled,
+            hdr_only: true,
+        };
+        // Auto color management on a wide-gamut SDR panel is advanced color, active, but not HDR.
+        let wide_gamut =
+            advanced_color_from_info2(SUPPORTED | ACTIVE | WCG_SUPPORTED | WCG_USER_ENABLED, wcg);
+        assert_eq!(wide_gamut, hdr_facts(false, false));
+        assert_eq!(
+            advanced_color_from_info2(SUPPORTED | HDR_SUPPORTED | WCG_SUPPORTED, sdr),
+            hdr_facts(true, false)
+        );
+        assert_eq!(
+            advanced_color_from_info2(SUPPORTED | ACTIVE | HDR_SUPPORTED | HDR_USER_ENABLED, hdr),
+            hdr_facts(true, true)
+        );
+        let dxgi = Some(DxgiColorMetadata {
+            hdr_color_space: false,
+            peak_nits: Some(400.0),
+        });
+        assert_eq!(
+            combine_monitor_color(Some(wide_gamut), dxgi),
+            MonitorColorMetadata {
+                hdr_supported: false,
+                hdr_on: false,
+                peak_nits: Some(400.0)
+            }
+        );
+    }
+
+    #[test]
+    fn info2_is_answered_on_windows_11_24h2_and_later() {
+        let build: u32 = read_registry(
+            "HKLM",
+            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+            "CurrentBuildNumber",
+        )
+        .unwrap()
+        .parse()
+        .unwrap();
+        // A wrong struct size would fail every INFO_2 call and silently fall back to the older query.
+        for (device, facts) in display_config_facts() {
+            let answered = facts.color.is_some_and(|color| color.hdr_only);
+            assert!(
+                answered || build < 26_100,
+                "{device} on build {build}: {:?}",
+                facts.color
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_rate_prefers_the_exact_rate_and_treats_0_and_1_as_unknown() {
+        let rate = |numerator, denominator| {
+            Some(DISPLAYCONFIG_RATIONAL {
+                Numerator: numerator,
+                Denominator: denominator,
+            })
+        };
+        assert_eq!(refresh_rate(rate(119_880, 1_000), Some(119)), 119.88);
+        assert_eq!(refresh_rate(rate(60_000, 1_001), Some(59)), 59.94);
+        // A timing a hair off a whole rate is the rate Windows names.
+        assert_eq!(refresh_rate(rate(1_439_997, 10_000), Some(143)), 144.0);
+        // No usable exact rate: DEVMODE's whole number, unless it is a "hardware default" sentinel.
+        assert_eq!(refresh_rate(rate(0, 0), Some(144)), 144.0);
+        assert_eq!(refresh_rate(rate(1, 1), Some(60)), 60.0);
+        assert_eq!(refresh_rate(None, Some(240)), 240.0);
+        for sentinel in [0, 1] {
+            assert_eq!(refresh_rate(None, Some(sentinel)), 0.0);
+            assert_eq!(refresh_rate(rate(0, 1), Some(sentinel)), 0.0);
+        }
+        assert_eq!(refresh_rate(None, None), 0.0);
+    }
+
+    #[test]
+    fn heliosphere_is_refused_however_its_host_is_spelt() {
+        let url = |text: &str| reqwest::Url::parse(text).unwrap();
+        for refused in [
+            "https://repo.heliosphere.app/latest.zip",
+            "https://heliosphere.app/",
+            "https://REPO.Heliosphere.App./latest.zip",
+            "https://heliosphere.app.:443/x",
+            "http://cdn.heliosphere.app/x",
+        ] {
+            assert!(is_heliosphere(&url(refused)), "{refused}");
+            assert_eq!(
+                fetchable_url(refused).unwrap_err().message,
+                HELIOSPHERE_REFUSED,
+                "{refused}"
+            );
+        }
+        for allowed in [
+            "https://notheliosphere.app/x",
+            "https://heliosphere.app.example.com/x",
+            "https://github.com/heliosphere.app/x",
+            "https://example.com/?u=heliosphere.app",
+        ] {
+            assert!(!is_heliosphere(&url(allowed)), "{allowed}");
+            assert!(fetchable_url(allowed).is_ok(), "{allowed}");
+        }
+        assert_eq!(
+            fetchable_url("not a url").unwrap_err().kind,
+            ErrorKind::Unknown
+        );
+    }
+
+    #[test]
+    fn redirects_must_stay_on_https_off_heliosphere_and_within_ten_hops() {
+        let url = |text: &str| reqwest::Url::parse(text).unwrap();
+        // A GitHub release asset redirects once, to its storage host.
+        let asset = url("https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sig=x");
+        assert_eq!(redirect_refusal(&asset, 1), None);
+        assert_eq!(redirect_refusal(&asset, MAX_REDIRECTS), None);
+        assert!(redirect_refusal(&asset, MAX_REDIRECTS + 1).is_some());
+        assert!(redirect_refusal(&url("http://example.com/plugin.zip"), 1)
+            .is_some_and(|why| why.contains("HTTPS")));
+        assert_eq!(
+            redirect_refusal(&url("https://repo.heliosphere.app./latest.zip"), 1),
+            Some(HELIOSPHERE_REFUSED)
+        );
+    }
+
+    #[test]
+    fn gpu_adapters_carry_windows_high_performance_rank() {
+        let adapters = gpu_adapters().unwrap();
+        // IDXGIFactory6 is there from Windows 10 1803, so every listed adapter is ranked.
+        let mut ranks: Vec<u32> = adapters
+            .iter()
+            .map(|adapter| adapter.high_performance_rank.expect("ranked"))
+            .collect();
+        ranks.sort_unstable();
+        ranks.dedup();
+        assert_eq!(ranks.len(), adapters.len(), "{adapters:?}");
     }
 
     #[test]
@@ -1916,60 +2383,142 @@ mod tests {
         notify("Lucent test", "Toast smoke test <ok> & fine").unwrap();
     }
 
+    const SYSTEM32: &str = r"C:\Windows\System32";
+
     #[test]
     fn removal_script_quotes_folders_and_rejects_unsafe_ones() {
-        let script =
-            build_removal_script(&[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")], &[])
-                .unwrap();
+        let script = build_removal_script(
+            Path::new(SYSTEM32),
+            &[PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent")],
+            &[],
+        )
+        .unwrap();
+        // ping by its full path: a bare name would let a ping.com in the working folder run instead.
         assert!(
             script.starts_with(
-                r#"ping -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#
+                r#""C:\Windows\System32\ping.exe" -n 3 127.0.0.1 >nul & rmdir /s /q "C:\Users\Me\AppData\Local\Lucent""#
             ),
             "got {script}"
         );
         assert_eq!(script.matches("rmdir").count(), 3);
+        assert_eq!(
+            script.matches(r#""C:\Windows\System32\ping.exe""#).count(),
+            3
+        );
+        assert!(!script.contains(" ping "), "got {script}");
         for bad in [
             r"Users\Me\Local\Lucent",
             "C:\\Users\\Me\\\"x\\Lucent",
             r"C:\Users\%TEMP%\Lucent",
+            r"C:\Users\!TEMP!\Lucent",
             r"C:\Lucent",
             r"C:\Users\Me\Local\Other",
             r"C:\Users\Me\..\Lucent",
             "C:\\Users\\Me\\Local\\Lucent\n",
         ] {
             assert_eq!(
-                build_removal_script(&[PathBuf::from(bad)], &[])
+                build_removal_script(Path::new(SYSTEM32), &[PathBuf::from(bad)], &[])
                     .unwrap_err()
                     .kind,
                 ErrorKind::Unknown,
                 "{bad}"
             );
         }
-        assert!(build_removal_script(&[], &[]).is_err());
-        assert!(
-            build_removal_script(&[PathBuf::from(r"c:\users\me\appdata\local\lucent")], &[])
-                .is_ok()
-        );
+        assert!(build_removal_script(Path::new(SYSTEM32), &[], &[]).is_err());
+        assert!(build_removal_script(
+            Path::new(SYSTEM32),
+            &[PathBuf::from(r"c:\users\me\appdata\local\lucent")],
+            &[]
+        )
+        .is_ok());
     }
 
     #[test]
     fn extra_removal_folders_skip_only_the_name_rule() {
+        let system32 = Path::new(SYSTEM32);
         let lucent = PathBuf::from(r"C:\Users\Me\AppData\Local\Lucent");
         let webview = PathBuf::from(r"C:\Users\Me\AppData\Local\io.github.lucent");
         assert!(build_removal_script(
+            system32,
             std::slice::from_ref(&lucent),
             std::slice::from_ref(&webview)
         )
         .is_ok());
-        assert!(
-            build_removal_script(std::slice::from_ref(&lucent), &[PathBuf::from(r"C:\Local")])
-                .is_err()
-        );
         assert!(build_removal_script(
+            system32,
             std::slice::from_ref(&lucent),
-            &[PathBuf::from(r"C:\Users\Me\%x%")]
+            &[PathBuf::from(r"C:\Local")]
         )
         .is_err());
+        for bad in [r"C:\Users\Me\%x%", r"C:\Users\Me\x!y!z"] {
+            assert!(build_removal_script(
+                system32,
+                std::slice::from_ref(&lucent),
+                &[PathBuf::from(bad)]
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn the_removal_script_runs_its_programs_from_system32_and_removes_the_folders() {
+        let system32 = system32();
+        assert!(
+            system32.join("ping.exe").is_file(),
+            "{}",
+            system32.display()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let lucent = dir.path().join("data").join("Lucent");
+        let webview = dir.path().join("data").join("io.github.lucent");
+        for folder in [&lucent, &webview] {
+            fs::create_dir_all(folder.join("Backups")).unwrap();
+            fs::write(folder.join("Backups").join("winmm.dll"), "MZ").unwrap();
+        }
+        let script = build_removal_script(
+            &system32,
+            std::slice::from_ref(&lucent),
+            std::slice::from_ref(&webview),
+        )
+        .unwrap();
+        let mut command = removal_command(&system32, &script);
+        assert_eq!(
+            command.get_current_dir(),
+            Some(system32.as_path()),
+            "nothing beside the script's programs can stand in for them"
+        );
+        command.status().unwrap();
+        assert!(!lucent.exists() && !webview.exists());
+        assert!(dir.path().join("data").is_dir());
+    }
+
+    #[test]
+    fn removing_the_registration_also_removes_the_toast_registration() {
+        let id = format!("LucentTest-{}", std::process::id());
+        // A throwaway AppUserModelID: the real one belongs to the maintainer's installed Lucent.
+        let aumid = format!("{AUMID}.test-{}", std::process::id());
+        let aumid_key = format!(r"{AUMID_KEY}\{aumid}");
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        set_uninstall_entry(
+            &id,
+            serde_json::json!({ "DisplayName": "Lucent test" })
+                .as_object()
+                .unwrap(),
+        )
+        .unwrap();
+        hkcu.create_subkey(&aumid_key)
+            .unwrap()
+            .0
+            .set_value("DisplayName", &"Lucent test")
+            .unwrap();
+        let removed = remove_registration(&id, &aumid);
+        let aumid_left = hkcu.open_subkey(&aumid_key).is_ok();
+        let _ = delete_user_key(&aumid_key);
+        let _ = delete_user_key(&uninstall_key_path(&id).unwrap());
+        removed.unwrap();
+        assert!(!aumid_left, "the toast registration is left behind");
+        // Both already gone is success too.
+        remove_registration(&id, &aumid).unwrap();
     }
 
     #[test]
@@ -2049,6 +2598,80 @@ mod tests {
         fs::write(&file, b"\xEF\xBB\xBF{\"GamePath\":\"C:\\\\Games\"}").unwrap();
 
         assert_eq!(read_text(&file).unwrap(), "{\"GamePath\":\"C:\\\\Games\"}");
+    }
+
+    #[test]
+    fn reads_utf16_text_by_its_byte_order_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ReShade.ini");
+        let text = "[INPUT]\r\nKeyOverlay=36,0,0,0\r\nPresetPath=.\\Été 🫧.ini\r\n";
+        let units = || text.encode_utf16();
+        let little: Vec<u8> = [0xff, 0xfe]
+            .into_iter()
+            .chain(units().flat_map(u16::to_le_bytes))
+            .collect();
+        let big: Vec<u8> = [0xfe, 0xff]
+            .into_iter()
+            .chain(units().flat_map(u16::to_be_bytes))
+            .collect();
+        for bytes in [little, big] {
+            fs::write(&file, bytes).unwrap();
+            assert_eq!(read_text(&file).unwrap(), text);
+        }
+        // An odd byte count, a lone surrogate or bytes that are not UTF-8 are not text.
+        for bad in [
+            &b"\xff\xfeA"[..],
+            b"\xff\xfe\x00\xd8",
+            b"\xef\xbb\xbfbad \xff",
+        ] {
+            fs::write(&file, bad).unwrap();
+            let error = read_text(&file).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Unknown, "{bad:?}");
+            assert_eq!(error.path.as_deref(), Some(file.to_str().unwrap()));
+        }
+    }
+
+    #[test]
+    fn a_full_disk_is_disk_full_even_through_a_temp_files_wrapped_error() {
+        for code in [39, 112] {
+            let raw = io::Error::from_raw_os_error(code);
+            let kind = raw.kind();
+            assert_eq!(
+                PlatformError::io(raw, None).kind,
+                ErrorKind::DiskFull,
+                "{code}"
+            );
+            // NamedTempFile's Write re-wraps an error as io::Error::new(kind, PathError), dropping the raw code.
+            let wrapped = io::Error::new(
+                kind,
+                format!("os error {code} at path \"C:\\Lucent\\.tmp1\""),
+            );
+            assert_eq!(wrapped.raw_os_error(), None);
+            assert_eq!(
+                PlatformError::io(wrapped, None).kind,
+                ErrorKind::DiskFull,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn stat_reports_the_read_only_attribute() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("dalamudConfig.json");
+        fs::write(&file, "{}").unwrap();
+        assert!(!stat(&file).unwrap().read_only);
+        let mut permissions = fs::metadata(&file).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&file, permissions).unwrap();
+        let read_only = stat(&file).unwrap();
+        let batched = crate::files::stat_many(std::slice::from_ref(&file)).unwrap();
+        // A replacement clears the attribute, which also lets the temporary folder go.
+        crate::files::write_text(&file, "{}", None).unwrap();
+        assert!(read_only.read_only);
+        assert_eq!(serde_json::to_value(&read_only).unwrap()["readOnly"], true);
+        assert!(batched[0].as_ref().unwrap().read_only);
+        assert!(!stat(&file).unwrap().read_only);
     }
 
     #[test]
@@ -2164,7 +2787,10 @@ mod tests {
             assert!(Path::new(&path).is_dir(), "{folder} → {path}");
         }
         for folder in ["Documents", "Pictures"] {
-            assert!(Path::new(&env_folder(folder).unwrap()).is_absolute(), "{folder}");
+            assert!(
+                Path::new(&env_folder(folder).unwrap()).is_absolute(),
+                "{folder}"
+            );
         }
         assert_eq!(env_folder("Desktop").unwrap_err().kind, ErrorKind::Unknown);
     }
@@ -2219,6 +2845,43 @@ mod tests {
 
         fs::write(&path, b"first\nbad \xff\xfe\nlast").unwrap();
         assert_eq!(read_text_tail(&path, 2).unwrap(), "bad ��\nlast");
+    }
+
+    #[test]
+    fn tail_reads_no_more_than_its_byte_window_and_starts_on_a_whole_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("OptiScaler.log");
+        fs::write(&path, "aaaa\nbbbb\ncccc\n").unwrap();
+        // The window reaches back into "bbbb": that partial line is left out.
+        assert_eq!(read_text_tail_limited(&path, 300, 7).unwrap(), "cccc");
+        // A window holding the whole file, or the wanted lines, changes nothing.
+        assert_eq!(
+            read_text_tail_limited(&path, 300, 14).unwrap(),
+            "aaaa\nbbbb\ncccc"
+        );
+        assert_eq!(read_text_tail_limited(&path, 2, 10).unwrap(), "bbbb\ncccc");
+        // With no line break in reach, the window's own bytes come back, from a whole character.
+        fs::write(&path, format!("{}\n", "é".repeat(20))).unwrap();
+        assert_eq!(read_text_tail_limited(&path, 300, 9).unwrap(), "éééé");
+        // Across scan chunks: one 20 KiB line, then two short ones.
+        fs::write(&path, format!("{}\nend 1\nend 2", "x".repeat(20 * 1024))).unwrap();
+        assert_eq!(
+            read_text_tail_limited(&path, 300, 10 * 1024).unwrap(),
+            "end 1\nend 2"
+        );
+    }
+
+    #[test]
+    fn tail_of_a_huge_log_without_line_breaks_stays_within_the_byte_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ReShade.log");
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(3 * MAX_TAIL_BYTES).unwrap();
+        drop(file);
+        let tail = read_text_tail(&path, 500).unwrap();
+        assert_eq!(tail.len() as u64, MAX_TAIL_BYTES);
+        // Two thousand activity-log lines of 512 bytes fit: log.ts keeps 2,000 when it trims lucent.log.
+        const { assert!(MAX_TAIL_BYTES >= 2_000 * 512) };
     }
 
     #[test]

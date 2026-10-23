@@ -2,7 +2,8 @@ import { expect, it } from 'vitest'
 import { createCore } from './core'
 import { readDeployment } from './deployment'
 import { createFakePlatform } from '../platform/fake'
-import { existingSetup, fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { existingSetup, fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { NEXT_CONTENT } from '../platform/contentFixture'
 import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -42,6 +43,24 @@ it('resets tuned configs from prefilled choices, keeps Disabled, and makes a rea
   await reset.uninstall()
   expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver'])
   expect(await readDeployment(platform, ROOT)).toMatchObject({ status: 'rolled-back' })
+})
+
+it('backs up only what holds the player’s changes: the config files, and a deployed file that is no longer Lucent’s', async () => {
+  const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT)))
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  await platform.writeText(`${GAME}\\reshade-shaders\\Shaders\\Example.fx`, 'My shader tweak')
+  await core.resetSetup()
+  const backupPath = core.getState().resetBackupPath!
+  await core.review()
+  await core.deploy()
+  expect(core.getState().error).toBeNull()
+  // The DLLs and the untouched preset are what Lucent wrote, so the journal's backups are enough for them.
+  expect((await platform.listFiles(backupPath)).sort()).toEqual(['optiscaler.ini', 'reshade-shaders\\shaders\\example.fx', 'reshade.ini'])
+  expect(await platform.readText(`${backupPath}\\reshade-shaders\\Shaders\\Example.fx`)).toBe('My shader tweak')
 })
 
 it('gives repeated Resets separate readable backups and preserves the uninstall history', async () => {
@@ -119,4 +138,40 @@ it('reports a locked Reset file and leaves the setup recoverable', async () => {
   expect(core.getState().recoveryRequired).toBe(false)
   expect(core.getState().activity.kind).toBe('review')
   expect(await platform.readText(`${GAME}\\OptiScaler.ini`)).not.toContain('second-choice')
+})
+
+it('keeps announcing a pending content update once the player leaves Done after a Reset', async () => {
+  const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+  const platform = createFakePlatform(m)
+  const first = createCore(platform)
+  await first.scan()
+  await first.review()
+  await first.deploy()
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  const core = createCore(platform)
+  await core.scan()
+  expect(core.getState().activity).toMatchObject({ kind: 'deployment', update: { version: NEXT_CONTENT.id } })
+  await core.resetSetup()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'deployment', update: { version: NEXT_CONTENT.id } } })
+})
+
+it('shows drift the check after a Reset finds once the player leaves Done', async () => {
+  const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT)))
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  await core.resetSetup()
+  await core.review()
+  // Done reads the keys after the files are written and before the check that follows the Reset.
+  const getKeyNames = platform.getKeyNames.bind(platform)
+  platform.getKeyNames = async (keys) => { await platform.writeText(`${GAME}\\winmm.dll`, 'Patched'); platform.getKeyNames = getKeyNames; return getKeyNames(keys) }
+  await core.deploy()
+  expect(core.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
+  core.finish()
+  expect(core.getState().activity).toMatchObject({ kind: 'deployment', drift: { files: ['winmm.dll'] } })
 })

@@ -269,3 +269,18 @@ describe('Uninstall', () => {
     expect(await platform.readText(`${GAME}\\reshade-presets\\Example (previous).ini`)).toBe('[My example edits]\n')
   })
 })
+
+describe('A file whose name Windows tools can’t handle', () => {
+  it('is a user file: Scan goes on, and neither the deployment nor Uninstall touches it', async () => {
+    // Made through \\?\ or WSL: a trailing dot, a device name. Lucent can't name such a path safely, so it leaves it alone.
+    const odd = { [`${GAME}\\gshade-presets\\Odd.ini.`]: 'Made in WSL', [`${GAME}\\CON.txt`]: 'Made through a \\\\?\\ path' }
+    const platform = createFakePlatform(machine(setupMachine('gshade'), { files: odd }))
+    const before = await snapshot(platform)
+    const core = await deployed(platform)
+    expect(core.getState().existingSetups[0]?.files.map(key)).not.toContain('gshade-presets/odd.ini.')
+    for (const [path, text] of Object.entries(odd)) expect(await platform.readText(path)).toBe(text)
+    await core.uninstall()
+    expect(core.getState().error).toBeNull()
+    expect(await snapshot(platform)).toEqual({ ...before, ...carried('gshade') })
+  })
+})

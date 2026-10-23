@@ -10,6 +10,8 @@ import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
 import { Credits } from './CreditsScreen'
 import { Path } from './Path'
+import { returnFocus } from './focus'
+import { GAME_WAITING, whyGameActionsWait } from './gameWaiting'
 import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { replacedOriginals } from '../core/deployment'
@@ -124,6 +126,14 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
   const [confirming, setConfirming] = useState(false)
   const [resetConfirming, setResetConfirming] = useState(false)
   const [now, setNow] = useState(Date.now())
+  // The dialogs are unmounted rather than closed, so the browser doesn't give focus back to the button that opened one.
+  const opener = useRef<HTMLElement | null>(null)
+  const dialogOpen = confirming || resetConfirming
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (wasOpen.current && !dialogOpen) returnFocus(opener.current)
+    wasOpen.current = dialogOpen
+  }, [dialogOpen])
   useEffect(() => {
     if (openReset && deployment && resetBackupPath) setResetConfirming(true)
   }, [openReset, deployment, resetBackupPath])
@@ -132,6 +142,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
     return () => window.clearInterval(timer)
   }, [])
   const originals = deployment ? replacedOriginals(deployment) : []
+  const waiting = whyGameActionsWait(state)
   return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
     <FlowError />
     {launchOptions.length === 1 && <SettingsGroup title="Launch XIV with">
@@ -177,15 +188,16 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
       </div>
     </SettingsGroup>}
     {deployment && <SettingsGroup title="Danger zone" tone="danger">
+      {waiting && <p className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</p>}
       <div className="card settings-danger">
         <span><strong>Reset setup</strong><small>Offers the first-install choices again and writes the tested setup.</small></span>
-        <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={() => setResetConfirming(true)}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
+        <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={(e) => { opener.current = e.currentTarget; setResetConfirming(true) }}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
       </div>
       <div className="card settings-danger">
         <span><strong>Uninstall from this game</strong><small>{originals.length
           ? `Removes everything Lucent added. You choose whether the ${originals.length === 1 ? 'file' : `${originals.length.toLocaleString('en')} files`} it replaced come back.`
           : 'Removes everything Lucent added. It didn’t replace any of your files.'}</small></span>
-        <button className="btn is-danger-outline" disabled={!gameActionsAvailable(state)} onClick={() => setConfirming(true)}><Trash2 size={14} strokeWidth={1.75} />Uninstall…</button>
+        <button className="btn is-danger-outline" disabled={!gameActionsAvailable(state)} onClick={(e) => { opener.current = e.currentTarget; setConfirming(true) }}><Trash2 size={14} strokeWidth={1.75} />Uninstall…</button>
       </div>
     </SettingsGroup>}
     {confirming && <UninstallDialog originals={originals} onClose={() => setConfirming(false)} />}

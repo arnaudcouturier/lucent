@@ -1,0 +1,30 @@
+import { describe, expect, it } from 'vitest'
+import { createFakePlatform } from './fake'
+
+const CONFIG = 'C:\\Users\\Player\\AppData\\Roaming\\XIVLauncher\\dalamudConfig.json'
+
+describe('fake platform', () => {
+  it('reports the read-only attribute in stat, and a replacement clears it like the real port', async () => {
+    const platform = createFakePlatform({ files: { [CONFIG]: '{}', 'C:\\Games\\other.json': '{}' }, readOnlyFiles: [CONFIG] })
+    await expect(platform.stat(CONFIG)).resolves.toMatchObject({ kind: 'file', readOnly: true })
+    await expect(platform.stat(CONFIG.toUpperCase())).resolves.toMatchObject({ readOnly: true })
+    await expect(platform.stat('C:\\Games\\other.json')).resolves.toMatchObject({ readOnly: false })
+    await expect(platform.statMany([CONFIG, 'C:\\Games\\missing.json'])).resolves.toMatchObject([{ readOnly: true }, null])
+    await expect(platform.stat('C:\\Games')).resolves.toEqual({ kind: 'dir', size: 0, modifiedMs: 0, readOnly: false })
+    await platform.writeText(CONFIG, '{"ThirdRepoList":[]}')
+    await expect(platform.stat(CONFIG)).resolves.toMatchObject({ readOnly: false })
+  })
+
+  it('tells another process running an exe by its full path from one with the same name, and never counts itself', async () => {
+    const installed = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\Lucent.exe'
+    const platform = createFakePlatform({ exePath: installed, processes: ['XIVLauncher.exe', 'C:\\Users\\Player\\Downloads\\Lucent.exe'] })
+    // Only this process runs the installed copy, and a copy elsewhere is another file.
+    await expect(platform.isExeRunningElsewhere(installed)).resolves.toBe(false)
+    await expect(platform.isProcessRunning('lucent.exe')).resolves.toBe(true)
+    const withWindow = createFakePlatform({ exePath: installed, processes: [installed] })
+    await expect(withWindow.isExeRunningElsewhere(installed.toUpperCase())).resolves.toBe(true)
+    await expect(withWindow.isExeRunningElsewhere(installed.replace(/\\/g, '/'))).resolves.toBe(true)
+    await expect(withWindow.isExeRunningElsewhere('C:\\Users\\Player\\AppData\\Local\\Lucent')).resolves.toBe(false)
+    await expect(withWindow.isProcessRunning('Lucent.exe')).resolves.toBe(true)
+  })
+})

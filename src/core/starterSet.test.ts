@@ -6,8 +6,8 @@ import { DEFAULT_ENV, createFakePlatform, fakeZip, type FakePlatform, type Machi
 import type { Platform } from './platform'
 import { PlatformError } from './platform'
 import {
-  DalamudConfigError, STAGING_FOLDER, addThirdRepos, closedGuard, dalamudMessage, modInstalled, pluginStatus, pluginsToAdd, readThirdRepos,
-  reposToAdd, scanStarterSet, seedPlugins, type SeedOptions, type StarterSetScan,
+  DalamudConfigError, MOD_FOLDER_FIRST, STAGING_FOLDER, addThirdRepos, closedGuard, dalamudMessage, modFolderNote, modInstalled, pluginStatus, pluginsToAdd, readThirdRepos,
+  SeedInterruptedError, reposToAdd, scanStarterSet, seedPlugins, type SeedOptions, type StarterSetScan,
 } from './starterSet'
 
 const SET: StarterSet = parseManifest(JSON.stringify(manifest)).starterSet!
@@ -536,6 +536,28 @@ describe('seedPlugins', () => {
       expect((await scanAndSeed(fake, ['Weatherman'])).placed).toHaveLength(1)
     })
 
+    it('refuses to change a read-only config, leaves the flag as the player set it, and places nothing', async () => {
+      const { fake, files } = setup({ repos: [], machine: { readOnlyFiles: [CONFIG] } })
+      await expect(scanAndSeed(fake, ['Penumbra', 'Weatherman'])).rejects.toThrow(/didn’t change Dalamud’s settings because the file is read-only/)
+      expect(await fake.readText(CONFIG)).toBe(files[CONFIG])
+      expect((await fake.stat(CONFIG)).readOnly).toBe(true)
+      await expect(fake.stat(`${PLUGINS}\\Penumbra`)).rejects.toMatchObject({ kind: 'not-found' })
+      await expect(fake.stat(`${PLUGINS}\\Weatherman`)).rejects.toMatchObject({ kind: 'not-found' })
+      expect(await leftovers(fake)).toBe(0)
+    })
+
+    it('does not mind a read-only config when no repository has to be added', async () => {
+      const { fake } = setup({ machine: { readOnlyFiles: [CONFIG] } })
+      expect((await scanAndSeed(fake, ['Penumbra', 'Weatherman'])).placed.map((p) => p.name)).toEqual(['Penumbra', 'Weatherman'])
+      expect((await fake.stat(CONFIG)).readOnly).toBe(true)
+    })
+
+    it('does not mind a read-only config for official plugins alone', async () => {
+      const { fake } = setup({ repos: [], machine: { readOnlyFiles: [CONFIG] } })
+      expect((await scanAndSeed(fake, ['Weatherman'])).placed).toHaveLength(1)
+      expect((await fake.stat(CONFIG)).readOnly).toBe(true)
+    })
+
     it('refuses without Dalamud ready', async () => {
       const { fake } = setup({ config: null })
       await expect(scanAndSeed(fake, ['Weatherman'])).rejects.toThrow(/hasn’t run/)
@@ -572,5 +594,221 @@ describe('seedPlugins', () => {
     ])
     expect(steps[0]).toBe('Downloading Penumbra (1 of 2)…')
     expect(steps.at(-1)).toBe('Adding Weatherman (2 of 2)…')
+  })
+})
+
+// ------------------------------------------------------------------------------------------------------------------
+// What Lucent writes must follow what is on disk when it writes, not what the screen read when it opened.
+
+describe('when Dalamud’s settings change while Lucent works', () => {
+  const seed = (fake: FakePlatform, scan: StarterSetScan, names: string[], over: Partial<SeedOptions> = {}) =>
+    seedPlugins(fake, SET, scan, names.map(plugin), options(fake, over))
+
+  it('reads a repository entry with no IsEnabled as switched off, as Dalamud does', () => {
+    const list = JSON.stringify({ ThirdRepoList: { $values: [{ Url: SEA }, { Url: ATR, IsEnabled: true }] } })
+    expect(readThirdRepos(list)).toEqual([{ url: SEA, enabled: false }, { url: ATR, enabled: true }])
+  })
+
+  it('places nothing from a repository the player removed after the screen was scanned, and writes no repo they never saw', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    const removed = dalamudConfig([{ url: ATR }])
+    await fake.writeText(CONFIG, removed)
+    const outcome = await seed(fake, scan, ['Penumbra', 'Weatherman'])
+    expect(outcome.placed).toEqual([{ name: 'Weatherman', version: '1.0.0.0' }])
+    expect(outcome.skipped).toEqual([{ name: 'Penumbra', reason: expect.stringMatching(/repository.*changed/i) }])
+    expect(outcome.reposAdded).toEqual([])
+    expect(await fake.readText(CONFIG)).toBe(removed)
+    await expect(fake.stat(`${PLUGINS}\\Penumbra`)).rejects.toMatchObject({ kind: 'not-found' })
+  })
+
+  it('skips a plugin whose repository was switched off after the screen was scanned', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    await fake.writeText(CONFIG, dalamudConfig([{ url: SEA, enabled: false }, { url: ATR }]))
+    const outcome = await seed(fake, scan, ['Penumbra'])
+    expect(outcome.placed).toEqual([])
+    expect(outcome.skipped[0].reason).toMatch(/turned off/)
+  })
+
+  it('hands back what it already placed when XIV starts partway, so the screen can show it', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    let asked = 0
+    const error = await seed(fake, scan, ['Weatherman', 'AcrylicXIV'], { guard: async () => { if (++asked >= 4) throw new Error('Close XIV, then try again.') } }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(SeedInterruptedError)
+    const interrupted = error as SeedInterruptedError
+    expect(interrupted.message).toMatch(/Close XIV/)
+    expect(interrupted.outcome.placed).toEqual([{ name: 'Weatherman', version: '1.0.0.0' }])
+    expect(await leftovers(fake)).toBe(0)
+  })
+
+  it('reports the repositories it had already added when XIV starts before the first plugin goes in', async () => {
+    const { fake } = setup({ repos: [] })
+    const scan = await scanStarterSet(fake, SET)
+    let asked = 0
+    const error = await seed(fake, scan, ['Penumbra'], { guard: async () => { if (++asked >= 3) throw new Error('Close XIV, then try again.') } }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(SeedInterruptedError)
+    expect((error as SeedInterruptedError).outcome).toEqual({ placed: [], skipped: [], reposAdded: [SEA] })
+    expect(readThirdRepos(await fake.readText(CONFIG)).map((r) => r.url)).toEqual([SEA])
+  })
+
+  it('stops with the plain error, not an interruption, when XIV starts before anything is written', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    let asked = 0
+    const error = await seed(fake, scan, ['Weatherman'], { guard: async () => { if (++asked >= 2) throw new Error('Close XIV, then try again.') } }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(SeedInterruptedError)
+  })
+
+  it('looks at the list again just before it writes, after the downloads', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    const download = fake.downloadFile.bind(fake)
+    fake.downloadFile = async (url, to, progress) => {
+      await download(url, to, progress)
+      if (url.endsWith('/Penumbra.zip')) await fake.writeText(CONFIG, dalamudConfig([{ url: SEA, enabled: false }, { url: ATR }]))
+    }
+    const outcome = await seed(fake, scan, ['Weatherman', 'Penumbra'])
+    expect(outcome.placed).toEqual([{ name: 'Weatherman', version: '1.0.0.0' }])
+    expect(outcome.skipped).toEqual([{ name: 'Penumbra', reason: expect.stringMatching(/turned off/) }])
+    await expect(fake.stat(`${PLUGINS}\\Penumbra`)).rejects.toMatchObject({ kind: 'not-found' })
+    expect(await leftovers(fake)).toBe(0)
+  })
+
+  it('does not download a plugin whose repository was removed after the scan', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    await fake.writeText(CONFIG, dalamudConfig([{ url: ATR }]))
+    const { downloaded } = spy(fake)
+    await seed(fake, scan, ['Penumbra'])
+    expect(downloaded).toEqual([])
+  })
+
+  it('appends only the repositories the consent panel named, and only for plugins that still go in', async () => {
+    // The panel named SeaOfStars (missing then) and not papapachin’s repo (listed then).
+    const { fake } = setup({ repos: [{ url: ATR }] })
+    const scan = await scanStarterSet(fake, SET)
+    await fake.writeText(CONFIG, dalamudConfig([]))
+    const outcome = await seed(fake, scan, ['Penumbra', 'ActionTimelineReplacement'])
+    expect(outcome.placed).toEqual([{ name: 'Penumbra', version: '1.0.0.0' }])
+    expect(outcome.skipped).toEqual([{ name: 'ActionTimelineReplacement', reason: expect.stringMatching(/repository.*changed/i) }])
+    expect(outcome.reposAdded).toEqual([SEA])
+    expect(readThirdRepos(await fake.readText(CONFIG)).map((r) => r.url)).toEqual([SEA])
+  })
+
+  it('leaves the list alone when the player added the repository themselves meanwhile', async () => {
+    const { fake } = setup({ repos: [] })
+    const scan = await scanStarterSet(fake, SET)
+    const added = dalamudConfig([{ url: SEA }])
+    await fake.writeText(CONFIG, added)
+    const outcome = await seed(fake, scan, ['Penumbra'])
+    expect(outcome.placed).toEqual([{ name: 'Penumbra', version: '1.0.0.0' }])
+    expect(outcome.reposAdded).toEqual([])
+    expect(await fake.readText(CONFIG)).toBe(added)
+  })
+
+  it('skips a plugin whose repository the panel named if the player switched it off meanwhile, and does not turn it on', async () => {
+    const { fake } = setup({ repos: [] })
+    const scan = await scanStarterSet(fake, SET)
+    const off = dalamudConfig([{ url: SEA, enabled: false }])
+    await fake.writeText(CONFIG, off)
+    const outcome = await seed(fake, scan, ['Penumbra'])
+    expect(outcome.placed).toEqual([])
+    expect(outcome.skipped[0].reason).toMatch(/turned off/)
+    expect(await fake.readText(CONFIG)).toBe(off)
+  })
+
+  it('places nothing from a third-party repository when Dalamud’s config can no longer be read', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    await fake.removeFile(CONFIG)
+    await expect(seed(fake, scan, ['Penumbra'])).rejects.toThrow(/didn’t change Dalamud’s settings/)
+    await expect(fake.stat(`${PLUGINS}\\Penumbra`)).rejects.toMatchObject({ kind: 'not-found' })
+    expect(await leftovers(fake)).toBe(0)
+  })
+
+  it('still places official plugins when the config cannot be read, since they need no repository', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    await fake.removeFile(CONFIG)
+    expect((await seed(fake, scan, ['Weatherman'])).placed).toHaveLength(1)
+  })
+
+  it('reads a switched-off repository from the config text, so its plugins show as off', async () => {
+    const { fake } = setup({ config: JSON.stringify({ ThirdRepoList: { $type: TYPE, $values: [{ $type: ENTRY_TYPE, Url: SEA }, { $type: ENTRY_TYPE, Url: ATR, IsEnabled: true }] } }) })
+    const scan = await scanStarterSet(fake, SET)
+    expect(pluginStatus(SET, scan, plugin('Penumbra'))).toBe('repo-off')
+    expect(pluginStatus(SET, scan, plugin('ActionTimelineReplacement'))).toBe('available')
+  })
+})
+
+describe('what Lucent will not fetch', () => {
+  const scanAndSeed = async (fake: FakePlatform, names: string[]) => {
+    const scan = await scanStarterSet(fake, SET)
+    return seedPlugins(fake, SET, scan, names.map(plugin), options(fake))
+  }
+
+  it.each([
+    'https://repo.heliosphere.app./latest.zip',
+    'https://heliosphere.app./latest.zip',
+    'https://REPO.Heliosphere.App../latest.zip',
+    'https://repo.heliosphere.app。/latest.zip',
+  ])('refuses a Heliosphere address written with a trailing dot: %s', async (link) => {
+    const { fake } = setup({ remote: { [OFFICIAL_REPO_URL]: JSON.stringify([repoEntry('Weatherman', '1.0.0.0', 15, link)]) } })
+    const { downloaded } = spy(fake)
+    const outcome = await scanAndSeed(fake, ['Weatherman'])
+    expect(outcome.placed).toEqual([])
+    expect(outcome.skipped[0].reason).toMatch(/doesn’t allow other programs/)
+    expect(downloaded).toEqual([])
+  })
+
+  it('still fetches a host that only ends like Heliosphere’s', async () => {
+    const { fake } = setup({ remote: { [OFFICIAL_REPO_URL]: JSON.stringify([repoEntry('Weatherman', '1.0.0.0', 15, 'https://nottheheliosphere.app/x.zip')]), 'https://nottheheliosphere.app/x.zip': pluginZip('Weatherman') } })
+    expect((await scanAndSeed(fake, ['Weatherman'])).placed).toHaveLength(1)
+  })
+})
+
+describe('when Dalamud’s plugin folder cannot be listed', () => {
+  it('skips the plugin and leaves an existing copy of it alone, instead of clearing its files', async () => {
+    const { fake } = setup()
+    const scan = await scanStarterSet(fake, SET)
+    // The player installed it after the screen read the machine, and a listing now fails.
+    const theirs = `${PLUGINS}\\Weatherman\\1.0.0.0\\Weatherman.dll`
+    await fake.writeText(theirs, 'the player’s own copy')
+    const wrapped = { ...fake, async listFolders(root: string) {
+      if (root === PLUGINS) throw new PlatformError('access-denied', 'Access is denied')
+      return fake.listFolders(root)
+    } } as FakePlatform
+    const outcome = await seedPlugins(wrapped, SET, scan, [plugin('Weatherman')], options(wrapped))
+    expect(await fake.readText(theirs)).toBe('the player’s own copy')
+    expect(outcome.placed).toEqual([])
+    expect(outcome.skipped).toEqual([{ name: 'Weatherman', reason: expect.stringMatching(/Access is denied/) }])
+  })
+
+  it('still places a plugin on a Dalamud with no plugin folder yet', async () => {
+    const { fake } = setup()
+    await expect(fake.listFolders(PLUGINS)).rejects.toMatchObject({ kind: 'not-found' })
+    const scan = await scanStarterSet(fake, SET)
+    const outcome = await seedPlugins(fake, SET, scan, [plugin('Weatherman')], options(fake))
+    expect(outcome.placed).toEqual([{ name: 'Weatherman', version: '1.0.0.0' }])
+  })
+})
+
+describe('Penumbra mod rows', () => {
+  const scanOf = (over: Partial<StarterSetScan> = {}): StarterSetScan => ({ dalamud: { status: 'ready' }, apiLevel: 15, thirdRepos: [], installedPlugins: [], modDirectory: null, installedMods: [], ...over })
+
+  it('say what is missing while Penumbra has no mod folder, and nothing once it has one', () => {
+    expect(MOD_FOLDER_FIRST).toBe('Set Penumbra’s mod folder first')
+    expect(modFolderNote(scanOf({ modDirectory: 'D:\\Mods' }))).toBeNull()
+    expect(modFolderNote(scanOf({ installedPlugins: ['Penumbra'] }))).toMatch(/Penumbra has no mod folder yet.*Settings tab/)
+  })
+
+  it('tell a player without Penumbra to add it first, not to open its Settings', () => {
+    const note = modFolderNote(scanOf({ installedPlugins: ['Glamourer'] }))!
+    expect(note).toMatch(/Penumbra isn’t installed/)
+    expect(note).not.toMatch(/has no mod folder/)
+    expect(modFolderNote(scanOf({ installedPlugins: ['penumbra'] }))).toMatch(/has no mod folder/)
   })
 })

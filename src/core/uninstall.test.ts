@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { MACHINES, existingSetup, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
-import { FIXTURE_ASSETS, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
+import { MACHINES, existingSetup, fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { FIXTURE_ASSETS, NEXT_CONTENT, PROFILE_ASSETS, PROFILE_MANIFEST, TEST_MANIFEST, fixtureUrl } from '../platform/contentFixture'
 import { MANIFEST_URL } from './manifest'
-import { readableBackupPath, readDeployment, replacedOriginals } from './deployment'
+import { dataPaths, readableBackupPath, readDeployment, replacedOriginals } from './deployment'
 import { PlatformError } from './platform'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -65,6 +65,92 @@ it('keeps user files added after the deployment, and the folders that hold them'
       'reshade-shaders\\shaders\\paid.fx': await platform.hashFile(`${GAME}\\reshade-shaders\\Shaders\\Paid.fx`),
     },
     directories: [...before.directories, 'reshade-presets', 'reshade-shaders', 'reshade-shaders\\shaders'].sort(),
+  })
+})
+
+it('keeps a file the player put where Disabled had moved the entry file away', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const before = await snapshot(platform)
+  const core = await deployed(platform)
+  await core.setEnabled(false)
+  expect(core.getState().error).toBeNull()
+  // Another OptiScaler, dropped in while Lucent's sits aside as winmm.dll.disabled.
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Another OptiScaler')
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await snapshot(platform)).toEqual({ ...before, files: { ...before.files, 'winmm.dll': await platform.hashFile(`${GAME}\\winmm.dll`) } })
+  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('Another OptiScaler')
+})
+
+it('still keeps that file when the uninstall is interrupted and finished at the next start', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const before = await snapshot(platform)
+  const core = await deployed(platform)
+  await core.setEnabled(false)
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Another OptiScaler')
+  // The toggle is undone first; the uninstall stops before the step that first copied winmm.dll.
+  const remove = platform.removeFile.bind(platform)
+  platform.removeFile = async (path) => {
+    if (path.toLowerCase().endsWith('\\reshade.download')) throw new PlatformError('locked', 'Sharing violation')
+    await remove(path)
+  }
+  await core.uninstall()
+  expect(core.getState()).toMatchObject({ recoveryRequired: true })
+  platform.removeFile = remove
+  const reopened = createCore(platform)
+  await reopened.scan()
+  expect(reopened.getState()).toMatchObject({ error: null, recoveryRequired: false, deployment: null })
+  expect(await snapshot(platform)).toEqual({ ...before, files: { ...before.files, 'winmm.dll': await platform.hashFile(`${GAME}\\winmm.dll`) } })
+})
+
+/** Deployed, then updated to the next version, which drops the example shader; `meanwhile` runs before the update. */
+async function updatedToNext(meanwhile: (platform: FakePlatform) => Promise<void> = async () => {}) {
+  const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
+  const platform = createFakePlatform(m)
+  const before = await snapshot(platform)
+  await deployed(platform)
+  await meanwhile(platform)
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  const core = createCore(platform)
+  await core.scan()
+  await core.update()
+  expect(core.getState()).toMatchObject({ error: null, deployment: { contentVersion: NEXT_CONTENT.id } })
+  return { platform, before, core }
+}
+
+const SHADER = `${GAME}\\reshade-shaders\\Shaders\\Example.fx`
+
+it('keeps a file the player put at a path an update stopped deploying', async () => {
+  const { platform, before, core } = await updatedToNext()
+  await expect(platform.stat(SHADER)).rejects.toThrow(/Not found/)
+  // The player brings their own shader under the name Lucent's used to have.
+  await platform.writeText(SHADER, 'My own Example.fx')
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(SHADER)).toBe('My own Example.fx')
+  expect((await snapshot(platform)).files).toEqual({ ...before.files, 'reshade-shaders\\shaders\\example.fx': await platform.hashFile(SHADER) })
+})
+
+it('still removes a file that changed while it was Lucent’s, once an update has dropped it', async () => {
+  // A tool rewrote the shader Lucent deployed; the update then removed it, keeping its backup in the journal.
+  const { platform, before, core } = await updatedToNext((platform) => platform.writeText(SHADER, 'Rewritten by a tool'))
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await snapshot(platform)).toEqual(before)
+})
+
+it('keeps a shipped preset the player edited', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const before = await snapshot(platform)
+  const core = await deployed(platform)
+  const preset = `${GAME}\\reshade-presets\\Example.ini`
+  await platform.writeText(preset, '[My tweaks]\n')
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(preset)).toBe('[My tweaks]\n')
+  expect(await snapshot(platform)).toEqual({
+    files: { ...before.files, 'reshade-presets\\example.ini': await platform.hashFile(preset) },
+    directories: [...before.directories, 'reshade-presets'].sort(),
   })
 })
 
@@ -146,6 +232,22 @@ it('finishes an interrupted uninstall at the next start', async () => {
   await reopened.scan()
   expect(await snapshot(platform)).toEqual(before)
   expect(reopened.getState()).toMatchObject({ error: null, recoveryRequired: false, deployment: null, activity: { kind: 'scan' } })
+})
+
+it('finishes when a folder it created can’t be removed, such as another program’s working folder', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const before = await snapshot(platform)
+  const core = await deployed(platform)
+  const removeDirectory = platform.removeDirectoryIfEmpty.bind(platform)
+  platform.removeDirectoryIfEmpty = async (path) => {
+    if (path.toLowerCase() === `${GAME}\\reshade-shaders`.toLowerCase()) throw new PlatformError('locked', 'Sharing violation', path)
+    await removeDirectory(path)
+  }
+  await core.uninstall()
+  expect(core.getState()).toMatchObject({ error: null, recoveryRequired: false, deployment: null })
+  expect((await readDeployment(platform, ROOT))?.status).toBe('rolled-back')
+  // Every file is back; only the folder that was in use stays, empty.
+  expect(await snapshot(platform)).toEqual({ ...before, directories: [...before.directories, 'reshade-shaders'].sort() })
 })
 
 it('keeps a generated-file path that held a user file before the deployment', async () => {
@@ -243,6 +345,50 @@ it('restores the game to vanilla when asked, leaving the files it replaced out a
   // The player's copies are still there, readable.
   const readable = await readableBackupPath(platform, EXISTING_ROOT, folder)
   expect((await platform.listFiles(readable)).length).toBeGreaterThan(0)
+})
+
+it('keeps the copies a vanilla uninstall left apart from a later deployment’s readable backup', async () => {
+  const platform = createFakePlatform(machine(deploymentMachine(), { files: { [`${GAME}\\winmm.dll`]: 'User mod' } }))
+  const first = await deployed(platform)
+  const folder = first.getState().deployment!.backupFolder!
+  await first.uninstall(false)
+  const copies = await readableBackupPath(platform, ROOT, folder)
+  expect(await platform.readText(`${copies}\\winmm.dll`)).toBe('User mod')
+  // Another mod at the same path, deployed over and then put back by a default uninstall.
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Second mod')
+  const second = await deployed(platform)
+  expect(second.getState().deployment!.backupFolder).toBe(`${folder} (2)`)
+  await second.uninstall()
+  expect(second.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('Second mod')
+  expect(await platform.readText(`${copies}\\winmm.dll`)).toBe('User mod')
+  expect(await platform.stat(await readableBackupPath(platform, ROOT, `${folder} (2)`)).then(() => true, () => false)).toBe(false)
+})
+
+it('keeps an edited shipped preset where an old setup’s preset was, which stays under the name it was carried to', async () => {
+  const { platform, core } = await deployedOverExisting()
+  const preset = `${EXISTING_ROOT}\\game\\reshade-presets\\Example.ini`
+  await platform.writeText(preset, '[My tweaks of Lucent’s example]\n')
+  await core.uninstall(true)
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(preset)).toBe('[My tweaks of Lucent’s example]\n')
+  expect(await platform.readText(`${EXISTING_ROOT}\\game\\reshade-presets\\Example (previous).ini`)).toBe('[My example edits]\n')
+})
+
+it('leaves the readable backup alone when Lucent’s Backups folder can’t be listed as a plain folder', async () => {
+  const { platform, core } = await deployedOverExisting()
+  const backups = (await dataPaths(platform, EXISTING_ROOT)).readableBackups
+  const copies = await readableBackupPath(platform, EXISTING_ROOT, core.getState().deployment!.backupFolder!)
+  const kept = await platform.listFiles(copies)
+  // The real port refuses to list a junction or symbolic link: a Backups folder swapped for one to another folder is never emptied.
+  const list = platform.listFiles.bind(platform)
+  platform.listFiles = async (root) => {
+    if (root.toLowerCase() === backups.toLowerCase()) throw new PlatformError('access-denied', 'A path contains a junction or symbolic link', root)
+    return list(root)
+  }
+  await core.uninstall(true)
+  expect(core.getState()).toMatchObject({ error: null, deployment: null })
+  expect(await list(copies)).toEqual(kept)
 })
 
 it('puts the replaced files back by default and removes the readable backup', async () => {

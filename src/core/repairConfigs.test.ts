@@ -63,18 +63,43 @@ it('puts back a deleted OptiScaler.ini from the baseline and the stored choices,
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
 })
 
-it('puts back a deleted ReShade.ini from the cache, and a config that can’t be read as text', async () => {
+it('puts back a deleted ReShade.ini from the cache, and leaves a config that isn’t UTF-8 text as it is', async () => {
   const { platform } = await deployed()
   await platform.removeFile(`${GAME}\\ReShade.ini`)
-  await platform.writeText(CONFIG, 'binary\0garbage')
+  // Saved as UTF-16, say: its zero bytes are no damage, just another encoding.
+  await platform.writeText(CONFIG, '[\0D\0l\0s\0s\0N\0r\0]\0')
 
   const core = await reopen(platform)
-  expect(statusCard(core.getState())).toMatchObject({ kind: 'drift', files: 2 })
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'drift', files: 1 })
   await core.repair()
   expect(core.getState().error).toBeNull()
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=\n')
-  expect(await platform.readText(CONFIG)).not.toContain('\0')
+  expect(await platform.readText(CONFIG)).toBe('[\0D\0l\0s\0s\0N\0r\0]\0')
   expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+})
+
+it('leaves a tuned config saved in a legacy code page to the player: it isn’t drift, and Repair keeps it', async () => {
+  const { platform } = await deployed()
+  const tuned = (await platform.readText(CONFIG)).replace('Passes = 2', '; réglé à la main\nPasses = 9')
+  await platform.writeText(CONFIG, tuned)
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Patched by the game')
+  // The real port reads only UTF-8 as text; an ANSI accent fails it, while the bytes still read and hash.
+  const read = platform.readText.bind(platform)
+  const hash = platform.hashFile.bind(platform)
+  const ansi = await hash(CONFIG)
+  platform.readText = async (path) => {
+    if (path.toLowerCase() === CONFIG.toLowerCase()) throw new PlatformError('unknown', 'stream did not contain valid UTF-8', path)
+    return read(path)
+  }
+  platform.hashFile = async (path) => path.toLowerCase() === CONFIG.toLowerCase() ? ansi : hash(path)
+
+  const core = await reopen(platform)
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'drift', files: 1 })
+  await core.repair()
+  expect(core.getState().error).toBeNull()
+  expect(statusCard(core.getState())).toEqual({ kind: 'healthy' })
+  expect(await read(CONFIG)).toBe(tuned)
+  expect(await read(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
 })
 
 it('leaves a tuned config alone while it puts back a patched file', async () => {

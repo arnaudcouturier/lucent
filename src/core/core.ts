@@ -5,11 +5,11 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
-import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, fetchAppUpdate, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
+import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
 export type { AppUpdate } from './appUpdate'
 import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
@@ -19,7 +19,7 @@ import { frameGenerationOptionsForUnlock, mfgUnlockFor, normalizeNeuralRendering
 import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
 import { cacheSnapshot, pruneContentCache, versionChoices, type VersionChoice } from './versions'
-import { gameWriteAccess, requireGameStopped, takeElevationResume, type GameWriteRequest } from './gameAccess'
+import { deployedMinAppVersion, gameWriteAccess, NEWER_APP_NEEDED, requireGameStopped, takeElevationResume, type GameWriteRequest, type PlayerFolders } from './gameAccess'
 import { installedExe, isSelfInstalled, lucentFolder, refreshSelfInstall, removeSelfInstall, selfInstall } from './selfInstall'
 import { deploymentHotkeys, liveKeyBindings, liveKeyCodes, type KeyBinding } from './hotkeys'
 import { configUpdateNotes } from './configs'
@@ -30,7 +30,7 @@ import { fileCount } from './format'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
-import { STAGING_FOLDER, closedGuard, scanStarterSet, seedPlugins, type StarterSetState } from './starterSet'
+import { STAGING_FOLDER, SeedInterruptedError, closedGuard, scanStarterSet, seedPlugins, type StarterSetState } from './starterSet'
 
 /** A content version the status card announces. Nothing downloads until the player clicks Update. */
 export interface ContentUpdate {
@@ -113,8 +113,12 @@ export interface State {
   addToStartMenu: boolean
   /** Lucent is in the Start menu and Settings → Apps, so Profile no longer offers it. */
   selfInstalled: boolean
-  /** Set once the uninstall from Settings → Apps finishes; the real port has exited by then. */
+  /** Set once the uninstall from Settings → Apps has removed everything but the data folder and the exe, which go when Lucent exits. */
   appUninstalled: boolean
+  /** Settings → Apps' uninstall window: the folder of readable copies the data folder takes with it, and whether any outlast "Restore the game folder". */
+  appUninstallBackups: { path: string; withRestore: boolean } | null
+  /** The uninstall window waits while the installed Lucent is open in another window: its exe couldn't go, and it would write its data again. */
+  lucentOpenElsewhere: boolean
   profiles: PerformanceProfile[]
   selectedProfile: ProfileId | null
   /** The card's first-run recommendation; null for legacy content without GPU recommendations. */
@@ -227,6 +231,10 @@ export interface Core {
   openAppUninstall(): Promise<void>
   /** Optionally uninstalls every deployment, then removes the shortcut, the Settings → Apps entry, the data folder and the exe. */
   uninstallApp(restoreGameFolder: boolean): Promise<void>
+  /** Closes the uninstall window once the player has read its note: removes the data folder and the exe as Lucent exits. */
+  finishAppUninstall(): Promise<void>
+  /** Checks again whether the installed Lucent is open in another window; the uninstall window asks every second. */
+  refreshLucentElsewhere(): Promise<void>
   copyDiagnostics(): Promise<void>
   reportBug(): Promise<void>
   /** The last lines of a log the Logs section shows; null when that log hasn't been written yet. Works while Lucent is busy. */
@@ -274,11 +282,28 @@ export function createCore(platform: Platform): Core {
   let playerLocalAppData: string | null = null
   /** The player's account when an administrator relaunch carried it, since Windows Auto HDR is per user. */
   let playerUserSid: string | undefined
+  /** The player's AppData, Documents and Pictures when an administrator relaunch carried them: XIV's and XIVLauncher's configs and the Start menu are there. */
+  let playerFolders: PlayerFolders | null = null
+  /** This process was relaunched with administrator access for a change, so what it starts runs elevated too. */
+  let relaunchedElevated = false
+  /** A later Scan in the same process finds the request consumed, with nothing carried; what the first one carried stays. */
+  const takeResume = async () => {
+    const context = await takeElevationResume(platform)
+    if (context) {
+      relaunchedElevated = true
+      playerLocalAppData = context.localAppData
+      playerUserSid = context.userSid ?? playerUserSid
+      playerFolders = context.folders ?? playerFolders
+    }
+    return context
+  }
   platform = new Proxy(nativePlatform, { get(target, key) {
     if (key === 'envFolder') return async (folder: Parameters<Platform['envFolder']>[0]) => {
       if (!playerLocalAppData) return target.envFolder(folder)
       if (folder === 'LocalAppData') return playerLocalAppData
-      // Relaunched as another administrator account, the process's Pictures is not the player's; the same account keeps its own, redirected or not.
+      const carried = folder === 'AppData' || folder === 'Documents' || folder === 'Pictures' ? playerFolders?.[folder] : undefined
+      if (carried) return carried
+      // A request that carried no folders: relaunched as another administrator account, the process's Pictures is not the player's; the same account keeps its own, redirected or not.
       if (folder === 'Pictures' && normalizePath(await target.envFolder('LocalAppData')).toLowerCase() !== normalizePath(playerLocalAppData).toLowerCase()) {
         return joinPath(parentPath(parentPath(normalizePath(playerLocalAppData))), 'Pictures')
       }
@@ -292,7 +317,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null, starterSet: { status: 'idle' },
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null, starterSet: { status: 'idle' },
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -383,6 +408,8 @@ export function createCore(platform: Platform): Core {
   class ElevationPending extends Error {}
   let resumeContentVersion: string | null = null
   let resumeReviewedPaths: string[] | null = null
+  /** The HDR mode the player picked before UAC; the elevated process may read XIV's screen differently, and must not change it. */
+  let resumeHdrMode: HdrMode | null = null
   type PendingSetup = { mode: 'reset' | 'tier'; content: ContentVersion; tier: Tier; graphics: GpuAdapter }
   let pendingSetup: PendingSetup | null = null
   let setupReturnActivity: Extract<Activity, { kind: 'deployment' }> | null = null
@@ -531,10 +558,23 @@ export function createCore(platform: Platform): Core {
     const from = state.manifest.manifest.tiers.find((t) => t.id === record.tier)?.label ?? record.cachedVersions?.[0]?.tier.label ?? record.tier
     return { gpu: state.graphics.adapter.name, from, to: target.tier.label, ...(target.tier.id === record.tier ? { sameTier: true } : {}) }
   }
-  /** App releases come from GitHub, never the manifest; a failed fetch announces nothing. */
+  /** The last app releases list GitHub returned, so a check that can't reach it still announces for today's channel and skips. */
+  let appReleases: AppUpdate[] | null = null
+  /** Keeps a readable releases list as the last one; an unreadable one throws and leaves the last one in place. */
+  const takeAppReleases = (text: string) => {
+    let list: unknown
+    try { list = JSON.parse(text) } catch { throw new Error('GitHub returned an unreadable app releases list.') }
+    if (!Array.isArray(list)) throw new Error('GitHub returned an invalid app releases list.')
+    appReleases = parseAppReleases(text)
+  }
+  /** The app update to announce from the last releases list, or, before any list arrived, the one already announced if it still qualifies. */
+  const appAnnouncement = (skipped: readonly string[]) =>
+    announcedAppUpdate(appReleases ?? (state.appUpdate ? [state.appUpdate] : []), { appVersion: APP_VERSION, skipped, channel: state.channel })
+  /** App releases come from GitHub, never the manifest. */
   const announceApp = async (): Promise<AppUpdate | null> => {
     const { skippedApp } = await readSettings(platform)
-    return fetchAppUpdate(platform, { appVersion: APP_VERSION, skipped: skippedApp, channel: state.channel })
+    try { takeAppReleases(await platform.fetchText(APP_RELEASES_URL)) } catch { /* The last list announces. */ }
+    return appAnnouncement(skippedApp)
   }
   /** Checked on open and after an update or a skip; there is no background service. */
   const announceUpdate = async (record: DeploymentRecord, manifestState = state.manifest): Promise<ContentUpdate | null> => {
@@ -551,13 +591,15 @@ export function createCore(platform: Platform): Core {
       { ...planSelection(content, tier, record), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
     return { version: content.id, changelog: [...content.changelog, ...configUpdateNotes(plan.recipe.ownedConfigs, Object.keys(record.files))], downloadSize: plan.downloadSize }
   }
-  /** The health check right after a deployment, shown once the player leaves Done. */
+  /** The latest health check and content announcement, shown once the player leaves Done: Install and Reset finish there. */
   let deployedDrift: Drift | null = null
+  let deployedUpdate: ContentUpdate | null = null
   /** Runs the health check before and after every command that writes to the game folder. */
   const refreshHealth = async (record: DeploymentRecord, full = false, progress?: (checked: number, total: number) => void) => {
     const version = state.gameFolder.status === 'found' ? state.gameFolder.version : null
     const drift = await checkHealth(platform, record, version, full, progress)
     noteHealth(record, drift)
+    deployedDrift = drift
     if (state.activity.kind === 'deployment') set({ activity: { ...state.activity, drift } })
     return drift
   }
@@ -607,24 +649,23 @@ export function createCore(platform: Platform): Core {
     }
     const preferences = settings.value
     let releasesError: string | null = null
-    let appUpdate: AppUpdate | null = state.appUpdate
     if ('text' in releases) {
-      let releaseList: unknown
-      try { releaseList = JSON.parse(releases.text) }
-      catch { releasesError = 'GitHub returned an unreadable app releases list.' }
-      if (!releasesError && !Array.isArray(releaseList)) releasesError = 'GitHub returned an invalid app releases list.'
-      if (!releasesError) appUpdate = announcedAppUpdate(parseAppReleases(releases.text), { appVersion: APP_VERSION, skipped: preferences.skippedApp, channel: state.channel })
+      try { takeAppReleases(releases.text) } catch (error) { releasesError = message(error) }
     } else releasesError = message(releases.error)
+    // A failed fetch still applies today's channel and skips, so a Stable player is never left a Beta release to install.
+    const appUpdate = appAnnouncement(preferences.skippedApp)
 
     const manifestError = manifest.status === 'ready' ? null : `The manifest didn’t load. ${'message' in manifest ? manifest.message : ''}`.trim()
+    // Likewise the content announcement: a skip or a channel change made while the manifest can't load still counts.
+    const known = manifest.status === 'ready' ? manifest : state.manifest
     const record = state.activity.kind === 'deployment' ? state.deployment : null
     let update = state.activity.kind === 'deployment' ? state.activity.update : null
     let versions = state.versions
     let contentError: string | null = null
-    if (manifest.status === 'ready' && record) {
+    if (known.status === 'ready' && record) {
       try {
-        update = await announceUpdate(record, manifest)
-        versions = await versionChoices(platform, record, manifest.manifest, preferences, state.channel, APP_VERSION)
+        update = await announceUpdate(record, known)
+        versions = await versionChoices(platform, record, known.manifest, preferences, state.channel, APP_VERSION)
       } catch (error) { contentError = message(error) }
     }
 
@@ -648,7 +689,7 @@ export function createCore(platform: Platform): Core {
     const patch: Partial<State> = {
       appUpdate,
       ...(manifest.status === 'ready' ? { manifest, graphics } : {}),
-      ...(manifest.status === 'ready' && !contentError && record ? { versions } : {}),
+      ...(known.status === 'ready' && !contentError && record ? { versions } : {}),
       updateCheck: checkSucceeded && checkedAt
         ? { status: 'checked', checkedAt, error: null, outcome }
         : manual
@@ -656,7 +697,7 @@ export function createCore(platform: Platform): Core {
           : { ...previous, status: previous.checkedAt ? 'stale' : 'idle', error: null },
     }
     set(patch)
-    if (manifest.status === 'ready' && !contentError && record && state.activity.kind === 'deployment') {
+    if (known.status === 'ready' && !contentError && record && state.activity.kind === 'deployment') {
       set({ activity: { ...state.activity, update, tierChange: tierChange(record) } })
     }
   }
@@ -671,6 +712,11 @@ export function createCore(platform: Platform): Core {
   const pruneCache = async (record: DeploymentRecord) => {
     try { await pruneContentCache(platform, record.gameFolder) }
     catch (error) { set({ notice: `Lucent could not prune older cached files. ${message(error)}` }) }
+  }
+  /** The deployed content needs a newer Lucent than this one before its files and configs are written again. */
+  const deployedNeedsNewerApp = (record: DeploymentRecord) => {
+    const min = deployedMinAppVersion(record, state.manifest.status === 'ready' ? state.manifest.manifest.versions.find((v) => v.id === record.contentVersion) : null)
+    return !!min && needsNewerApp(min, APP_VERSION)
   }
   const newestContentForTier = (): ContentVersion | undefined => {
     if (state.manifest.status !== 'ready' || state.graphics.status !== 'found' || !state.graphics.tier) return undefined
@@ -711,7 +757,8 @@ export function createCore(platform: Platform): Core {
       frameGenerationOptions, frameGenerationMode,
       neuralRenderingControls: controls, neuralRendering: controls ? normalizeNeuralRendering(state.neuralRendering, controls, gpuName, frameGenerationMode) : null,
       mfgUnlock: unlock, mfgUnlocked,
-      hdrOptions, hdrMode: hdrChoice(recipe, hdrOptions, state.hdrMode),
+      // A request resumed after UAC keeps its pick whatever this process reads of XIV's screen.
+      hdrOptions, hdrMode: resumeHdrMode && recipe.hdrOptions?.some((option) => option.id === resumeHdrMode) ? resumeHdrMode : hdrChoice(recipe, hdrOptions, state.hdrMode),
     })
   }
   /** The recipe the Profile step is showing, so the unlock switch can offer its modes again. */
@@ -764,6 +811,7 @@ export function createCore(platform: Platform): Core {
     try {
       const target = pendingSetup
       if (manifest.status !== 'ready') throw new Error('Finish Scan before resetting setup.')
+      if (needsNewerApp(target.content.minAppVersion, APP_VERSION)) throw new Error(NEWER_APP_NEEDED)
       await refreshScreen()
       const selection: PlanSelection = {
         ...planSelection(target.content, target.tier),
@@ -796,6 +844,9 @@ export function createCore(platform: Platform): Core {
       try { names = await platform.getKeyNames(liveKeyCodes(record, keyConfigs)) } catch { /* US labels remain available. */ }
       set({ hotkeys: deploymentHotkeys(record, keyConfigs, names) })
       await pruneCache(record)
+      // A tier switch lists another tier's versions, and an update still pending after a Reset stays announced.
+      await refreshVersions().catch(() => {})
+      deployedUpdate = await announceUpdate(record).catch(() => null)
     } catch (error) {
       const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
       set({ activity: { kind: recoveryRequired ? 'scan' : 'review' }, recoveryRequired,
@@ -804,6 +855,33 @@ export function createCore(platform: Platform): Core {
       await refreshHealthAfter(true)
       set({ busy: false, deploymentProgress: null })
     }
+  }
+  /** The data folder App uninstall removes as Lucent exits, once everything else is gone. */
+  let pendingRemoval: string | null = null
+  const removeOnExit = async () => {
+    const folder = pendingRemoval!
+    try { await platform.exitAndRemove([folder]) }
+    catch (error) { throw new Error(`Lucent is out of the Start menu and Settings → Apps, but couldn’t remove its folder. Delete ${folder} yourself. ${message(error)}`) }
+  }
+  /** Whether the installed exe runs in another process; this one never counts, even when it is that exe. A failed check doesn't hold the uninstall up. */
+  const checkLucentElsewhere = async () => {
+    const open = await platform.isExeRunningElsewhere(await installedExe(platform)).catch(() => false)
+    if (open !== state.lucentOpenElsewhere) set({ lucentOpenElsewhere: open })
+    return open
+  }
+  /** The readable copies App uninstall deletes with the data folder: a vanilla Uninstall's and a Reset's, and a deployment's own until its originals go back. */
+  const appUninstallBackups = async (): Promise<State['appUninstallBackups']> => {
+    const path = joinPath(await lucentFolder(platform), 'Backups')
+    try {
+      if (!await maybeStat(platform, path)) return null
+      const folders = new Set((await platform.listFiles(path)).map((file) => joinPath(file).split('\\')[0].toLowerCase()))
+      if (!folders.size) return null
+      // "Restore the game folder" puts a deployment's originals back and drops their copies; a folder that is gone keeps its own.
+      for await (const record of deploymentRecords(platform)) {
+        if (record.status === 'complete' && record.backupFolder && await isGameFolder(platform, record.gameFolder)) folders.delete(record.backupFolder.toLowerCase())
+      }
+      return { path, withRestore: folders.size > 0 }
+    } catch { return { path, withRestore: true } }
   }
   const core: Core = {
     getState: () => state,
@@ -888,7 +966,12 @@ export function createCore(platform: Platform): Core {
         const scan = await scanStarterSet(platform, current.set)
         set({ starterSet: { status: 'ready', set: current.set, scan, progress: null, result } })
       } catch (error) {
-        showing({ progress: null })
+        if (error instanceof SeedInterruptedError) {
+          // XIV started partway: what went in stays, so read the machine again and keep the report beside the reason.
+          const { outcome } = error
+          const scan = await scanStarterSet(platform, current.set).catch(() => current.scan)
+          set({ starterSet: { status: 'ready', set: current.set, scan, progress: null, result: outcome.placed.length || outcome.skipped.length || outcome.reposAdded.length ? outcome : null } })
+        } else showing({ progress: null })
         set({ error: message(error) })
       } finally { set({ busy: false }) }
     },
@@ -959,8 +1042,8 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null, plan: null, setupMode: 'install', resetBackupPath: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
-        const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; playerUserSid = context.userSid ?? undefined; resume = context.request }
+        const context = await takeResume()
+        if (context) resume = context.request
         await openLog(!!context)
         await core.refreshGameRunning()
         if (!await recover()) return
@@ -1002,6 +1085,7 @@ export function createCore(platform: Platform): Core {
           if (resume.kind === 'deploy') {
             resumeContentVersion = resume.contentVersion
             resumeReviewedPaths = resume.reviewedPaths
+            resumeHdrMode = resume.hdrMode
             prepareProfiles(contentForTier())
             // The player's own process already self-installed before asking for admin access.
             set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, includeReShade: resume.includeReShade, addToStartMenu: false, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true })
@@ -1013,7 +1097,8 @@ export function createCore(platform: Platform): Core {
             const content = state.manifest.manifest.versions.find((candidate) => candidate.id === resume.contentVersion && candidate.tiers[resume.tier])
             if (!tier || !content) throw new Error('The content for the administrator request is no longer published.')
             pendingSetup = { mode: resume.tier === state.deployment.tier ? 'reset' : 'tier', content, tier, graphics: state.graphics.adapter }
-            set({ setupMode: pendingSetup.mode, includeReShade: resume.includeReShade, selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, resetBackupPath: resume.backupPath })
+            resumeHdrMode = resume.hdrMode
+            set({ setupMode: pendingSetup.mode, addToStartMenu: false, includeReShade: resume.includeReShade, selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, resetBackupPath: resume.backupPath })
             prepareProfiles(content, tier)
             set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, activity: { kind: 'profile' } })
             resumeReviewedPaths = resume.reviewedPaths
@@ -1025,7 +1110,7 @@ export function createCore(platform: Platform): Core {
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
           else if (resume.kind === 'tier') await core.switchTier()
         } catch (error) { set({ error: message(error) }) }
-        finally { resumeContentVersion = null; resumeReviewedPaths = null }
+        finally { resumeContentVersion = null; resumeReviewedPaths = null; resumeHdrMode = null }
       }
     },
     async findGameFolder() {
@@ -1042,7 +1127,10 @@ export function createCore(platform: Platform): Core {
         if (picked === null) return
         const folder = await checkPickedFolder(platform, picked)
         // Remember the pick, so later Scans (channel changes, restarts, an uninstall) return to this folder.
-        if (folder) await writeSettings(platform, { ...await readSettings(platform), gameFolder: folder.path })
+        if (folder) {
+          try { await writeSettings(platform, { ...await readSettings(platform), gameFolder: folder.path }) }
+          catch (error) { set({ notice: `Lucent will use this folder until you close it, but couldn’t save the choice. ${message(error)}` }) }
+        }
         log.write(folder ? 'info' : 'warning', folder ? `Game folder chosen: ${folder.path}` : `Not a game folder: ${picked}`)
         set(folder ? { gameFolder: { status: 'found', ...folder }, rejectedFolder: null, error: null, deployment: null, plan: null, existingSetups: [], folderChanges: null } : { rejectedFolder: picked })
         if (folder) await restoreDeployment(folder)
@@ -1062,6 +1150,7 @@ export function createCore(platform: Platform): Core {
       if (state.busy || state.recoveryRequired || activity.kind !== 'deployment' || !deployment || graphics.status !== 'found') return
       try {
         await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
+        if (deployedNeedsNewerApp(deployment)) throw new Error(NEWER_APP_NEEDED)
         const target = versionSource(deployment, deployment.contentVersion)
         setupReturnActivity = activity
         pendingSetup = { mode: 'reset', content: target.content, tier: target.tier, graphics: graphics.adapter }
@@ -1131,6 +1220,7 @@ export function createCore(platform: Platform): Core {
         await requireGameStopped(platform, (gameRunning) => set({ gameRunning }))
         const drift = await refreshHealth(record, true)
         if (!drift) log.write('info', 'Repair: nothing to repair')
+        else if (deployedNeedsNewerApp(record)) set({ error: NEWER_APP_NEEDED })
         else {
           if (!await prepareWrite({ kind: 'repair', gameFolder: record.gameFolder }, drift.files)) return
           log.write('info', `Repair: ${fileCount(drift.files.length)}`)
@@ -1197,10 +1287,18 @@ export function createCore(platform: Platform): Core {
     },
     async updateApp() {
       if (state.busy || state.recoveryRequired || !state.appUpdate) return
+      // The relaunch after an update starts the new exe without what an administrator window carries for the player (their SID and folders).
+      if (relaunchedElevated) { set({ notice: 'This window has administrator access, so it can’t update Lucent. Close Lucent and open it again to update.' }); return }
       const update = state.appUpdate
       set({ busy: true, error: null, notice: null, appUpdateProgress: 0 })
-      log.write('info', `Updating Lucent ${APP_VERSION} to ${update.version}`)
       try {
+        // The announcement can predate a channel change or a skip, made here or in another window.
+        const { skippedApp } = await readSettings(platform)
+        if (!announcedAppUpdate([update], { appVersion: APP_VERSION, skipped: skippedApp, channel: state.channel })) {
+          set({ appUpdate: null, notice: skippedApp.includes(update.version) ? `Lucent ${update.version} was skipped, so it wasn’t installed.` : `Lucent ${update.version} is a Beta version and you’re on Stable, so it wasn’t installed.` })
+          return
+        }
+        log.write('info', `Updating Lucent ${APP_VERSION} to ${update.version}`)
         const report = pacedProgress((p: { progress: number }) => set({ appUpdateProgress: p.progress }))
         await performAppUpdate(platform, update, (progress) => report({ progress }))
         // The real port relaunches and exits, so this runs only on the fake: the new exe is in place.
@@ -1326,6 +1424,8 @@ export function createCore(platform: Platform): Core {
         set({ deployment: record, resetBackupPath: await nextResetBackupPath(record), activity: { kind: 'done' }, hotkeys })
         await pruneCache(record)
         await refreshVersions()
+        // An install resumed after UAC can be of a version that is no longer the newest.
+        deployedUpdate = await announceUpdate(record).catch(() => null)
       } catch (error) {
         const recoveryRequired = state.recoveryRequired || (error instanceof DeploymentError && error.recoveryRequired)
         const needsScan = error instanceof UnreviewedFilesError || error instanceof DeploymentError && error.needsScan
@@ -1341,12 +1441,14 @@ export function createCore(platform: Platform): Core {
       finally { set({ busy: false }) }
     },
     finish() {
-      if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift, null) })
+      if (state.activity.kind === 'done' && state.deployment) set({ activity: deploymentActivity(state.deployment, deployedDrift, deployedUpdate) })
       void refreshKeybinds()
     },
     async launchGame() {
       const folder = state.gameFolder
       if (folder.status !== 'found' || !state.launcher || state.gameRunning || state.launching || state.busy) return
+      // Until the launcher starts, only XIV running ends "starting": the game check polls throughout.
+      launchingUntil = Number.POSITIVE_INFINITY
       set({ launching: true, error: null, notice: null })
       try {
         if (!await isGameFolder(platform, folder.path)) {
@@ -1376,6 +1478,9 @@ export function createCore(platform: Platform): Core {
         else await platform.startProgram(option.path!)
         // Long enough to see it worked; XIVLauncher and Steam then show their own windows.
         launchingUntil = Date.now() + 6000
+        // Windows hands this window's administrator access to what it starts, Dalamud and XIV included. A Steam that is
+        // already running takes the request in its own process instead, so only the launchers Lucent starts itself say so.
+        if (relaunchedElevated && option.kind !== 'steam') set({ notice: 'This Lucent window has administrator access, so XIV starts with it too. Close Lucent and open it again to launch XIV without it.' })
       } catch (error) { set({ launching: false, error: `Couldn’t start XIV. ${message(error)}` }) }
     },
     async setLauncher(kind) {
@@ -1422,10 +1527,12 @@ export function createCore(platform: Platform): Core {
       set({ busy: true, error: null })
       let confirmed = false
       try {
-        const context = await takeElevationResume(platform)
-        if (context) { playerLocalAppData = context.localAppData; confirmed = context.request !== null }
+        const context = await takeResume()
+        if (context) confirmed = context.request !== null
         await openLog(!!context)
         await core.refreshGameRunning()
+        await checkLucentElsewhere()
+        set({ appUninstallBackups: await appUninstallBackups() })
       } catch (error) { set({ error: message(error) }) }
       finally { set({ busy: false }) }
       // Admin access is requested only after the player confirmed with "Restore the game folder".
@@ -1434,8 +1541,10 @@ export function createCore(platform: Platform): Core {
     async uninstallApp(restoreGameFolder) {
       if (state.busy || state.appUninstalled) return
       set({ busy: true, error: null, notice: null })
-      log.write('info', restoreGameFolder ? 'Uninstalling Lucent and restoring the game folder' : 'Uninstalling Lucent')
       try {
+        // The window says so and waits; checked again here, since the other window may have opened in the last second.
+        if (await checkLucentElsewhere()) { log.write('warning', 'Uninstalling Lucent waits: Lucent is open in another window'); return }
+        log.write('info', restoreGameFolder ? 'Uninstalling Lucent and restoring the game folder' : 'Uninstalling Lucent')
         if (restoreGameFolder) {
           if (!await recover()) return
           for await (const record of deploymentRecords(platform)) {
@@ -1450,18 +1559,32 @@ export function createCore(platform: Platform): Core {
           // even when the player chooses to keep the deployed game files.
           for await (const record of deploymentRecords(platform)) {
             if (record.status !== 'complete') continue
+            // Auto HDR's value is keyed by the game's path, which can't be resolved once the folder is gone.
+            if (!await isGameFolder(platform, record.gameFolder)) { log.write('warning', `Game folder missing, Auto HDR left as it is: ${record.gameFolder}`); continue }
             if (await restoreAutoHdrPreference(platform, record, (gameRunning) => set({ gameRunning }))) log.write('info', 'Restored Windows Auto HDR for XIV')
           }
         }
         // Only now: a failed restore keeps the journal and backups recovery needs.
         const addonNote = await removeXivLauncherAddons(platform)
         await removeSelfInstall(platform)
-        const folder = await lucentFolder(platform)
-        try { await platform.exitAndRemove([folder]) }
-        catch (error) { throw new Error(`Lucent is out of the Start menu and Settings → Apps, but couldn’t remove its folder. Delete ${folder} yourself. ${message(error)}`) }
-        set({ appUninstalled: true, notice: addonNote })
+        pendingRemoval = await lucentFolder(platform)
+        // The real port exits as it removes the folder, so a note the player has to act on is shown first; Close finishes.
+        if (addonNote) { set({ appUninstalled: true, notice: addonNote }); return }
+        await removeOnExit()
+        set({ appUninstalled: true })
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
+    },
+    async finishAppUninstall() {
+      if (state.busy || !pendingRemoval) return
+      set({ busy: true, error: null })
+      try { await removeOnExit() }
+      catch (error) { set({ error: message(error) }) }
+      finally { set({ busy: false }) }
+    },
+    async refreshLucentElsewhere() {
+      if (state.busy || state.appUninstalled) return
+      await checkLucentElsewhere()
     },
   }
   // Internal commands call this raw core and stay inside their caller's lease. Only exposed commands acquire
@@ -1498,6 +1621,6 @@ export function createCore(platform: Platform): Core {
     updateApp: coordinated(core.updateApp), skipAppUpdate: coordinated(core.skipAppUpdate), skipUpdate: coordinated(core.skipUpdate),
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),
     copyDiagnostics: coordinated(core.copyDiagnostics), reportBug: coordinated(core.reportBug),
-    uninstall: coordinated(core.uninstall), openAppUninstall: coordinated(core.openAppUninstall, false), uninstallApp: coordinated(core.uninstallApp, false),
+    uninstall: coordinated(core.uninstall), openAppUninstall: coordinated(core.openAppUninstall, false), uninstallApp: coordinated(core.uninstallApp, false), finishAppUninstall: coordinated(core.finishAppUninstall, false),
   }
 }

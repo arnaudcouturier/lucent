@@ -6,13 +6,18 @@ import { mfgUnlockFor, mfgUnlockSettings, neuralRenderingSettings, normalizeNeur
 import { screenDerivedValue, type ScreenValues } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+/**
+ * Whether a game-folder path is one Lucent can name safely. A file whose name Windows tools can't handle (a trailing dot, a
+ * device name, made through `\\?\` or WSL) is a user file that nothing Lucent does ever touches.
+ */
+export const isSafeGamePath = (path: string) => { try { assertGamePath(path); return true } catch { return false } }
 /** Where a Disabled deployment keeps an entry file, so the game no longer loads it. */
 export const disabledName = (path: string) => `${path}.disabled`
 /** A deployment keeps its profile where the tier still offers it; otherwise the tier's default applies. */
 export const keptProfile = (content: ContentVersion, tier: Tier, profile: ProfileId | null | undefined): ProfileId | null =>
   content.tiers[tier.id] && profilesForRecipe(content.tiers[tier.id]).some((p) => p.id === profile) ? profile! : null
 export interface DeploymentScan {
-  /** Every file in the game folder, relative to it. */
+  /** Every file in the game folder, relative to it. One Lucent can't name safely may be left out (see `isSafeGamePath`). */
   files: string[]
   ownedFiles: string[]
   cachedFiles: string[]

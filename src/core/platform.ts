@@ -29,6 +29,8 @@ export interface FileStat {
   kind: 'file' | 'dir'
   size: number
   modifiedMs: number
+  /** The Windows read-only attribute. A replacement (`writeText`, `copyFile`, `renameFile`) or removal clears it. */
+  readOnly: boolean
 }
 
 export interface CopyItem { from: string; to: string; replace: boolean }
@@ -46,6 +48,8 @@ export interface GpuAdapter {
   software: boolean
   /** Windows driver version; absent if the adapter cannot report it. */
   driverVersion?: string | null
+  /** Where Windows ranks the adapter for high performance, 0 first: external, then discrete, then integrated GPUs. Absent when Windows can't rank them. */
+  highPerformanceRank?: number
 }
 
 /** A desktop-attached display as Windows currently reports it. */
@@ -53,6 +57,7 @@ export interface MonitorInfo {
   deviceName: string
   bounds: { left: number; top: number; right: number; bottom: number }
   primary: boolean
+  /** Exact where Windows reports it (119.88); 0 when it reports no usable rate. */
   refreshHz: number
   width: number
   height: number
@@ -68,9 +73,9 @@ export interface LocalContent {
 }
 
 export interface Platform {
-  /** Reads a UTF-8 text file. */
+  /** Reads a UTF-8 text file, or a UTF-16 one that starts with its byte order mark. */
   readText(path: string): Promise<string>
-  /** Reads only the final lines of a potentially large log, without its terminal newline. */
+  /** Reads only the final lines of a potentially large log, without its terminal newline. The real port reads at most 2 MB of it. */
   readTextTail(path: string, maxLines: number): Promise<string>
   getWindowsVersion(): Promise<string>
   /** Names virtual keys on the foreground window's keyboard layout; missing keys have no entry. */
@@ -91,7 +96,10 @@ export interface Platform {
   pickFolder(options: { title: string }): Promise<string | null>
   getGpuAdapters(): Promise<GpuAdapter[]>
   getMonitors(): Promise<MonitorInfo[]>
-  /** Fetches UTF-8 text; HTTP errors are port failures, never document contents. */
+  /**
+   * Fetches UTF-8 text; HTTP errors are port failures, never document contents. Redirects must stay on HTTPS and off
+   * heliosphere.app, and a reply over 32 MB is refused; those refusals are `unknown`, not `network`.
+   */
   fetchText(url: string): Promise<string>
   getDevContent(): Promise<LocalContent | null>
   /** Acquires an exclusive cross-process lease for this player's Lucent data folder; fails with `locked` while another operation holds it. */
@@ -138,11 +146,19 @@ export interface Platform {
   writeFileBytes(path: string, offsets: number[], value: number): Promise<void>
   /** `removeDirectoryIfEmpty` for each path, in order. */
   removeDirectoriesIfEmpty(paths: string[]): Promise<void>
-  /** Streams to a temporary file and atomically commits it when complete. */
+  /**
+   * Streams to a temporary file and atomically commits it when complete. Redirects follow `fetchText`'s rules; a file over
+   * 1 GB, or one still arriving after two hours, is refused as `unknown`, so the core doesn't retry it.
+   */
   downloadFile(url: string, to: string, progress: (received: number) => void): Promise<void>
   isGameRunning(): Promise<boolean>
   /** Whether any process with this exe name (such as `XIVLauncher.exe`) is running, ignoring case. */
   isProcessRunning(exeName: string): Promise<boolean>
+  /**
+   * Whether a process other than this one runs the exe at `path`, compared by full path (case and slashes don't matter).
+   * A process Lucent may not inspect counts as not running it.
+   */
+  isExeRunningElsewhere(path: string): Promise<boolean>
   /** Probes the directory and the given relative write targets without changing existing files. */
   isDirectoryWritable(path: string, targets?: string[]): Promise<boolean>
   isElevated(): Promise<boolean>
@@ -162,7 +178,7 @@ export interface Platform {
   createShortcut(path: string, target: string): Promise<void>
   /** Creates or updates this user's Settings → Apps entry `id`; strings and DWORD numbers, no admin. */
   setUninstallEntry(id: string, values: Record<string, string | number>): Promise<void>
-  /** Removes this user's Settings → Apps entry `id`; a missing entry counts as removed. */
+  /** Removes this user's Settings → Apps entry `id`, and the registration `notify` makes for its toasts; a missing entry counts as removed. */
   removeUninstallEntry(id: string): Promise<void>
   /** How this exe was started: Settings → Apps' uninstall window, a XIVLauncher add-on's headless run, or null for the main window. */
   headlessMode(): Promise<'uninstall' | HeadlessMode | null>

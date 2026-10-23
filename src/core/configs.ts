@@ -72,23 +72,27 @@ export function configUpdateNotes(configs: ConfigPath[], deployedFiles: Iterable
 export type ConfigRead =
   | { kind: 'readable'; text: string }
   | { kind: 'missing' }
+  /** There and readable, but not as UTF-8 text: saved in another encoding, such as ANSI or UTF-16. It is still the player's file. */
+  | { kind: 'not-text' }
+  /** Lucent can't read it at all, or it holds nothing but zero bytes, which is what a crash mid-write leaves. */
   | { kind: 'unreadable' }
   | { kind: 'locked'; error: PlatformError }
 
-/** Reads a config while preserving the distinction between a missing file and a file locked by another process. */
+/** Reads a config while preserving the distinction between a missing file, a file that isn't text and a file locked by another process. */
 export async function readConfig(platform: Platform, path: string): Promise<ConfigRead> {
-  try {
-    const text = await platform.readText(path)
-    return text.includes('\0') ? { kind: 'unreadable' } : { kind: 'readable', text }
-  } catch (error) {
+  let text: string
+  try { text = await platform.readText(path) } catch (error) {
     if (error instanceof PlatformError && error.kind === 'not-found') return { kind: 'missing' }
     if (error instanceof PlatformError && error.kind === 'locked') return { kind: 'locked', error }
-    return { kind: 'unreadable' }
+    // Bytes that aren't UTF-8 fail as text and still hash; a file Lucent can't open fails both.
+    return platform.hashFile(path).then((): ConfigRead => ({ kind: 'not-text' }), (): ConfigRead => ({ kind: 'unreadable' }))
   }
+  if (/^\0+$/.test(text)) return { kind: 'unreadable' }
+  return text.includes('\0') ? { kind: 'not-text' } : { kind: 'readable', text }
 }
 
-/** A config's text, or null when it is missing or cannot be read as text. */
-export async function readableText(platform: Platform, path: string): Promise<string | null> {
-  const result = await readConfig(platform, path)
-  return result.kind === 'readable' ? result.text : null
+/** Whether a config is there for the player: as text or not, contents are never drift. A missing, unreadable or locked one is. */
+export async function configPresent(platform: Platform, path: string): Promise<boolean> {
+  const { kind } = await readConfig(platform, path)
+  return kind === 'readable' || kind === 'not-text'
 }

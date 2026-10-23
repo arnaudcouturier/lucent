@@ -219,6 +219,39 @@ it('lets a keep update pass a locked config without touching it', async () => {
   expect(await platform.readText(config)).toBe(before)
 })
 
+it('addMissingKeys leaves a config that isn’t UTF-8 text as it is, and the activity log says so', async () => {
+  const { platform, m } = await deployed()
+  // Saved as UTF-16: Lucent can't merge keys into it, and it is still the player's file.
+  const utf16 = '[\0G\0E\0N\0E\0R\0A\0L\0]\0'
+  await platform.writeText(`${GAME}\\ReShade.ini`, utf16)
+  await nextWithReShadeBaseline(m, NEW_BASELINE, 'addMissingKeys')
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(utf16)
+  expect((await core.readLog(LUCENT_LOG))!.map((line) => line.text)).toContain('Config ReShade.ini: not readable as text, kept as it is')
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+})
+
+it('adds a config new to the deployment under keep, and checks it from then on', async () => {
+  const { platform, m } = await deployed()
+  const text = '[Tool]\nEnabled=1\n'
+  const hash = await sha256(text)
+  const variant = structuredClone(NEXT_CONTENT)
+  variant.files.push({ sha256: hash, size: text.length, release: `content-${variant.id}` })
+  const recipe = variant.tiers['rtx-20-30-40']
+  recipe.recipe.push({ kind: 'copy', file: hash, to: 'Tool.ini' })
+  recipe.ownedConfigs.push({ path: 'Tool.ini' })
+  publishVariant(m, variant, { [hash]: text })
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\Tool.ini`)).toBe(text)
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+  await platform.removeFile(`${GAME}\\Tool.ini`)
+  expect(statusCard((await reopen(platform)).getState())).toMatchObject({ kind: 'drift', files: 1 })
+})
+
 it('a config the player deleted stays missing under keep so Repair can restore it', async () => {
   const { platform, m } = await deployed()
   await platform.removeFile(`${GAME}\\ReShade.ini`)
@@ -324,6 +357,43 @@ it('saves an edited preset as “(my edits)” when Lucent’s version also chan
   const drifted = await reopen(platform)
   await drifted.repair()
   expect(await platform.readText(`${GAME}\\reshade-presets\\Example (my edits).ini`)).toBe('My tweaks')
+})
+
+/** A copy of `content` that ships the example preset at `to` instead, or not at all. */
+function moveExamplePreset(content: ContentVersion, to: string | null): ContentVersion {
+  const from = 'reshade-presets/Example.ini'
+  const cloned = structuredClone(content)
+  for (const tier of Object.values(cloned.tiers)) {
+    tier.recipe = tier.recipe.flatMap((step) => step.kind === 'copy' && step.to === from ? to ? [{ ...step, to }] : [] : [step])
+    tier.shippedPresets = tier.shippedPresets.flatMap((preset) => preset.path === from ? to ? [{ ...preset, path: to }] : [] : [preset])
+  }
+  return cloned
+}
+
+it.each([['drops', null], ['renames', 'reshade-presets/Example 2.ini']] as const)('saves an edited preset as “(my edits)” when the new version %s it', async (_, to) => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\reshade-presets\\Example.ini`, 'My tweaks')
+  publishVariant(m, moveExamplePreset(NEXT_CONTENT, to))
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\reshade-presets\\Example (my edits).ini`)).toBe('My tweaks')
+  await expect(platform.readText(`${GAME}\\reshade-presets\\Example.ini`)).rejects.toThrow(/Not found/)
+  if (to) expect(await platform.readText(`${GAME}\\${to}`)).toBe('Preset')
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+  // The saved copy is the player's: Uninstall leaves it.
+  await core.uninstall()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.listFiles(GAME)).toEqual(['ffxiv_dx11.exe', 'ffxivgame.ver', 'reshade-presets\\example (my edits).ini'])
+})
+
+it('deletes a dropped preset the player never edited', async () => {
+  const { platform, m } = await deployed()
+  publishVariant(m, moveExamplePreset(NEXT_CONTENT, null))
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect((await platform.listFiles(GAME)).filter((path) => path.startsWith('reshade-presets'))).toEqual([])
 })
 
 it('does not leave a “(my edits)” copy behind when the update fails partway', async () => {

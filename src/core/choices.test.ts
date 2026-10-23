@@ -21,7 +21,9 @@ describe('frameGenerationChoice', () => {
   const options = choiceOptions(recipe, 'NVIDIA GeForce RTX 4090', true).frameGenerationOptions
   it('defaults to 2× from 120 Hz and Off below', () => {
     expect(frameGenerationChoice(options, null, 120)).toBe('2x')
-    expect(frameGenerationChoice(options, null, 119)).toBe('off')
+    // A 119.88 Hz panel is a 120 Hz screen.
+    expect(frameGenerationChoice(options, null, 119.88)).toBe('2x')
+    expect(frameGenerationChoice(options, null, 118)).toBe('off')
   })
   it('keeps a pick the card still offers, and falls back to the default otherwise', () => {
     expect(frameGenerationChoice(options, '4x', 60)).toBe('4x')

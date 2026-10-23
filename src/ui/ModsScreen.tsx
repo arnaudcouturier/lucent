@@ -2,10 +2,11 @@
 // the DLSS 5 and ReShade setup: no game folder is needed, and nothing here is kept up to date by Lucent afterwards.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, Check, Download, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react'
-import { dalamudMessage, modInstalled, pluginStatus, pluginsToAdd, reposToAdd, type PluginStatus, type SeedOutcome, type StarterSetScan } from '../core/starterSet'
+import { MOD_FOLDER_FIRST, dalamudMessage, modFolderNote, modInstalled, pluginStatus, pluginsToAdd, reposToAdd, type PluginStatus, type SeedOutcome, type StarterSetScan } from '../core/starterSet'
 import { heliosphereModUrl, type StarterMod, type StarterPlugin, type StarterSet } from '../shared/starterSet'
 import { FlowError } from './DeploymentScreens'
 import { Path } from './Path'
+import { focusHeld, focusLost, returnFocus } from './focus'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 
@@ -24,7 +25,7 @@ export function ModsScreen() {
       : starterSet.scan.dalamud.status !== 'ready'
         ? <NoticeCard text={dalamudMessage(starterSet.scan.dalamud)!} action={<button className="btn" disabled={state.busy} onClick={() => void core.refreshStarterSet()}><RefreshCw size={14} strokeWidth={1.75} />Check again</button>} />
         : <>
-          <PluginsGroup set={starterSet.set} scan={starterSet.scan} progress={starterSet.progress} />
+          <PluginsGroup set={starterSet.set} scan={starterSet.scan} progress={starterSet.progress} result={starterSet.result} />
           <ModsGroup set={starterSet.set} scan={starterSet.scan} />
         </>}
   </Screen>
@@ -49,21 +50,30 @@ function PluginState({ status }: { status: PluginStatus }) {
   return <span className={`starter-state${status === 'repo-off' ? ' is-caution' : ''}`}>{STATE_TEXT[status]}</span>
 }
 
-function PluginsGroup({ set, scan, progress }: { set: StarterSet; scan: StarterSetScan; progress: string | null }) {
+function PluginsGroup({ set, scan, progress, result }: { set: StarterSet; scan: StarterSetScan; progress: string | null; result: SeedOutcome | null }) {
   const [state, core] = useCore()
   const [includeCore, setIncludeCore] = useState(true)
   const [extras, setExtras] = useState<string[]>([])
   const [confirming, setConfirming] = useState(false)
-  const [report, setReport] = useState<SeedOutcome | null>(null)
+  // The dialog is unmounted rather than closed, so the browser doesn't give focus back to the button that opened it. When that button is
+  // disabled again (an Add that left nothing to add), focus goes to the group's first control rather than to the top of the page.
+  const opener = useRef<HTMLElement | null>(null)
+  const firstControl = useRef<HTMLInputElement>(null)
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (wasOpen.current && !confirming) {
+      returnFocus(opener.current)
+      if (focusLost(focusHeld(), document.activeElement, document.body)) firstControl.current?.focus()
+    }
+    wasOpen.current = confirming
+  }, [confirming])
   const coreSet = set.plugins.filter((plugin) => plugin.group === 'core')
   const extraSet = set.plugins.filter((plugin) => plugin.group === 'extra')
   const toAdd = pluginsToAdd(set, scan, { core: includeCore, extras })
   const gameRunning = state.gameRunning !== false
+  // The report is the core's `result`, so it outlives this screen; the next Add clears it.
   const add = async () => {
-    setReport(null)
     await core.addPlugins(toAdd.map((plugin) => plugin.internalName))
-    const next = core.getState().starterSet
-    if (next.status === 'ready') setReport(next.result)
     setConfirming(false)
   }
   const summary = toAdd.length ? `${toAdd.length === 1 ? '1 plugin' : `${toAdd.length} plugins`} to add` : 'There’s nothing left to add from what’s ticked.'
@@ -71,7 +81,7 @@ function PluginsGroup({ set, scan, progress }: { set: StarterSet; scan: StarterS
     <h2>Plugins</h2>
     <label className="card option-row settings-switch">
       <span><strong>Core plugins</strong><small>The Penumbra stack and a few visual add-ons. Lucent fetches each from its own repository.</small></span>
-      <input type="checkbox" role="switch" checked={includeCore} disabled={state.busy} onChange={(e) => setIncludeCore(e.target.checked)} />
+      <input ref={firstControl} type="checkbox" role="switch" checked={includeCore} disabled={state.busy} onChange={(e) => setIncludeCore(e.target.checked)} />
     </label>
     <ul className="card list starter-list" aria-label="Core plugins">
       {coreSet.map((plugin) => <PluginRow key={plugin.internalName} plugin={plugin} status={pluginStatus(set, scan, plugin)} dimmed={!includeCore} />)}
@@ -89,11 +99,11 @@ function PluginsGroup({ set, scan, progress }: { set: StarterSet; scan: StarterS
     </>}
     <div className="starter-actions">
       <span className="screen-note" role="status">{state.busy && progress ? progress : gameRunning && toAdd.length ? 'Close XIV to add plugins.' : summary}</span>
-      <button className="btn is-primary" disabled={state.busy || gameRunning || !toAdd.length} onClick={() => setConfirming(true)}>
+      <button className="btn is-primary" disabled={state.busy || gameRunning || !toAdd.length} onClick={(e) => { opener.current = e.currentTarget; setConfirming(true) }}>
         {state.busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Download size={14} strokeWidth={1.75} />}Add plugins…
       </button>
     </div>
-    {report && !state.busy && <Report report={report} scan={scan} set={set} />}
+    {result && !state.busy && <Report report={result} scan={scan} set={set} />}
     {confirming && <AddDialog plugins={toAdd} set={set} scan={scan} onAdd={add} onClose={() => setConfirming(false)} />}
   </section>
 }
@@ -160,24 +170,26 @@ function Report({ report, scan, set }: { report: SeedOutcome; scan: StarterSetSc
 
 function ModsGroup({ set, scan }: { set: StarterSet; scan: StarterSetScan }) {
   const [state, core] = useCore()
+  const folderNote = modFolderNote(scan)
   return <section className="settings-group" aria-label="Penumbra mods">
     <h2>Penumbra mods</h2>
-    {!scan.modDirectory && <p className="screen-note starter-note">Penumbra has no mod folder yet, so Lucent can’t tell which of these you have. Set one in Penumbra’s Settings tab.</p>}
+    {!!folderNote && <p className="screen-note starter-note">{folderNote}</p>}
     {!!scan.modDirectory && <p className="screen-note starter-note">Looking in <Path path={scan.modDirectory} />.</p>}
     <ul className="card list starter-list" aria-label="Penumbra mods">
-      {set.mods.map((mod) => <ModRow key={mod.id} mod={mod} installed={modInstalled(scan, mod)} busy={state.busy} onGet={() => void core.openLink(heliosphereModUrl(mod.id))} />)}
+      {set.mods.map((mod) => <ModRow key={mod.id} mod={mod} installed={modInstalled(scan, mod)} needsFolder={!scan.modDirectory} busy={state.busy} onGet={() => void core.openLink(heliosphereModUrl(mod.id))} />)}
     </ul>
     <p className="screen-note starter-note">Lucent only links to these. Heliosphere’s one-click install works while XIV is open with the Heliosphere plugin and its one-click setting on; otherwise the mod’s page offers a file to import in Penumbra. Nothing is switched on for you.</p>
   </section>
 }
 
-function ModRow({ mod, installed, busy, onGet }: { mod: StarterMod; installed: boolean; busy: boolean; onGet: () => void }) {
+function ModRow({ mod, installed, needsFolder, busy, onGet }: { mod: StarterMod; installed: boolean; needsFolder: boolean; busy: boolean; onGet: () => void }) {
   return <li className="starter-row">
     <div className="starter-body">
       <strong>{mod.name}{mod.nsfw && <span className="chip" title="Contains adult content">NSFW</span>}</strong>
       <small>{mod.summary ? `${mod.summary} ` : ''}<span className="starter-by">By {mod.author}.</span></small>
     </div>
     {installed ? <span className="starter-state is-installed"><Check size={14} strokeWidth={2} aria-hidden />Installed</span>
+      : needsFolder ? <span className="starter-state">{MOD_FOLDER_FIRST}</span>
       : <button className="btn" disabled={busy} aria-label={`Get ${mod.name} on Heliosphere`} onClick={onGet}>Get on Heliosphere<ArrowUpRight size={14} strokeWidth={1.75} aria-hidden /></button>}
   </li>
 }

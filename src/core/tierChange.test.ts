@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { fixtureContentHost, graphicsCard, machine, manifestHost, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
 import { statusCard } from './statusCard'
 import type { ProfileId } from '../shared/manifest'
 
@@ -98,4 +99,21 @@ it('Switch tier waits while the game runs', async () => {
   await core.switchTier()
   expect(core.getState().error).toMatch(/Close XIV/)
   expect(core.getState().deployment).toMatchObject({ tier: 'rtx-20-30-40' })
+})
+
+it('lists the new tier’s versions after a tier switch, as a fresh start would', async () => {
+  const { platform, m } = await deployedOnRtx()
+  // The next version has no Radeon recipe yet, so the two tiers' lists differ.
+  const next = { ...NEXT_CONTENT, tiers: Object.fromEntries(Object.entries(NEXT_CONTENT.tiers).filter(([id]) => id !== 'radeon')) }
+  Object.assign(m.remoteText!, nextContentHost().remoteText, manifestHost({ ...NEXT_MANIFEST, versions: [NEXT_MANIFEST.versions[0], next] }).remoteText)
+  m.gpus = RADEON
+  const core = await reopen(platform)
+  expect(core.getState().versions.find((v) => v.id === NEXT_CONTENT.id)?.unavailable).toBeNull()
+  await core.switchTier()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  expect(core.getState()).toMatchObject({ error: null, deployment: { tier: 'radeon' } })
+  expect(core.getState().versions.find((v) => v.id === NEXT_CONTENT.id)?.unavailable).toBe('No recipe for your tier.')
+  expect(core.getState().versions).toEqual((await reopen(platform)).getState().versions)
 })

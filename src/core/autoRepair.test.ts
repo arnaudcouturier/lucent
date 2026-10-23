@@ -5,6 +5,9 @@ import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame
 import { DEFAULT_ENV } from '../platform/fake'
 import { runHeadless } from './autoRepair'
 import { dataPaths, readDeployment } from './deployment'
+import { LUCENT_LOG } from './log'
+import { MANIFEST_URL } from './manifest'
+import { PROFILE_MANIFEST } from '../platform/contentFixture'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -14,6 +17,7 @@ const CONFIG = `${DEFAULT_ENV.AppData}\\XIVLauncher\\launcherConfigV3.json`
 const otherAddon = { IsEnabled: true, Addon: { Path: 'C:\\Tools\\ACT\\Advanced Combat Tracker.exe', CommandLine: '', RunAsAdmin: false, RunOnClose: false, KillAfterClose: true } }
 
 const INSTALLED_EXE = `${DEFAULT_ENV.LocalAppData}\\Lucent\\Lucent.exe`
+const ACTIVITY_LOG = `${DEFAULT_ENV.LocalAppData}\\Lucent\\lucent.log`
 
 async function deployed({ addToStartMenu = true } = {}) {
   const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))
@@ -159,6 +163,30 @@ describe('the headless repair after the game closes', () => {
     expect(platform.notifications).toHaveLength(1)
     expect(platform.notifications[0].title).toMatch(/repaired/i)
     expect((await readDeployment(platform, ROOT))?.gameVersion).toBe(PATCH)
+  })
+
+  it('adds each file it puts back to the activity log, as the window does', async () => {
+    const { platform, core } = await deployed()
+    await core.readLog(LUCENT_LOG)
+    const before = (await platform.readText(ACTIVITY_LOG)).split('\n').length - 1
+    await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
+    expect(await runHeadless(platform, 'repair')).toEqual({ kind: 'repaired' })
+    const lines = (await platform.readText(ACTIVITY_LOG)).trimEnd().split('\n').slice(before).map((line) => line.slice(20))
+    expect(lines).toEqual(['[detail] wrote winmm.dll', '[success] XIV closed: repair finished'])
+  })
+
+  it('writes nothing when the deployment needs a newer Lucent than the one XIVLauncher starts, and says so', async () => {
+    const { m, platform, core } = await deployed()
+    await core.readLog(LUCENT_LOG)
+    // A newer portable copy deployed this version; the add-on still starts the older installed one.
+    m.remoteText![MANIFEST_URL] = JSON.stringify({ ...PROFILE_MANIFEST, versions: PROFILE_MANIFEST.versions.map((v) => ({ ...v, minAppVersion: '9.9.9' })) })
+    await platform.removeFile(`${GAME}\\ReShade.ini`)
+    await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
+    expect(await runHeadless(platform, 'repair')).toMatchObject({ kind: 'failed', reason: expect.stringMatching(/needs a newer Lucent/) })
+    expect(await platform.listFiles(GAME)).not.toContain('reshade.ini')
+    expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('Patched')
+    expect(await platform.readText(ACTIVITY_LOG)).toMatch(/\[error\] XIV closed: Lucent couldn’t repair\. This setup needs a newer Lucent/)
+    expect(platform.notifications[0]?.body).toMatch(/needs a newer Lucent/)
   })
 
   it('stays silent when there is nothing to repair', async () => {

@@ -50,6 +50,7 @@ To use Beta content, turn on **Beta channel** on the Scan screen. The [site](htt
 | **Repairs after patches** | Every deployed file is checked against its hash. If a patch replaced one, Repair puts it back. |
 | **Updates when you say** | New versions are offered, never forced. Versions rolls back. |
 | **Uninstalls cleanly** | Restores what it replaced and removes what it added. Your own presets and shaders stay. |
+| **Offers a starter set** | The Mods section places a few Dalamud plugins once, after you read which plugin repositories it adds, and links to Penumbra mods on Heliosphere. It needs XIVLauncher with Dalamud, and Lucent leaves them alone afterwards. |
 | **No telemetry** | Open source. [Every file it installs](https://arnaudcouturier.github.io/lucent/files.html) is listed with its SHA-256. |
 
 ## Credits
@@ -59,6 +60,8 @@ Lucent installs other people's work. Each component ships with its licence.
 | | |
 |:--|:--|
 | OptiScaler | [OptiScaler-FFXIV](https://github.com/arnaudcouturier/OptiScaler-FFXIV) |
+| AMD FidelityFX | [AMD](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) |
+| Intel XeSS | [Intel](https://github.com/intel/xess) |
 | Compatibility runtime | ShortFuse / [RenoDX](https://github.com/clshortfuse/renodx) |
 | ReShade | [crosire](https://reshade.me/) |
 | iMMERSE and qUINT | [Marty McFly](https://github.com/martymcmodding/iMMERSE) |

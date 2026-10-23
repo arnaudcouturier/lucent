@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createCore, type Activity, type Core } from '../core/core'
 import { crystalState } from '../core/crystal'
-import { createFakePlatform, type Machine } from '../platform/fake'
+import { createFakePlatform, FAKE_EXE_PATH, type Machine } from '../platform/fake'
 import { MACHINES, frameGenerationContentHost, graphicsCard, manifestHost, machine, nextContentHost, steam, steamGameFolder, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { App } from '../ui/App'
 import { UninstallWindow } from '../ui/UninstallWindow'
@@ -13,11 +13,27 @@ import { Screen, Window } from '../ui/Window'
 import { SettingsScreen } from '../ui/MainScreens'
 import { dataPaths, readDeployment, type DeploymentPhase } from '../core/deployment'
 import { PlatformError } from '../core/platform'
-import { appReleaseHost, APP_EXE_URL } from '../platform/appUpdateFixture'
+import { APP_EXE_TEXT, APP_RELEASE } from '../platform/appUpdateFixture'
 import { APP_RELEASES_URL } from '../core/appUpdate'
 import { BETA_CONTENT, BETA_MANIFEST, NEXT_CONTENT, NEXT_MANIFEST } from '../platform/contentFixture'
 import { MANIFEST_URL } from '../core/manifest'
 import './gallery.css'
+
+/** An app release above the running version, so the update states show: dev runs as package.json's version, which the shared 0.2.0 fixture is older than. */
+const GALLERY_APP_VERSION = (() => {
+  const [core, beta] = __APP_VERSION__.split('-beta.')
+  if (beta !== undefined) return core
+  const [major, minor, patch] = core.split('.').map(Number)
+  return [major, minor, patch + 1].join('.')
+})()
+const GALLERY_APP_EXE_URL = 'https://github.com/arnaudcouturier/lucent/releases/download/app-v' + GALLERY_APP_VERSION + '/Lucent.exe'
+const appReleaseHost = (): Machine => ({
+  files: { [FAKE_EXE_PATH]: 'Lucent 0.1.0' },
+  remoteText: {
+    [APP_RELEASES_URL]: JSON.stringify([{ ...APP_RELEASE, tag_name: 'app-v' + GALLERY_APP_VERSION, assets: [{ ...APP_RELEASE.assets[0], browser_download_url: GALLERY_APP_EXE_URL }] }]),
+    [GALLERY_APP_EXE_URL]: APP_EXE_TEXT,
+  },
+})
 
 const AN_UPDATE = { version: '2026.11.02', changelog: ['OptiScaler 2 with sharper Neural Rendering.', 'Drops the example shader.'], downloadSize: 160 * 1024 ** 2 }
 const LONG_LIBRARY = 'E:\\Games\\Libraries\\Steam Library (fast NVMe drive)'
@@ -327,26 +343,50 @@ const appUpdateAvailable = (stage: 'app-update' | 'app-updating' | 'app-update-f
   core.finish()
   if (stage === 'app-updating') { platform.hold(); void core.updateApp() }
   if (stage === 'app-update-failed') {
-    m.remoteText![APP_EXE_URL] = 'Corrupt download'
+    m.remoteText![GALLERY_APP_EXE_URL] = 'Corrupt download'
     await core.updateApp()
   }
   return core
 }
 
 /** Lucent deployed and in the Start menu, then opened from Settings → Apps. */
-const appUninstall = (stage: 'confirm' | 'game-running' | 'done') => async () => {
-  const m = machine(MACHINES.steam)
+const appUninstall = (stage: 'confirm' | 'game-running' | 'done' | 'backups' | 'elsewhere') => async () => {
+  // An old ReShade setup in the game folder gives a deployment copies of the files it replaced to keep.
+  const m = machine(stage === 'backups' ? MACHINES.existing : MACHINES.steam)
   const platform = createFakePlatform(m)
   const deployed = createCore(platform)
   await deployed.scan()
   await deployed.review()
   await deployed.deploy()
-  m.exePath = `${await platform.envFolder('LocalAppData')}\\Lucent\\Lucent.exe`
+  // A vanilla uninstall leaves the originals out and keeps their copies; App uninstall then says where they are.
+  if (stage === 'backups') {
+    deployed.finish()
+    await deployed.uninstall(false)
+  }
+  const exe = `${await platform.envFolder('LocalAppData')}\\Lucent\\Lucent.exe`
+  m.exePath = exe
   m.headlessMode = 'uninstall'
   if (stage === 'game-running') m.gameRunning = true
+  if (stage === 'elsewhere') m.processes = [exe]
   const core = createCore(platform)
   await core.openAppUninstall()
   if (stage === 'done') await core.uninstallApp(true)
+  return core
+}
+
+/** Deployed, then ReShade's shortcuts rebound with modifiers in its overlay: Keys reads them from the config each time it opens, so open Keys. */
+const reboundKeys = async () => {
+  const platform = createFakePlatform(MACHINES.steam)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  const ini = `${steamGameFolder('D:\\SteamLibrary')}\\game\\ReShade.ini`
+  // `key,ctrl,shift,alt`: Ctrl+Shift+Alt+F2, Ctrl+Alt+F12 and Ctrl+Shift+F7.
+  const keys = ['KeyOverlay=113,1,1,1', 'KeyEffects=123,1,0,1', 'KeyNextPreset=118,1,1,0'].join('\n')
+  const text = await platform.readText(ini)
+  await platform.writeText(ini, text.includes('[INPUT]') ? text.replace('[INPUT]', '[INPUT]\n' + keys) : text + '\n[INPUT]\n' + keys + '\n')
   return core
 }
 
@@ -478,7 +518,10 @@ const STATES: GalleryState[] = [
   } },
   { key: 'app-uninstall', label: 'Settings → Apps · Uninstall Lucent', setup: appUninstall('confirm'), uninstallWindow: true },
   { key: 'app-uninstall-game-running', label: 'Settings → Apps · XIV running', setup: appUninstall('game-running'), uninstallWindow: true },
+  { key: 'app-uninstall-backups', label: 'Settings → Apps · copies of replaced files kept', setup: appUninstall('backups'), uninstallWindow: true },
+  { key: 'app-uninstall-elsewhere', label: 'Settings → Apps · Lucent open in another window', setup: appUninstall('elsewhere'), uninstallWindow: true },
   { key: 'app-uninstall-done', label: 'Settings → Apps · uninstalled', setup: appUninstall('done'), uninstallWindow: true },
+  { key: 'keys-rebound', label: 'Keys · rebound combinations (open Keys)', setup: reboundKeys },
   crystalPreview('scan', 'Scan', { kind: 'scan' }, 'Glass with a line scanning the spire.'),
   crystalPreview('glass', 'Profile', { kind: 'profile' }, 'Unlit glass, slow spin, two orbiting shards and a gentle float.'),
   crystalPreview('review', 'Review', { kind: 'review' }, 'The same glass state as Performance profile.'),

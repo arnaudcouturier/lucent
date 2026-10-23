@@ -81,7 +81,27 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.version }}
           BETA: ${{ steps.version.outputs.beta }}
         run: |
-          $options = @('--verify-tag', '--generate-notes', '--title', "Lucent $env:APP_VERSION")
+          $options = @('--verify-tag', '--title', "Lucent $env:APP_VERSION")
+          # The notes are what docs/releases/<version>.md says above its first "## " heading, less the title:
+          # the Validation and Publication sections below it are the maintainer's record, not the player's.
+          # A version with no such notes gets GitHub's generated ones, which the app tidies before showing.
+          $notesSource = "docs/releases/$env:APP_VERSION.md"
+          $notes = ''
+          if (Test-Path -LiteralPath $notesSource -PathType Leaf) {
+            $head = foreach ($line in Get-Content -LiteralPath $notesSource -Encoding utf8) {
+              if ($line -match '^##\s') { break }
+              if ($line -notmatch '^#\s') { $line }
+            }
+            $notes = ($head -join "`n").Trim()
+          }
+          if ($notes) {
+            $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+            Set-Content -LiteralPath $notesFile -Value $notes -Encoding utf8NoBOM
+            $options += @('--notes-file', $notesFile)
+          } else {
+            Write-Host "::warning::No release notes for $env:APP_VERSION in $notesSource, so GitHub generates them."
+            $options += '--generate-notes'
+          }
           if ($env:BETA -eq 'true') {
             $options += @('--prerelease', '--latest=false')
           } else {

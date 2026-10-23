@@ -177,6 +177,42 @@ describe('Launch starts XIV the way this game folder is played', () => {
     expect(platform.started).toEqual([boot])
   })
 
+  it('keeps showing the launch through a game check that runs while the launcher starts, so a second click does nothing', async () => {
+    const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)))
+    const boot = `${SQUARE_ENIX_DEFAULT}\\boot\\ffxivboot.exe`
+    await platform.writeText(boot, 'boot')
+    const core = createCore(platform)
+    await core.scan()
+    // The window's once-a-second game check can land while Launch is still on its way to the launcher.
+    const startProgram = platform.startProgram.bind(platform)
+    platform.startProgram = async (path) => { await core.refreshGameRunning(); await startProgram(path) }
+    await core.launchGame()
+    expect(core.getState().launching).toBe(true)
+    await core.launchGame()
+    expect(platform.started).toEqual([boot])
+  })
+
+  it('still launches from a window reopened with administrator access, and says XIV starts with it too', async () => {
+    const m = machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT), { readOnlyDirectories: [`${SQUARE_ENIX_DEFAULT}\\game`] })
+    const platform = createFakePlatform(m)
+    const boot = `${SQUARE_ENIX_DEFAULT}\\boot\\ffxivboot.exe`
+    await platform.writeText(boot, 'boot')
+    const core = createCore(platform)
+    await core.scan()
+    await core.launchGame()
+    expect(core.getState().notice).toBeNull()
+    await core.review()
+    await core.deploy()
+    expect(platform.elevationRequests).toHaveLength(1)
+    m.elevated = true
+    const elevated = createCore(platform)
+    await elevated.scan()
+    elevated.finish()
+    await elevated.launchGame()
+    expect(platform.started).toEqual([boot, boot])
+    expect(elevated.getState().notice).toMatch(/administrator access, so XIV starts with it too/)
+  })
+
   it('offers nothing it can’t find, and Launch then does nothing', async () => {
     const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), squareEnixLauncher(SQUARE_ENIX_DEFAULT), vanillaGame(SQUARE_ENIX_DEFAULT)))
     await platform.removeFile(`${SQUARE_ENIX_DEFAULT}\\boot\\ffxivboot.exe`)

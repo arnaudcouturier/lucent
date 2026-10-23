@@ -6,12 +6,15 @@ import { failureReason, migrateDeployment, migrationNote, readDeployment, repair
 import { checkPickedFolder } from './gameFolder'
 import { loadManifest } from './manifest'
 import { joinPath } from './paths'
-import { requireGameStopped } from './gameAccess'
+import { deployedMinAppVersion, requireGameStopped } from './gameAccess'
 import { xivLauncherGamePath } from './xivLauncher'
 import { withOperationLock } from './operation'
 import { fileCount } from './format'
-import { openActivityLog, type LogLevel } from './log'
+import { gameRelative, loggedPort, openActivityLog, type LogLevel } from './log'
 import { readResolvedScreen } from './screen'
+import { needsNewerApp } from './updates'
+
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
 
 export type HeadlessOutcome =
   | { kind: 'no-deployment' | 'healthy' | 'repaired' }
@@ -20,16 +23,18 @@ export type HeadlessOutcome =
 
 /** Runs a headless check or repair of the game folder XIVLauncher launches, then notifies the outcome. Never throws. */
 export async function runHeadless(platform: Platform, mode: HeadlessMode): Promise<HeadlessOutcome> {
+  // The window's Logs section is the only place a run with no window can be read afterwards: like the window, it gets
+  // a line for every file the repair writes, renames or removes in the game folder.
+  const log = openActivityLog(platform)
+  let gameFolder: string | null = null
+  const logged = loggedPort(platform, log, (path) => gameRelative(gameFolder, path))
+  const port = new Proxy(platform, { get: (target, key) => Reflect.get(logged, key) ?? Reflect.get(target, key) })
   let outcome: HeadlessOutcome
-  try { outcome = await withOperationLock(platform, () => mode === 'check' ? check(platform) : repair(platform)) }
+  try { outcome = await withOperationLock(port, () => mode === 'check' ? check(port) : repair(port, (folder) => { gameFolder = folder })) }
   catch (error) { outcome = { kind: 'failed', reason: failureReason(error) } }
-  // The window's Logs section is the only place a run with no window can be read afterwards.
   const line = logLineFor(mode, outcome)
-  if (line) {
-    const log = openActivityLog(platform)
-    log.write(line.level, `${mode === 'check' ? 'XIVLauncher started XIV' : 'XIV closed'}: ${line.text}`)
-    await log.flushed()
-  }
+  if (line) log.write(line.level, `${mode === 'check' ? 'XIVLauncher started XIV' : 'XIV closed'}: ${line.text}`)
+  await log.flushed()
   const notification = notificationFor(mode, outcome)
   if (notification) {
     try { await platform.notify(notification.title, notification.body) }
@@ -84,10 +89,11 @@ async function check(platform: Platform): Promise<HeadlessOutcome> {
 }
 
 /** Repairs only the deployed content version: a headless run never updates and never asks for administrator access. */
-async function repair(platform: Platform): Promise<HeadlessOutcome> {
+async function repair(platform: Platform, found: (gameFolder: string) => void): Promise<HeadlessOutcome> {
   const launched = await launchedDeployment(platform)
   if (!launched) return { kind: 'no-deployment' }
   const { folder, record } = launched
+  found(folder.path)
   const drift = await checkHealth(platform, record, folder.version, true)
   if (!drift) return { kind: 'healthy' }
   await requireGameStopped(platform)
@@ -96,6 +102,9 @@ async function repair(platform: Platform): Promise<HeadlessOutcome> {
   }
   const manifest = await loadManifest(platform)
   const content = manifest.status === 'ready' ? manifest.manifest.versions.find((v) => v.id === record.contentVersion) ?? null : null
+  // The add-on may start an older installed copy than the one that deployed this content: it repairs nothing rather than part of it.
+  const min = deployedMinAppVersion(record, content)
+  if (min && needsNewerApp(min, APP_VERSION)) return { kind: 'failed', reason: 'This setup needs a newer Lucent than the one XIVLauncher starts.' }
   // A missing config is written with the frame cap of XIV's screen as it is now; a screen that can't be read leaves the content's values.
   const screen = await readResolvedScreen(platform).catch(() => null)
   const repaired = await repairDeployment(platform, folder.path, drift.files, content, manifest.status === 'ready' ? manifest.source : null, () => {}, screen)

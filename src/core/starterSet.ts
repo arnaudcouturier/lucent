@@ -75,14 +75,14 @@ export const DALAMUD_MESSAGE: Record<Exclude<DalamudStatus['status'], 'ready' | 
 export const dalamudMessage = (dalamud: DalamudStatus): string | null =>
   dalamud.status === 'ready' ? null : dalamud.status === 'unreadable' ? dalamud.message : DALAMUD_MESSAGE[dalamud.status]
 
-/** The repos in Dalamud's config; a config with no list reads as empty. */
+/** The repos in Dalamud's config; a config with no list reads as empty. An entry with no `IsEnabled` is off, since Dalamud’s flag defaults to false. */
 export function readThirdRepos(configText: string): ThirdRepoEntry[] {
   const config = parseJson(configText) as { ThirdRepoList?: unknown } | null
   const list = config?.ThirdRepoList
   const entries = Array.isArray(list) ? list : Array.isArray((list as { $values?: unknown } | undefined)?.$values) ? (list as { $values: unknown[] }).$values : []
   return entries.flatMap((entry) => {
     const { Url, IsEnabled } = (entry ?? {}) as { Url?: unknown; IsEnabled?: unknown }
-    return typeof Url === 'string' && Url ? [{ url: Url, enabled: IsEnabled !== false }] : []
+    return typeof Url === 'string' && Url ? [{ url: Url, enabled: IsEnabled === true }] : []
   })
 }
 
@@ -189,6 +189,17 @@ export function reposToAdd(set: StarterSet, scan: StarterSetScan, plugins: Start
 }
 
 export const modInstalled = (scan: StarterSetScan, mod: StarterMod) => scan.installedMods.includes(mod.id)
+
+/** What a mod row says, in place of Get or Installed, while Penumbra has no mod folder (docs/decisions.md). */
+export const MOD_FOLDER_FIRST = 'Set Penumbra’s mod folder first'
+
+/** The note above the mod rows while Penumbra has no mod folder: where to set one, or that Penumbra has to come first. Null once it has one. */
+export function modFolderNote(scan: StarterSetScan): string | null {
+  if (scan.modDirectory) return null
+  return scan.installedPlugins.some((name) => sameName(name, 'Penumbra'))
+    ? 'Penumbra has no mod folder yet, so Lucent can’t tell which of these you have. Set one in Penumbra’s Settings tab.'
+    : 'Penumbra isn’t installed yet, so Lucent can’t tell which of these you have. Add it above, then set a mod folder in its Settings tab.'
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Editing Dalamud's config without rewriting it
@@ -330,12 +341,16 @@ export function addThirdRepos(text: string, urls: string[]): { text: string; add
 /** Heliosphere's terms bar other programs from its endpoints, so nothing at its address is ever fetched. */
 function assertFetchable(address: string) {
   const url = new URL(address)
-  const host = url.hostname.toLowerCase()
+  // A trailing dot names the same host (`repo.heliosphere.app.`).
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '')
   if (url.protocol !== 'https:') throw new Error('Plugin addresses must use HTTPS.')
   if (host === 'heliosphere.app' || host.endsWith('.heliosphere.app')) throw new Error('Heliosphere doesn’t allow other programs to download from it.')
 }
 
 const VERSION = /^\d+(\.\d+){1,3}$/
+
+const REPO_OFF = 'Its repository is turned off in Dalamud. Turn it on in Dalamud’s settings, then add it again.'
+const REPO_CHANGED = 'Dalamud’s repository list changed while Lucent was working, and this plugin’s repository is no longer on it. Add it again to be asked about it.'
 
 export interface SeedSkip { name: string; reason: string }
 export interface SeedOutcome {
@@ -344,6 +359,16 @@ export interface SeedOutcome {
   skipped: SeedSkip[]
   /** The addresses appended to Dalamud's list of custom repositories. */
   reposAdded: string[]
+}
+
+/** An Add that stopped after Lucent had started writing (XIV was started meanwhile). The message is the reason; `outcome` is what was done before it. */
+export class SeedInterruptedError extends Error {
+  readonly outcome: SeedOutcome
+  constructor(reason: string, outcome: SeedOutcome) {
+    super(reason)
+    this.name = 'SeedInterruptedError'
+    this.outcome = outcome
+  }
 }
 
 export interface SeedOptions {
@@ -385,7 +410,12 @@ async function removeTree(platform: Platform, root: string) {
 /**
  * Fetches each plugin from its repo and places it where Dalamud finds it on its next start. Everything is downloaded and checked
  * before Dalamud's files are touched; the repos are appended next, then the plugins are copied in. A plugin that can't be added is
- * skipped with its reason and the rest carry on. Throws only when nothing can be written (the game is running, or the config).
+ * skipped with its reason and the rest carry on. Throws when nothing can be written (the game is running, or the config), and a
+ * SeedInterruptedError, carrying what was done so far, when the game starts after Lucent has begun writing.
+ *
+ * `scan` is what the screen read when it opened, and the consent panel named the repos that scan lacked. Dalamud's list is read
+ * again after the first guard and again before the config is written: a plugin whose repo is off by then, or gone although the
+ * player was not told it would be added, is skipped, and a repo the panel did not name is never appended.
  */
 export async function seedPlugins(platform: Platform, set: StarterSet, scan: StarterSetScan, wanted: StarterPlugin[], options: SeedOptions): Promise<SeedOutcome> {
   const { guard, progress, log } = options
@@ -398,13 +428,30 @@ export async function seedPlugins(platform: Platform, set: StarterSet, scan: Sta
 
   try {
     // Only what the set says is fetchable, and only what is not there yet.
-    const candidates = wanted.filter((plugin) => {
+    const available = wanted.filter((plugin) => {
       const status = pluginStatus(set, scan, plugin)
       if (status === 'installed') return false
       if (status === 'manual') { skip(plugin, 'Install it from Dalamud’s plugin installer (/xlplugins).'); return false }
-      if (status === 'repo-off') { skip(plugin, `Its repository is turned off in Dalamud. Turn it on in Dalamud’s settings, then add it again.`); return false }
+      if (status === 'repo-off') { skip(plugin, REPO_OFF); return false }
       return true
     })
+
+    // The repos the player was told would be appended, from the scan their panel was built on.
+    const told = new Set(reposToAdd(set, scan, available).map((repo) => repo.url))
+    const thirdParty = (plugin: StarterPlugin) => plugin.repo !== OFFICIAL_REPO
+    // Dalamud's list as it is on disk now. Official plugins need no repo, so the file is read only for the others.
+    const readList = async () => {
+      try { const text = await platform.readText(paths.config); return { text, listed: readThirdRepos(text) } }
+      catch (error) { throw new DalamudConfigError(`it couldn’t be read. ${message(error)}`) }
+    }
+    const withoutChangedRepos = <T>(items: T[], pluginOf: (item: T) => StarterPlugin, listed: ThirdRepoEntry[]): T[] => items.filter((item) => {
+      const plugin = pluginOf(item)
+      const now = { ...scan, thirdRepos: listed }
+      const reason = pluginStatus(set, now, plugin) === 'repo-off' ? REPO_OFF : reposToAdd(set, now, [plugin]).some((repo) => !told.has(repo.url)) ? REPO_CHANGED : null
+      if (reason) skip(plugin, reason)
+      return !reason
+    })
+    const candidates = available.some(thirdParty) ? withoutChangedRepos(available, (plugin) => plugin, (await readList()).listed) : available
 
     // Each repo's plugin list is read once.
     const lists = new Map<string, Record<string, unknown>[] | string>()
@@ -456,29 +503,35 @@ export async function seedPlugins(platform: Platform, set: StarterSet, scan: Sta
 
     if (!staged.length) return outcome
 
-    // Nothing in Dalamud's folder has changed yet. Downloads take time: ask again whether the game was started meanwhile.
+    // Nothing in Dalamud's folder has changed yet. Downloads take time: ask again whether the game was started meanwhile, and read
+    // Dalamud's list again, since the player may have changed it too. The same text is edited below, so what was checked is what is written.
     await guard()
-    const newRepos = reposToAdd(set, scan, staged.map((s) => s.plugin))
-    if (newRepos.length) {
+    const list = staged.some((item) => thirdParty(item.plugin)) ? await readList() : null
+    const toPlace = list ? withoutChangedRepos(staged, (item) => item.plugin, list.listed) : staged
+    if (!toPlace.length) return outcome
+    const newRepos = list ? reposToAdd(set, { ...scan, thirdRepos: list.listed }, toPlace.map((item) => item.plugin)) : []
+    if (list && newRepos.length) {
       progress?.('Adding the plugin repositories to Dalamud…')
-      let config: string
-      try { config = await platform.readText(paths.config) }
-      catch (error) { throw new DalamudConfigError(`it couldn’t be read. ${message(error)}`) }
-      const edit = addThirdRepos(config, newRepos.map((repo) => repo.url))
+      // A read-only flag on the file is the player's doing, and writing it would clear it.
+      if ((await platform.stat(paths.config)).readOnly) throw new DalamudConfigError('the file is read-only')
+      const edit = addThirdRepos(list.text, newRepos.map((repo) => repo.url))
       await platform.writeText(paths.config, edit.text)
       outcome.reposAdded = edit.added
       for (const url of edit.added) log?.('info', `Starter set: added ${url} to Dalamud’s custom repositories`)
     }
 
-    for (const [index, item] of staged.entries()) {
-      progress?.(`Adding ${item.plugin.name} (${index + 1} of ${staged.length})…`)
-      await guard()
+    for (const [index, item] of toPlace.entries()) {
+      progress?.(`Adding ${item.plugin.name} (${index + 1} of ${toPlace.length})…`)
+      // The game can start while the plugins go in; what was done up to then is handed back with the reason.
+      try { await guard() } catch (error) { throw new SeedInterruptedError(message(error), outcome) }
       const folder = joinPath(paths.plugins, item.plugin.internalName)
       const destination = joinPath(folder, item.version)
       const placed: string[] = []
       try {
-        // It might have appeared since the scan; whatever is there is the player's.
-        if ((await platform.listFolders(paths.plugins).catch(() => [] as string[])).some((name) => sameName(name, item.plugin.internalName))) { skip(item.plugin, 'It was installed while Lucent was working.'); continue }
+        // It might have appeared since the scan; whatever is there is the player's. A listing that fails for any other reason than the
+        // folder not existing yet is not an answer: going on could clear files that were there before.
+        const present = await platform.listFolders(paths.plugins).catch((error) => { if (notFound(error)) return [] as string[]; throw error })
+        if (present.some((name) => sameName(name, item.plugin.internalName))) { skip(item.plugin, 'It was installed while Lucent was working.'); continue }
         const copies: CopyItem[] = item.files.map((relative) => ({ from: joinPath(item.stage, relative), to: joinPath(destination, relative), replace: false }))
         // Listed before the copy: a copy that stops halfway has still written some of them, and removing a file that isn't there is fine.
         placed.push(...copies.map((copy) => copy.to))

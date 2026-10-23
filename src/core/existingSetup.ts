@@ -1,6 +1,6 @@
 // Existing setups: mod files Lucent did not deploy, matched against the manifest's signatures.
 import type { ExistingSetupSignature } from '../shared/manifest'
-import { fileKey } from './planner'
+import { fileKey, isSafeGamePath } from './planner'
 
 export interface ExistingSetup {
   id: string
@@ -29,12 +29,12 @@ export function matchesPattern(pattern: string, path: string): boolean {
 
 /**
  * Matches the signatures against the game folder's files, in manifest order. Each file belongs to the first setup
- * found that claims it. Lucent's own deployed files are never part of an existing setup.
+ * found that claims it. Lucent's own deployed files are never part of an existing setup, nor is a file it can't name safely.
  */
 export function detectExistingSetups(signatures: ExistingSetupSignature[], files: string[], owned: string[] = []): ExistingSetup[] {
   const ownedKeys = new Set(owned.map(fileKey))
   const claimed = new Set<string>()
-  const candidates = files.filter((f) => !ownedKeys.has(fileKey(f)))
+  const candidates = files.filter((f) => !ownedKeys.has(fileKey(f)) && isSafeGamePath(f))
   const found: ExistingSetup[] = []
   for (const signature of signatures) {
     if (!candidates.some((f) => signature.markers.some((m) => matchesPattern(m, f)))) continue

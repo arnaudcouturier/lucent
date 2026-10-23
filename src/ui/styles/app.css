@@ -128,6 +128,9 @@
   color: var(--ink);
   background: var(--hover);
 }
+.steps li.is-now.is-away {
+  background: transparent;
+}
 .steps li.is-now .step-dot {
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
@@ -264,6 +267,10 @@
   margin: 0;
   font: var(--text-title);
   letter-spacing: -0.02em;
+}
+/* Focused by script when a screen opens (see ScreenTitle); it isn't a control, so it shows no ring. */
+.screen-head h1:focus {
+  outline: none;
 }
 .screen-head p {
   max-width: 470px;
@@ -483,13 +490,17 @@
 .option-row + .option-row { margin-top: var(--space-2); }
 .setup-channel { margin-top: var(--space-4); }
 .screen-note { color: var(--ink-3); font-size: var(--text-label); margin: var(--space-3) 0 0; }
-.hotkeys { padding: var(--space-1) var(--space-5) var(--space-2); }
+/* One grid for the whole card, so the keycap column is as wide as the widest keys (a rebound Ctrl + Shift + F2 is about 148px)
+   and every action starts at the same place. It never takes more than 220px: wider keys wrap. */
+.hotkeys { display: grid; grid-template-columns: fit-content(220px) minmax(0, 1fr); column-gap: var(--space-4); padding: var(--space-1) var(--space-5) var(--space-2); }
+.hotkeys section { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
 .hotkeys section + section { margin-top: var(--space-1); box-shadow: inset 0 1px 0 var(--line); }
-.hotkeys h2 { margin: 0; padding: var(--space-3) 0 var(--space-1); color: var(--ink-3); font: 500 var(--text-label-sm)/1.2 var(--sans); }
-.hotkey { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-4); align-items: center; min-height: 40px; }
+.hotkeys h2 { grid-column: 1 / -1; margin: 0; padding: var(--space-3) 0 var(--space-1); color: var(--ink-3); font: 500 var(--text-label-sm)/1.2 var(--sans); }
+.hotkey { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; min-height: 40px; }
+.hotkey > :first-child { min-width: 120px; }
 .hotkey + .hotkey { box-shadow: inset 0 1px 0 var(--line); }
 .hotkey > span:last-child { color: var(--ink-2); }
-.keys { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+.keys { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; vertical-align: middle; }
 .keys kbd {
   min-width: 26px; height: 24px; padding: 0 7px; display: inline-grid; place-items: center;
   border-radius: var(--r-chip); background: var(--field); color: var(--ink);
@@ -506,6 +517,9 @@
 .health-card:is(.is-drift, .is-folder-missing, .is-failed, .is-game-waiting) > svg { color: var(--caution); }
 .health-card h2 { font-size: 15px; font-weight: 500; margin: 0 0 var(--space-1); }
 .health-card p { color: var(--ink-2); margin: 0; }
+/* Text from outside (release notes, an error, a manifest line) can hold a URL with no break opportunity; it wraps instead of
+   spilling out of its card and adding a horizontal scrollbar. */
+.health-body, .scan-notice, .changelog, .version-choice-body, .known-broken, .settings-check > span, .starter-body, .starter-report { overflow-wrap: anywhere; }
 .health-body { flex: 1; min-width: 0; }
 .health-card > .btn { flex: none; }
 .health-card.is-update { align-items: flex-start; }
@@ -953,6 +967,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 .settings-folder small, .settings-danger small { color: var(--ink-3); font-size: var(--text-label); }
 .settings-danger strong { font-weight: 500; }
 .settings-group.is-danger > h2 { color: var(--danger); }
+.settings-reason { margin: 0 0 var(--space-3); color: var(--ink-2); font-size: var(--text-label); }
 .settings-group.is-danger .card { box-shadow: var(--danger-edge), var(--ring-card); }
 .settings-group.is-danger .card + .card { margin-top: var(--space-3); }
 .btn.is-danger-outline { background: transparent; color: var(--danger); box-shadow: var(--danger-ring-outline); }
@@ -1070,5 +1085,14 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 .starter-warning ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-2); }
 .starter-warning li { display: grid; gap: 2px; }
 .starter-warning li small { color: var(--ink-3); overflow-wrap: anywhere; }
-/* Seven sections need less than the usual row height to fit the rail in the 880×600 minimum window. */
-@media (max-height: 640px) { .rail-nav-item { height: 30px; } }
+/* The rail has to fit the 880×600 minimum window. Seven sections need less than the usual row height; the first-run rail
+   (steps, Mods, the graphics card) came to 614px and clipped its version line, so its gaps tighten too. Rows stay 30px. */
+@media (max-height: 640px) {
+  .rail { padding-bottom: 10px; }
+  .rail-nav-item { height: 30px; }
+  .steps { margin-top: 0; }
+  .rail-nav-solo { margin-top: var(--space-1); }
+  .rail-facts { margin-block: var(--space-1); }
+  .rail-facts > div + div { margin-top: var(--space-2); }
+  .rail-system { margin-bottom: var(--space-2); }
+}

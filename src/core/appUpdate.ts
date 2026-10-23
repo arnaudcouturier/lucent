@@ -6,11 +6,15 @@ import type { Channel } from './updates'
 import { maybeStat } from './deployment'
 
 export const APP_RELEASES_URL = 'https://api.github.com/repos/arnaudcouturier/lucent/releases?per_page=100'
+/** An app release's Lucent.exe is only ever downloaded from here, whatever the API response says. */
+const APP_DOWNLOADS_URL = 'https://github.com/arnaudcouturier/lucent/releases/download'
+/** The real Lucent.exe is under 5 MB; anything near this is not one. */
+const MAX_APP_SIZE = 200 * 1024 * 1024
 
 /** A published Lucent release the player can move to, with everything Update needs to verify it. */
 export interface AppUpdate {
   version: string
-  /** The release notes, one entry per non-empty line of the release body. */
+  /** The release notes as plain text, one entry per line of the release body worth showing. */
   notes: string[]
   downloadUrl: string
   /** The SHA-256 the release asset's digest declares; the download must match it. */
@@ -40,6 +44,29 @@ export function compareAppVersions(a: string, b: string): number {
   return x.beta - y.beta
 }
 
+/**
+ * A release body as plain lines: markdown markers removed, GitHub's generated "What's Changed" heading and
+ * "Full Changelog" link left out, and "<title> by @author in <pull request link>" shortened to the title.
+ */
+function releaseNotes(body: string): string[] {
+  const notes: string[] = []
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (/^#{1,6}\s*what['’]s changed\s*$/i.test(line)) continue
+    const text = line
+      .replace(/^#{1,6}(?:\s+|$)/, '')
+      .replace(/^[*+-](?:\s+|$)/, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1')
+      .replace(/\s+(?:by @[\w-]+(?:\[bot\])? )?in https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/, '')
+      .trim()
+    if (/^[\s*_#`-]*$/.test(text) || /^full changelog\s*:/i.test(text)) continue
+    notes.push(text)
+  }
+  return notes
+}
+
 /** Reads the GitHub releases list, keeping only `app-vX.Y.Z` releases that ship a verifiable Lucent.exe. */
 export function parseAppReleases(text: string): AppUpdate[] {
   let value: unknown
@@ -51,11 +78,14 @@ export function parseAppReleases(text: string): AppUpdate[] {
     const match = /^app-v(\d+\.\d+\.\d+(?:-beta\.\d+)?)$/.exec(raw.tag_name)
     if (!match || raw.draft === true || !Array.isArray(raw.assets)) continue
     const asset = (raw.assets as RawAsset[]).find((a) => typeof a?.name === 'string' && a.name.toLowerCase() === 'lucent.exe')
-    if (!asset || typeof asset.browser_download_url !== 'string' || typeof asset.digest !== 'string') continue
+    if (!asset || typeof asset.digest !== 'string') continue
+    // The digest comes from the same response as the link, so the link must be the one this release's own tag has.
+    const downloadUrl = `${APP_DOWNLOADS_URL}/${raw.tag_name}/Lucent.exe`
+    if (asset.browser_download_url !== downloadUrl) continue
     const sha256 = asset.digest.replace(/^sha256:/, '').toLowerCase()
-    if (!/^[a-f0-9]{64}$/.test(sha256) || typeof asset.size !== 'number') continue
-    const notes = typeof raw.body === 'string' ? raw.body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : []
-    releases.push({ version: match[1], notes, downloadUrl: asset.browser_download_url, sha256, size: asset.size, prerelease: raw.prerelease === true })
+    if (!/^[a-f0-9]{64}$/.test(sha256) || typeof asset.size !== 'number' || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_APP_SIZE) continue
+    const notes = typeof raw.body === 'string' ? releaseNotes(raw.body) : []
+    releases.push({ version: match[1], notes, downloadUrl, sha256, size: asset.size, prerelease: raw.prerelease === true })
   }
   return releases
 }
@@ -65,13 +95,6 @@ export function announcedAppUpdate(releases: readonly AppUpdate[], facts: { appV
   return releases
     .filter((r) => (facts.channel === 'beta' || !r.prerelease && !r.version.includes('-')) && compareAppVersions(r.version, facts.appVersion) > 0 && !facts.skipped.includes(r.version))
     .sort((a, b) => compareAppVersions(b.version, a.version))[0] ?? null
-}
-
-/** Fetches and announces an app update; any failure announces nothing, exactly like a failed content check. */
-export async function fetchAppUpdate(platform: Platform, facts: { appVersion: string; skipped: readonly string[]; channel: Channel }): Promise<AppUpdate | null> {
-  try {
-    return announcedAppUpdate(parseAppReleases(await platform.fetchText(APP_RELEASES_URL)), facts)
-  } catch { return null }
 }
 
 /** Where the previous exe waits, beside the running one, until the next start cleans it up. */

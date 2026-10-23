@@ -135,11 +135,12 @@ async function prepareCandidate(sourceRoot: string, outputRoot: string): Promise
   validateCandidateIni(candidateIni, recipe.hotkeys)
   const publishInputPath = join(outputRoot, 'publish.json')
   await writeFile(publishInputPath, `${JSON.stringify(input, null, 2)}\n`, 'utf8')
-  const { manifestText } = await publishContent(publishInputPath, {
+  const { manifestText, warnings } = await publishContent(publishInputPath, {
     manifestPath,
     dryRun: true,
     dryRunFilesDirectory: join(outputRoot, 'files'),
   })
+  for (const warning of warnings) console.warn(`Warning: ${warning}`)
   const generatedManifest = JSON.parse(manifestText) as { versions: Array<{ id: string; minAppVersion: string; channel: string }> }
   const generatedVersion = generatedManifest.versions.find(({ id }) => id === recipe.id)
   if (!generatedVersion || generatedVersion.channel !== recipe.channel || generatedVersion.minAppVersion !== recipe.minAppVersion) {

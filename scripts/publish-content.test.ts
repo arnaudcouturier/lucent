@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { afterEach, expect, it } from 'vitest'
 import { parseManifest } from '../src/shared/manifest'
@@ -460,4 +460,115 @@ it.each([' ; comment', ' # comment'])('refuses missing preset shaders even with 
     }))
   })
   await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/missing shader: Missing\.fx/i)
+})
+
+const today = (date: string) => new Date(`${date}T12:00:00Z`)
+
+it('refuses to publish a content id far after today, such as a mistyped month, and publishes nothing', async () => {
+  const manifestPath = await manifestFile()
+  const remote = releaseHost()
+  for (const id of ['2026.11.22', '2027.10.12']) {
+    const input = await inputFile(manifestPath, (value) => { value.id = id })
+    await expect(publishContent(input, { manifestPath, host: remote.host, now: today('2026-10-22') })).rejects.toThrow(new RegExp(`${id} is more than 7 days after today \\(2026-10-22\\)`))
+  }
+  expect(remote.releases).toEqual([])
+})
+
+it('allows an id up to a week ahead, since a second publication on one day takes the next date, and refuses a day further', async () => {
+  const manifestPath = await manifestFile()
+  const remote = releaseHost()
+  await expect(publishContent(fixture, { manifestPath, host: remote.host, now: today('2026-10-04') })).rejects.toThrow(/2026\.10\.12 is more than 7 days after today/)
+  expect((await publishContent(fixture, { manifestPath, host: remote.host, now: today('2026-10-05') })).release).toBe('content-2026.10.12')
+})
+
+it('lets a dry run prepare a candidate days ahead of its date, with a warning instead of a refusal', async () => {
+  const manifestPath = await manifestFile()
+  const result = await publishContent(fixture, { manifestPath, dryRun: true, now: today('2026-10-03') })
+  expect(result.release).toBe('content-2026.10.12')
+  expect(result.warnings).toEqual([expect.stringMatching(/2026\.10\.12 is more than 7 days after today \(2026-10-03\).*live publication refuses/)])
+  expect((await publishContent(fixture, { manifestPath, dryRun: true, now: today('2026-10-05') })).warnings).toEqual([])
+})
+
+it('refuses an id older than the newest in the manifest, which Lucent would never announce to anyone on the newer one', async () => {
+  const manifestPath = await manifestFile()
+  const remote = releaseHost()
+  await publishContent(await inputFile(manifestPath, (value) => { value.id = '2026.10.13' }), { manifestPath, host: remote.host })
+  await expect(publishContent(fixture, { manifestPath, dryRun: true })).rejects.toThrow(/2026\.10\.12 is not newer than 2026\.10\.13/)
+  await expect(publishContent(fixture, { manifestPath, host: remote.host })).rejects.toThrow(/not newer than 2026\.10\.13/)
+  expect(remote.releases.map((r) => r.tag)).toEqual(['content-2026.10.13'])
+})
+
+it('refuses a Stable version that needs a beta app before it reads a single source', async () => {
+  const manifestPath = await manifestFile()
+  const input = await inputFile(manifestPath, (value) => {
+    value.channel = 'stable'
+    value.minAppVersion = '0.3.0-beta.8'
+    value.tiers.other.sources = [{ folder: resolve(manifestPath, '..', 'not-there'), component: 'ReShade fixture' }]
+  })
+  await expect(publishContent(input, { manifestPath, dryRun: true })).rejects.toThrow(/Stable content version cannot require a beta app \(0\.3\.0-beta\.8\)/)
+})
+
+it.each([['beta', '0.3.0-beta.8'], ['stable', '0.3.0']] as const)('publishes a %s version that needs app %s', async (channel, minAppVersion) => {
+  const manifestPath = await manifestFile()
+  const input = await inputFile(manifestPath, (value) => { value.channel = channel; value.minAppVersion = minAppVersion })
+  expect(parseManifest((await publishContent(input, { manifestPath, dryRun: true })).manifestText).versions[0]).toMatchObject({ channel, minAppVersion })
+})
+
+/** Source files for the one fixture tier, with the shaders named in `shaders` (relative path to text) added. */
+async function inputWithShaders(manifestPath: string, shaders: Record<string, string>, change: (input: PublishInput) => void = () => {}) {
+  const directory = resolve(manifestPath, '..', 'shader-files')
+  await mkdir(resolve(directory, 'reshade-presets'), { recursive: true })
+  await mkdir(resolve(directory, 'reshade-shaders', 'Shaders'), { recursive: true })
+  for (const name of ['dxgi.dll', 'ReShade.ini', 'reshade-presets/Example.ini', 'reshade-shaders/Shaders/Example.fx']) {
+    await writeFile(resolve(directory, name), await readFile(resolve('scripts/fixtures/publish/valid/files', name)))
+  }
+  for (const [name, text] of Object.entries(shaders)) {
+    await mkdir(dirname(resolve(directory, name)), { recursive: true })
+    await writeFile(resolve(directory, name), text)
+  }
+  return inputFile(manifestPath, (value) => {
+    value.tiers.other.sources = [{ folder: directory, component: 'ReShade fixture' }]
+    value.tiers.other.shaders = 'all'
+    change(value)
+  })
+}
+
+it('warns, without failing, when two shipped shaders share a file name but differ, since ReShade finds includes by name', async () => {
+  const manifestPath = await manifestFile()
+  const input = await inputWithShaders(manifestPath, {
+    'reshade-shaders/Shaders/ReShade.fxh': 'root copy\n',
+    'reshade-shaders/Shaders/Pack/reshade.fxh': 'pack copy\n',
+  })
+  const result = await publishContent(input, { manifestPath, dryRun: true })
+  expect(result.uploads).toHaveLength(6)
+  expect(result.warnings).toHaveLength(1)
+  expect(result.warnings[0]).toContain('reshade-shaders/Shaders/ReShade.fxh')
+  expect(result.warnings[0]).toContain('reshade-shaders/Shaders/Pack/reshade.fxh')
+})
+
+it('does not warn about a shared file name when every copy has the same bytes, or when a tier is repeated', async () => {
+  const manifestPath = await manifestFile()
+  const same = await inputWithShaders(manifestPath, {
+    'reshade-shaders/Shaders/A/mmx_math.fxh': 'one\n',
+    'reshade-shaders/Shaders/B/mmx_math.fxh': 'one\n',
+  }, (value) => { value.tiers.radeon = structuredClone(value.tiers.other) })
+  expect((await publishContent(same, { manifestPath, dryRun: true })).warnings).toEqual([])
+  const differing = await inputWithShaders(manifestPath, {
+    'reshade-shaders/Shaders/A/Common.fxh': 'one\n',
+    'reshade-shaders/Shaders/B/Common.fxh': 'two\n',
+  }, (value) => { value.tiers.radeon = structuredClone(value.tiers.other) })
+  expect((await publishContent(differing, { manifestPath, dryRun: true })).warnings).toHaveLength(1)
+})
+
+it('does not warn about a shared file name that no tier ships', async () => {
+  const manifestPath = await manifestFile()
+  const input = await inputWithShaders(manifestPath, {
+    'reshade-shaders/Shaders/A/Unused.fxh': 'one\n',
+    'reshade-shaders/Shaders/B/Unused.fxh': 'two\n',
+  }, (value) => { delete value.tiers.other.shaders })
+  expect((await publishContent(input, { manifestPath, dryRun: true })).warnings).toEqual([])
+})
+
+it('has no warnings for the plain fixture', async () => {
+  expect((await publishContent(fixture, { manifestPath: await manifestFile(), dryRun: true })).warnings).toEqual([])
 })

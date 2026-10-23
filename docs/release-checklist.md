@@ -16,9 +16,12 @@ and describe the available features in the release notes.
   `npm run test:rust -- --locked`.
 - [ ] Build the candidate with
   `npm run tauri -- build --ci --no-bundle --target x86_64-pc-windows-msvc -- --locked`.
-- [ ] Commit the version changes before tagging. The workflow generates the release notes
-  (`gh release create --generate-notes`); review them after the run. Beta promotion requires
-  a new Stable version commit and tag; changing a Beta release's flags does not rebuild its exe.
+- [ ] Write `docs/releases/<version>.md` for the version: the lines above its first `##` heading
+  (minus the `# ` title) become the release notes the app shows on the status card, so keep them
+  plain sentences. A version with no such file falls back to `--generate-notes` and the workflow
+  prints a warning. Commit it with the version changes, before tagging: the notes file must be in
+  the tagged commit. Beta promotion requires a new Stable version commit and tag; changing a Beta
+  release's flags does not rebuild its exe.
 
 ## Manual checks on the RTX 4090
 
@@ -140,5 +143,6 @@ building. It publishes only the portable `Lucent.exe`.
   as a **Software developer** for false-positive analysis. Record its SHA-256, submission ID,
   any detection name and Microsoft's result with the release checks. If the file is flagged,
   report it as an incorrect detection and follow up on the result. Never add Defender exclusions.
-- [ ] Review the generated release notes: describe the shipped features and known limitations,
-  and link the manual check results.
+- [ ] Review the published release notes (from `docs/releases/<version>.md`, or generated when
+  there is no file): describe the shipped features and known limitations, and link the manual
+  check results.

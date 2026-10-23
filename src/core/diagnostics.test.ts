@@ -22,7 +22,7 @@ async function deployed() {
   return { platform, core }
 }
 
-it('copies the player’s versions, tier, GPU driver, Windows and health check with file hashes', async () => {
+it('copies the player’s versions, tier, GPU driver, Windows and health check, and only counts the files that match', async () => {
   const { platform, core } = await deployed()
   await core.copyDiagnostics()
   expect(platform.clipboard).toEqual(expect.stringContaining([
@@ -30,11 +30,56 @@ it('copies the player’s versions, tier, GPU driver, Windows and health check w
     'Content version: 2026.10.12',
     'Channel: Stable',
   ].join('\n')))
+  const files = Object.keys(core.getState().deployment!.files).length
   for (const field of ['RTX 4090', 'Tier status: Stable', 'GPU driver: 32.0.15.6094',
     'Windows: Windows 11 24H2 (build 26100.2033)', 'Game version: 2026.09.30.0000.0000',
-    'Health check: Healthy', 'winmm.dll', 'f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02']) {
+    'Health check: Healthy', `File hashes (SHA-256): ${files} of ${files} files match what Lucent deployed.`]) {
     expect(platform.clipboard).toContain(field)
   }
+  // A matching file needs no line of its own.
+  expect(platform.clipboard).not.toContain('f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02')
+})
+
+it('copies the stored first-install choices, the launcher and auto-repair', async () => {
+  const { platform, core } = await deployed()
+  await core.copyDiagnostics()
+  const { profile } = core.getState().deployment!
+  expect(platform.clipboard).toMatch(new RegExp(`First-install choices: ${profile ? `\\w+ profile, ` : ''}.*ReShade included\\n`, 'i'))
+  expect(platform.clipboard).toContain('Launch XIV with: Square Enix launcher')
+  expect(platform.clipboard).toContain('XIVLauncher auto-repair: Off')
+  await core.setAutoRepair(true)
+  await core.copyDiagnostics()
+  expect(platform.clipboard).toContain('XIVLauncher auto-repair: On')
+})
+
+it('leaves the Windows account name out of every path', async () => {
+  const { platform, core } = await deployed()
+  await platform.writeText(`${GAME}\\OptiScaler.log`, 'Loaded C:\\Users\\Arnaud Couturier\\AppData\\Local\\Temp\\x.dll\nSaved to c:/users/arnaud/Pictures/shot.png')
+  await core.copyDiagnostics()
+  expect(platform.clipboard).toContain('Loaded C:\\Users\\<user>\\AppData\\Local\\Temp\\x.dll')
+  expect(platform.clipboard).toContain('Saved to c:/users/<user>/Pictures/shot.png')
+  expect(platform.clipboard).not.toMatch(/arnaud/i)
+})
+
+it('stays under GitHub’s issue size limit by keeping only the newest log lines that fit', async () => {
+  const { platform, core } = await deployed()
+  const line = (i: number) => `Log line ${i} ${'x'.repeat(400)}`
+  await platform.writeText(`${GAME}\\OptiScaler.log`, Array.from({ length: 300 }, (_, i) => line(i + 1)).join('\n'))
+  await core.copyDiagnostics()
+  const text = platform.clipboard!
+  expect(text.length).toBeLessThan(65_536)
+  expect(text).toMatch(/OptiScaler log \(last \d+ lines\):/)
+  expect(text.endsWith(line(300))).toBe(true)
+  expect(text).not.toContain(`${line(1)}\n`)
+})
+
+it('lists only the first files that differ when nearly everything does', async () => {
+  const { platform, core } = await deployed()
+  const record = (await readDeployment(platform, ROOT))!
+  for (let i = 0; i < 2000; i++) record.files[`reshade-shaders\\Shaders\\Generated ${i} with a long enough name.fx`] = { ...record.files['winmm.dll'], sha256: 'a'.repeat(64) }
+  const text = await collectDiagnostics(platform, { ...core.getState(), deployment: record }, '0.1.0', 'stable')
+  expect(text.length).toBeLessThan(65_536)
+  expect(text).toMatch(/and \d[\d,]* more files differ/)
 })
 
 it('copies only the last 300 OptiScaler log lines, including logs ending with CRLF', async () => {
@@ -113,15 +158,18 @@ it('still copies usable diagnostics when a deployed file is missing and the log 
   expect(platform.clipboard).toContain('Expected: f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02')
 })
 
-it('reports a disabled deployment and user config changes as healthy while including their current hashes', async () => {
+it('reports a disabled deployment and user config changes as healthy, naming the changed configs apart from mismatches', async () => {
   const { platform, core } = await deployed()
   await core.setEnabled(false)
   await platform.writeText(`${GAME}\\ReShade.ini`, '[GENERAL]\nPresetPath=MyPreset.ini\n')
   await core.copyDiagnostics()
+  const files = Object.keys(core.getState().deployment!.files).length
   expect(platform.clipboard).toContain('Deployment: Disabled')
   expect(platform.clipboard).toContain('Health check: Healthy')
-  expect(platform.clipboard).toContain('winmm.dll.disabled')
-  expect(platform.clipboard).toContain('Actual: d65d092a44dd23e73dc548bcf704b0abb0633a76e2c0fcb9fefe1b370f304989')
+  // The renamed entry files match; the player's own config is theirs to change, not a mismatch.
+  expect(platform.clipboard).toContain(`File hashes (SHA-256): ${files - 1} of ${files} files match what Lucent deployed.`)
+  expect(platform.clipboard).toContain('Changed since deployed (the player’s own): ReShade.ini')
+  expect(platform.clipboard).not.toContain('Actual: d65d092a44dd23e73dc548bcf704b0abb0633a76e2c0fcb9fefe1b370f304989')
 })
 
 it('can copy a report with explicit unavailable fields before a deployment exists', async () => {

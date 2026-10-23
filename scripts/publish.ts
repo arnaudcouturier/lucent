@@ -23,7 +23,8 @@ async function main() {
     manifestPath: resolve(values.manifest!), dryRun: values['dry-run'], sevenZip: values['seven-zip'],
     host: values['dry-run'] ? undefined : createGitHubHost(values.repo),
   })
-  console.log(JSON.stringify({ mode: values['dry-run'] ? 'dry-run (offline; existing files inferred from the local manifest)' : 'published', release: result.release, uploads: result.uploads, manifest: JSON.parse(result.manifestText) }, null, 2))
+  console.log(JSON.stringify({ mode: values['dry-run'] ? 'dry-run (offline; existing files inferred from the local manifest)' : 'published', release: result.release, warnings: result.warnings, uploads: result.uploads, manifest: JSON.parse(result.manifestText) }, null, 2))
+  for (const warning of result.warnings) console.warn(`Warning: ${warning}`)
 }
 
 main().catch((error: unknown) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 })

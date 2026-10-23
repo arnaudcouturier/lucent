@@ -25,7 +25,8 @@ export function frameGenerationOptionsForGpu(options: FrameGenerationOption[], g
 /** Defaults to 2× at 120 Hz or higher and Off below; use the first offered mode when that choice is absent. */
 export function defaultFrameGenerationMode(options: FrameGenerationOption[], refreshHz: number): FrameGenerationId | null {
   if (!options.length) return null
-  const preferred: FrameGenerationId = refreshHz >= 120 ? '2x' : 'off'
+  // 119.88 Hz panels are 120 Hz screens, and Windows' whole-number rate calls them 119.
+  const preferred: FrameGenerationId = refreshHz >= 119 ? '2x' : 'off'
   return options.some((option) => option.id === preferred) ? preferred : options[0].id
 }
 

@@ -226,6 +226,45 @@ it('continues uninstalling from Settings → Apps after admin access to the game
   expect(platform.elevationRequests).toHaveLength(1)
 })
 
+it('removes the player’s shortcut, not the administrator’s, when UAC used another administrator account', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  m.readOnlyDirectories = [GAME]
+  await (await openFromSettings(m, platform)).uninstallApp(true)
+  expect(platform.elevationRequests).toHaveLength(1)
+  m.elevated = true
+  const envFolder = platform.envFolder.bind(platform)
+  platform.envFolder = async (folder) => folder.startsWith('Program') ? envFolder(folder) : (await envFolder(folder)).replace('\\Users\\Player\\', '\\Users\\Administrator\\')
+  const elevated = await openFromSettings(m, platform)
+  expect(elevated.getState()).toMatchObject({ error: null, appUninstalled: true })
+  expect(await exists(platform, SHORTCUT)).toBe(false)
+  expect(platform.removedOnExit).toEqual([DATA])
+})
+
+it('waits while Lucent is open in another window, then uninstalls once it’s closed', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  const deployed = await gameFolder(platform)
+  // The main window runs the installed exe; this uninstall window is that exe too, and never counts itself.
+  m.processes = [INSTALLED_EXE, 'XIVLauncher.exe']
+  const core = await openFromSettings(m, platform)
+  expect(core.getState()).toMatchObject({ error: null, lucentOpenElsewhere: true })
+  await core.uninstallApp(true)
+  expect(core.getState()).toMatchObject({ busy: false, appUninstalled: false, lucentOpenElsewhere: true })
+  expect(await gameFolder(platform)).toEqual(deployed)
+  expect(await exists(platform, SHORTCUT)).toBe(true)
+  expect(platform.removedOnExit).toBeNull()
+
+  m.processes = []
+  await core.refreshLucentElsewhere()
+  expect(core.getState().lucentOpenElsewhere).toBe(false)
+  await core.uninstallApp(true)
+  expect(core.getState()).toMatchObject({ error: null, appUninstalled: true })
+  expect(platform.removedOnExit).toEqual([DATA])
+})
+
 it('names the folder to delete by hand when Lucent cannot remove it on exit', async () => {
   const m = fixture()
   const platform = createFakePlatform(m)
@@ -237,4 +276,89 @@ it('names the folder to delete by hand when Lucent cannot remove it on exit', as
   expect(core.getState().error).toContain(`Delete ${DATA} yourself`)
   expect(await exists(platform, SHORTCUT)).toBe(false)
   expect(await entry(platform, 'DisplayName')).toBeNull()
+})
+
+it('shows the XIVLauncher note before Lucent exits, and removes the data folder only once the player closes the window', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  const core = await deploy(platform)
+  await core.setAutoRepair(true)
+  m.processes = ['XIVLauncher.exe']
+  const uninstalling = await openFromSettings(m, platform)
+  await uninstalling.uninstallApp(false)
+  // The real port exits inside exitAndRemove, so the note has to be on screen first.
+  expect(uninstalling.getState()).toMatchObject({ busy: false, error: null, appUninstalled: true, notice: expect.stringMatching(/XIVLauncher was running/) })
+  expect(await exists(platform, SHORTCUT)).toBe(false)
+  expect(await entry(platform, 'DisplayName')).toBeNull()
+  expect(platform.removedOnExit).toBeNull()
+  expect(await exists(platform, DATA)).toBe(true)
+  await uninstalling.finishAppUninstall()
+  expect(uninstalling.getState()).toMatchObject({ busy: false, error: null })
+  expect(platform.removedOnExit).toEqual([DATA])
+  expect(await exists(platform, DATA)).toBe(false)
+})
+
+it('exits at once when there is nothing to tell the player', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  const core = await openFromSettings(m, platform)
+  await core.uninstallApp(false)
+  expect(platform.removedOnExit).toEqual([DATA])
+  expect(core.getState()).toMatchObject({ error: null, notice: null, appUninstalled: true })
+})
+
+it('says where the copies of earlier files are before they go with Lucent', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  const plain = await openFromSettings(m, platform)
+  expect(plain.getState().appUninstallBackups).toBeNull()
+  // A Reset keeps the config files it replaced, and a vanilla Uninstall its originals; the data folder holds both.
+  await platform.writeText(`${DATA}\\Backups\\XIV - Reset 2026-10-20T10-00-00-000\\game\\ReShade.ini`, '[GENERAL]\n')
+  const withCopies = await openFromSettings(m, platform)
+  expect(withCopies.getState().appUninstallBackups).toEqual({ path: `${DATA}\\Backups`, withRestore: true })
+})
+
+it('counts a deployment’s own copies only when its files stay out', async () => {
+  const m = fixture({ files: { [`${GAME}\\winmm.dll`]: 'Another OptiScaler' } })
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  expect((await platform.listFiles(`${DATA}\\Backups`)).length).toBeGreaterThan(0)
+  // Restoring the game folder puts that file back, so only unticking the box loses its copy.
+  const core = await openFromSettings(m, platform)
+  expect(core.getState().appUninstallBackups).toEqual({ path: `${DATA}\\Backups`, withRestore: false })
+})
+
+it('uninstalls with "Restore the game folder" unchecked even when a deployment’s game folder is gone', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  await deploy(platform)
+  // The folder was deleted, or its drive is unplugged: there is nothing for Auto HDR's restore to look at.
+  await platform.exitAndRemove([ROOT])
+  expect(await exists(platform, GAME)).toBe(false)
+  const core = await openFromSettings(m, platform)
+  await core.uninstallApp(false)
+  expect(core.getState()).toMatchObject({ busy: false, error: null, appUninstalled: true })
+  expect(await exists(platform, SHORTCUT)).toBe(false)
+  expect(await entry(platform, 'DisplayName')).toBeNull()
+  expect(platform.removedOnExit).toEqual([DATA])
+})
+
+it('keeps Lucent out of the Start menu when an elevated Reset finishes, as the player chose', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  const core = await deploy(platform, false)
+  expect(await exists(platform, INSTALLED_EXE)).toBe(false)
+  m.readOnlyDirectories = [GAME]
+  await core.resetSetup()
+  await core.review()
+  await core.deploy()
+  expect(platform.elevationRequests).toHaveLength(1)
+  m.elevated = true
+  const elevated = createCore(platform)
+  await elevated.scan()
+  expect(elevated.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
+  expect(await exists(platform, INSTALLED_EXE)).toBe(false)
+  expect(await exists(platform, SHORTCUT)).toBe(false)
 })

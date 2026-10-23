@@ -524,6 +524,16 @@ function mfgUnlock(value: unknown): MfgUnlock {
   return { gpuNamePatterns: gpuPatterns(m.gpuNamePatterns, 'unlock GPU name pattern'), label: singleLine(m.label, 'Unlock label'),
     description: singleLine(m.description, 'Unlock description'), gates, settings }
 }
+/**
+ * A Stable player never gets a beta app, so a Stable content version that needs one would be offered to nobody. The publish
+ * tool and a test over manifest.json check this; the parser does not, because the app parses the live manifest and one wrong
+ * edit there would make it unreadable for every player.
+ */
+export function assertStableNeedsStableApp(channel: string, minAppVersion: string): void {
+  if (channel === 'stable' && minAppVersion.includes('-beta')) {
+    invalid(`A Stable content version cannot require a beta app (${minAppVersion}). Publish it to Beta, or wait for a Stable app that has what it needs.`)
+  }
+}
 function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
   const v = object(value, 'Content version')
   const id = nonemptyString(v.id, 'Content version id')

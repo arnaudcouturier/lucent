@@ -34,6 +34,19 @@ describe('frame generation choices', () => {
     expect(defaultFrameGenerationMode(offered.filter((option) => option.id !== 'off'), 60)).toBe('2x')
   })
 
+  it('counts a 119.88 Hz screen, or one Windows rounds down to 119, as a 120 Hz screen', () => {
+    const offered = frameGenerationOptionsForGpu(options, 'NVIDIA GeForce RTX 4090')
+    expect(defaultFrameGenerationMode(offered, 119.88)).toBe('2x')
+    expect(defaultFrameGenerationMode(offered, 119)).toBe('2x')
+    expect(defaultFrameGenerationMode(offered, 118.9)).toBe('off')
+    expect(defaultFrameGenerationMode(offered, 100)).toBe('off')
+  })
+
+  it('names a fractional refresh rate as Windows does', () => {
+    expect(frameGenerationDescription('off', 115, 119.88)).toBe('Capped at 115 fps for your 119.9 Hz screen')
+    expect(frameGenerationDescription('2x', 224, 240.02)).toBe('XIV renders up to 112 fps, shown at 224 on your 240 Hz screen')
+  })
+
   it('lists the keys every offered variant owns, including the HDR overrides', () => {
     const hdrOption: FrameGenerationOption = {
       id: '2x', settings: [

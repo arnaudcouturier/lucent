@@ -175,6 +175,52 @@ describe('adding plugins', () => {
     expect(starterSet.status === 'ready' && starterSet.result?.placed).toHaveLength(1)
   })
 
+  it('clears the last report as soon as the next Add starts', async () => {
+    const { core } = coreOn(dalamud)
+    await core.scan()
+    await core.refreshStarterSet()
+    await core.addPlugins(['Weatherman'])
+    const next = core.addPlugins(['Weatherman'])
+    const { starterSet } = core.getState()
+    expect(starterSet.status === 'ready' && starterSet.result).toBeNull()
+    await next
+  })
+
+  describe('when XIV starts partway through an Add', () => {
+    const two = { remoteText: {
+      [OFFICIAL_REPO_URL]: JSON.stringify(['Weatherman', 'AcrylicXIV'].map((name) => ({ InternalName: name, AssemblyVersion: '1.0.0.0', DalamudApiLevel: 15, DownloadLinkInstall: `https://downloads.test/${name}.zip` }))),
+      ...Object.fromEntries(['Weatherman', 'AcrylicXIV'].map((name) => [`https://downloads.test/${name}.zip`, fakeZip({ [`${name}.dll`]: 'code', [`${name}.json`]: JSON.stringify({ InternalName: name, AssemblyVersion: '1.0.0.0' }) })])),
+    } }
+
+    it('keeps what was placed, reads the machine again, and says why it stopped', async () => {
+      const { core, platform } = coreOn(dalamud, two)
+      await core.scan()
+      await core.refreshStarterSet()
+      // XIV is "started" as soon as the first plugin is in Dalamud's folder.
+      platform.isGameRunning = async () => (await platform.listFolders(`${XL}\\installedPlugins`).catch(() => [])).length > 0
+      await core.addPlugins(['Weatherman', 'AcrylicXIV'])
+      const state = core.getState()
+      expect(state.error).toMatch(/Close XIV/)
+      expect(state.busy).toBe(false)
+      expect(state.starterSet).toMatchObject({ status: 'ready', progress: null, result: { placed: [{ name: 'Weatherman', version: '1.0.0.0' }], skipped: [], reposAdded: [] } })
+      expect(state.starterSet.status === 'ready' && state.starterSet.scan.installedPlugins).toEqual(['Weatherman'])
+    })
+
+    it('shows only the reason when nothing had been written yet', async () => {
+      const { core, platform } = coreOn(dalamud, two)
+      await core.scan()
+      await core.refreshStarterSet()
+      const download = platform.downloadFile.bind(platform)
+      let running = false
+      platform.isGameRunning = async () => running
+      platform.downloadFile = async (url, to, progress) => { await download(url, to, progress); running = true }
+      await core.addPlugins(['Weatherman'])
+      const state = core.getState()
+      expect(state.error).toMatch(/Close XIV/)
+      expect(state.starterSet).toMatchObject({ status: 'ready', progress: null, result: null })
+    })
+  })
+
   it('opens a mod’s Heliosphere page through the usual link command', async () => {
     const { core, platform } = coreOn(dalamud)
     await core.scan()

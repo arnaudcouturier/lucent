@@ -80,15 +80,16 @@ describe('the activity log', () => {
     expect(health).toEqual(['[info] Health check: healthy, 6 files', '[warning] Drift in 1 file: winmm.dll', '[info] Health check: healthy, 6 files'])
   })
 
-  it('is shared by Lucent’s processes: a headless run adds its outcome', async () => {
+  it('is shared by Lucent’s processes: a headless run adds its outcome and the files its repair writes', async () => {
     const { platform } = await deployed()
     await runHeadless(platform, 'check')
     await platform.writeText(`${GAME}\\winmm.dll`, 'patched')
     await runHeadless(platform, 'check')
     await runHeadless(platform, 'repair')
-    expect((await logged(platform)).slice(-3)).toEqual([
+    expect((await logged(platform)).slice(-4)).toEqual([
       '[info] XIVLauncher started XIV: health check healthy',
       '[warning] XIVLauncher started XIV: drift in 1 file, to repair when XIV closes',
+      '[detail] wrote winmm.dll',
       '[success] XIV closed: repair finished',
     ])
   })

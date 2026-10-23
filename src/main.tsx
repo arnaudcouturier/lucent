@@ -9,7 +9,7 @@ import { createCore } from './core/core'
 import type { Platform } from './core/platform'
 import { App } from './ui/App'
 import { UninstallWindow } from './ui/UninstallWindow'
-import { inTauri } from './ui/shell'
+import { blocksReload, inTauri } from './ui/shell'
 import { CoreContext } from './ui/useCore'
 
 if (!inTauri) document.documentElement.classList.add('is-browser')
@@ -33,6 +33,11 @@ if (import.meta.env.DEV && params.has('gallery')) {
 
 function renderApp(platform: Platform, uninstalling: boolean) {
   const core = createCore(platform)
+  // The webview's reload keys stay available when nothing runs (the maintainer relies on them), but not mid-operation:
+  // the reloaded context would release the lease while the old one is still writing, and Recovery would meet a live batch.
+  addEventListener('keydown', (e) => { if (blocksReload(e, core.getState().busy)) e.preventDefault() }, true)
+  // The webview's right-click menu has a Reload entry too; it stays when idle, like the keys.
+  addEventListener('contextmenu', (e) => { if (core.getState().busy) e.preventDefault() }, true)
   // A reloaded webview (F5) orphaned the old context's operation leases in this process; drop them so
   // Scan can recover any half-applied install instead of reporting the lock held until restart.
   void (async () => {

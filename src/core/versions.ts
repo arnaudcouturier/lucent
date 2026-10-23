@@ -45,8 +45,13 @@ export async function pruneContentCache(platform: Platform, gameFolder: string):
     for (const stamp of Object.values(record.files)) keep.add(stamp.sha256)
     for (const step of record.recipe.recipe) if (step.kind === 'copy') keep.add(step.file)
   }
-  // Only Lucent's hash-named assets belong to this cache. Unrecognized files stay untouched.
-  await platform.removeMany((await platform.listFiles(cache)).filter((relative) => /^[a-f0-9]{64}$/.test(relative) && !keep.has(relative)).map((relative) => joinPath(cache, relative)))
+  // Only Lucent's hash-named assets belong to this cache, and the `.tmp` files downloads stream into. Unrecognized files stay untouched.
+  const listed = await platform.listFiles(cache)
+  await platform.removeMany(listed.filter((relative) => /^[a-f0-9]{64}$/.test(relative) && !keep.has(relative)).map((relative) => joinPath(cache, relative)))
+  // One an interrupted download left behind has gone untouched for an hour; another Lucent's download may still be writing a newer one.
+  const temporary = listed.filter((relative) => /^\.tmp[^\\/]*$/i.test(relative)).map((relative) => joinPath(cache, relative))
+  const stats = await platform.statMany(temporary)
+  await platform.removeMany(temporary.filter((_, i) => stats[i]?.kind === 'file' && Date.now() - stats[i]!.modifiedMs > 60 * 60 * 1000)).catch(() => {})
 }
 
 /** Listing checks cached assets by size only; applying a version hashes them before use and re-downloads a damaged one. */

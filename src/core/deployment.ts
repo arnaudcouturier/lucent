@@ -1,11 +1,11 @@
 import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
+import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { addMissingKeys, readIni } from './ini'
-import { configBaselineAssets, configBaselines, readConfig, readableText, updateRule } from './configs'
+import { configBaselineAssets, configBaselines, configPresent, readConfig, updateRule } from './configs'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
@@ -147,7 +147,8 @@ const BACKUP_FOLDER_NAME = /^(?!\.+$)[^\\/:*?"<>|\u0000-\u001f]+$/
 
 /**
  * Where a first deployment keeps the player's original files: `Backups\<game folder name>`, numbered when another
- * game folder's deployment already uses that name. The `game` folder inside mirrors the game's.
+ * game folder's deployment already uses that name, or when the folder is still there: a vanilla uninstall leaves its
+ * copies, the only ones of the files it left out. The `game` folder inside mirrors the game's.
  */
 export async function backupFolderName(platform: Platform, gameFolder: string): Promise<string> {
   const base = normalizePath(gameFolder).split('\\').at(-1)?.replace(/[:*?"<>|]/g, '').trim() || 'Game'
@@ -157,8 +158,11 @@ export async function backupFolderName(platform: Platform, gameFolder: string): 
       if (record.backupFolder && record.status !== 'rolled-back' && fileKey(normalizePath(record.gameFolder)) !== fileKey(normalizePath(gameFolder))) taken.add(record.backupFolder.toLowerCase())
     }
   } catch { /* A damaged record is recovery's concern; the name only needs to be readable. */ }
+  const { readableBackups } = await dataPaths(platform, gameFolder)
+  // A folder that can't be looked at counts as there.
+  const exists = (name: string) => maybeStat(platform, joinPath(readableBackups, name)).then((stat) => stat !== null, () => true)
   let name = base
-  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} (${n})`
+  for (let n = 2; taken.has(name.toLowerCase()) || await exists(name); n++) name = `${base} (${n})`
   return name
 }
 
@@ -174,7 +178,12 @@ async function removeReadableBackup(platform: Platform, record: DeploymentRecord
     const { readableBackups } = await dataPaths(platform, record.gameFolder)
     const folder = joinPath(readableBackups, record.backupFolder)
     if (!await maybeStat(platform, folder)) return
-    const files = await platform.listFiles(folder)
+    // Listed from `Backups` itself, which the port refuses to list when it is a junction or symbolic link and below which it
+    // skips any: a same-user program that swaps one in can't point an elevated uninstall at another folder to empty.
+    const files = (await platform.listFiles(readableBackups)).flatMap((relative) => {
+      const [top, ...rest] = relative.split(/[\\/]/)
+      return fileKey(top) === fileKey(record.backupFolder!) && rest.length ? [rest.join('\\')] : []
+    })
     await platform.removeMany(files.map((relative) => joinPath(folder, relative)))
     const directories = new Set(files.flatMap((relative) => {
       const parts = joinPath(relative).split('\\')
@@ -182,7 +191,7 @@ async function removeReadableBackup(platform: Platform, record: DeploymentRecord
     }))
     await platform.removeDirectoriesIfEmpty([...[...directories].sort((a, b) => b.split('\\').length - a.split('\\').length)
       .map((relative) => joinPath(folder, relative)), folder, readableBackups])
-  } catch { /* Leftover copies are harmless, and the next deployment of this folder replaces them. */ }
+  } catch { /* Leftover copies are harmless, and the next deployment of this folder backs up into another folder. */ }
 }
 
 export async function maybeStat(platform: Platform, path: string): Promise<FileStat | null> {
@@ -227,7 +236,11 @@ export async function readDeployment(platform: Platform, gameFolder: string): Pr
   if (value.frameGenerationMode !== undefined && value.frameGenerationMode !== null
     && !FRAME_GENERATION_IDS.includes(value.frameGenerationMode)) throw new Error('The frame-generation selection is damaged.')
   if (value.hdrMode !== undefined && value.hdrMode !== null && !HDR_MODES.includes(value.hdrMode)) throw new Error('The HDR selection is damaged.')
-  for (const path of Object.keys(value.files)) assertGamePath(path)
+  for (const [path, stamp] of Object.entries(value.files)) {
+    assertGamePath(path)
+    // Repair copies the cached file a stamp names, so it must name one by its hash.
+    if (!stamp || typeof stamp.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(stamp.sha256)) throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
+  }
   if (value.gameVersion !== undefined && value.gameVersion !== null && typeof value.gameVersion !== 'string') throw new Error('The deployment record is damaged. Keep it and its backups for recovery.')
   if (value.createdDirectories !== undefined) {
     if (!Array.isArray(value.createdDirectories)) throw new Error('The deployment directory journal is damaged.')
@@ -330,7 +343,8 @@ export async function lostDeployment(platform: Platform): Promise<DeploymentReco
 
 export async function scanDeployment(platform: Platform, gameFolder: string, content: ContentVersion, record: DeploymentRecord | null, signatures: ExistingSetupSignature[]): Promise<DeploymentScan> {
   const root = joinPath(gameFolder, 'game')
-  const files = await platform.listFiles(root)
+  // A file Lucent can't name safely is the player's and never touched, so it can't be in the way of anything planned.
+  const files = (await platform.listFiles(root)).filter(isSafeGamePath)
   await platform.resolveGamePaths(root, files)
   const { cache } = await dataPaths(platform, gameFolder)
   const stats = await platform.statMany(content.files.map((file) => joinPath(cache, file.sha256)))
@@ -368,7 +382,7 @@ export function releaseAsset(file: ContentVersion['files'][number]): string {
 async function removeGeneratedFolders(platform: Platform, gameFolder: string, folders: string[]) {
   const root = joinPath(gameFolder, 'game')
   const prefixes = folders.map((folder) => `${fileKey(folder).replace(/\/+$/, '')}/`)
-  const files = (await platform.listFiles(root)).filter((file) => prefixes.some((prefix) => fileKey(file).startsWith(prefix)))
+  const files = (await platform.listFiles(root)).filter((file) => isSafeGamePath(file) && prefixes.some((prefix) => fileKey(file).startsWith(prefix)))
   if (files.length) await platform.removeMany(await platform.resolveGamePaths(root, files))
   // Every folder that held them, up to the game folder; a folder that is still in use, or gained a file, stays.
   const directories = new Set(folders.map((folder) => folder.replace(/[\\/]+$/, '').replace(/\\/g, '/')))
@@ -391,11 +405,20 @@ function journalFolders(record: DeploymentRecord): string[] {
   return [...folders]
 }
 
+/**
+ * Removes these folders where they are empty, deepest first. Best effort: the files are back by then, so a folder that
+ * can't go (another program's working folder, a folder turned into a link) stays, rather than leaving the undo unfinished.
+ */
 async function undoDirectories(platform: Platform, gameFolder: string, created: string[]) {
   if (!created.length) return
   const root = joinPath(gameFolder, 'game')
   const directories = [...created].sort((a, b) => b.split('/').length - a.split('/').length)
-  await platform.removeDirectoriesIfEmpty(await platform.resolveGamePaths(root, directories))
+  try { await platform.removeDirectoriesIfEmpty(await platform.resolveGamePaths(root, directories)) } catch {
+    // One at a time, so the folder that failed doesn't keep the others.
+    for (const directory of directories) {
+      try { await platform.removeDirectoryIfEmpty(await platform.resolveGamePath(root, directory)) } catch { /* It stays. */ }
+    }
+  }
 }
 
 /**
@@ -405,11 +428,26 @@ async function undoDirectories(platform: Platform, gameFolder: string, created: 
 const FILE_BATCH = 96
 
 /**
+ * Whether the file now at a path the journal entry at `index` created belongs to the player rather than being Lucent's,
+ * rewritten. A file some later step found there changed while the path was Lucent's. Any other file came after the
+ * deployment's last step on the path: it is the player's when that step left the path empty (an update dropped the file,
+ * Disabled renamed it aside), or when the path is a shipped preset, which the player edits in ReShade.
+ */
+function isPlayersFile(record: DeploymentRecord, index: number, relative: string, current: string): boolean {
+  const key = fileKey(relative)
+  const later = record.journal.slice(index + 1).flatMap((entry) => Object.keys(entry.before)
+    .filter((path) => fileKey(path) === key).map((path) => ({ before: entry.before[path], after: entry.after[path] ?? null })))
+  if (later.some((step) => step.before === current)) return false
+  const left = later.length ? later.at(-1)!.after : record.journal[index].after[relative] ?? null
+  return left === null || record.recipe.shippedPresets.some((preset) => fileKey(preset.path) === key)
+}
+
+/**
  * Undoes these journal entries, whose paths are all different, so their files can be put back together: each one is
  * removed if the step created it, or restored from its verified backup. The checks are the sequential undo's.
  */
 async function undoEntries(platform: Platform, record: DeploymentRecord, backups: string, indices: number[]) {
-  const work: { relative: string; before: string | null; after: string | null | undefined; dropped: boolean }[] = []
+  const work: { index: number; relative: string; before: string | null; after: string | null | undefined; dropped: boolean }[] = []
   // A vanilla uninstall puts nothing back where the deployment replaced a file: that step's backup is the original.
   const firstEntry = new Map<string, number>()
   if (record.uninstalling && record.leaveOriginals) {
@@ -439,7 +477,7 @@ async function undoEntries(platform: Platform, record: DeploymentRecord, backups
     if (!entry.step) throw new Error('The deployment journal is damaged.')
     for (const [relative, before] of Object.entries(entry.before).reverse()) {
       const dropped = before !== null && firstEntry.get(fileKey(relative)) === index
-      work.push({ relative, before: dropped ? null : before, after: entry.after[relative], dropped })
+      work.push({ index, relative, before: dropped ? null : before, after: entry.after[relative], dropped })
     }
   }
   if (!work.length) return
@@ -449,13 +487,15 @@ async function undoEntries(platform: Platform, record: DeploymentRecord, backups
   let hashed = 0
   const removals: string[] = []
   const restores: { relative: string; target: string; backup: string; replace: boolean }[] = []
-  work.forEach(({ relative, before, after, dropped }, k) => {
+  work.forEach(({ index, relative, before, after, dropped }, k) => {
     const current = stats[k] ? hashes[hashed++] : null
     if (current === before) return
     if (current !== after) {
       if (!record.uninstalling) throw new Error(`Recovery stopped to protect a changed user file: ${relative}`)
       // A file Lucent added stays Lucent's even after a mod rewrites it; a replaced original is newer than the deployment.
       if ((before !== null || dropped) && current !== null) return
+      // So does a file the player put there once Lucent had given the path up, and a shipped preset they edited.
+      if (current !== null && isPlayersFile(record, index, relative, current)) return
     }
     if (before === null) removals.push(targets[k])
     else restores.push({ relative, target: targets[k], backup: before, replace: current !== null })
@@ -709,6 +749,26 @@ async function copyReadableBackup(platform: Platform, gameFolder: string, folder
   }
 }
 
+/**
+ * What a Reset copies to its readable backup out of the files it overwrites: what holds the player's changes, the config
+ * files and any other file that is no longer what Lucent wrote. The journal's backups are enough for the rest. A matching
+ * size and modified time stand in for the hash, as in the health check.
+ */
+async function resetBackupFiles(platform: Platform, record: DeploymentRecord, plan: Plan): Promise<string[]> {
+  const paths = plan.filesToBackup
+  const configs = new Set([...record.recipe.ownedConfigs, ...plan.recipe.ownedConfigs].map((config) => fileKey(config.path)))
+  const stamps = new Map(Object.entries(record.files).map(([path, stamp]) => [fileKey(path), stamp]))
+  const deployed = paths.filter((path) => !configs.has(fileKey(path)) && stamps.has(fileKey(path)))
+  const targets = await platform.resolveGamePaths(joinPath(record.gameFolder, 'game'), deployed)
+  const stats = await platform.statMany(targets)
+  const stamp = (i: number) => stamps.get(fileKey(deployed[i]))!
+  const toHash = deployed.flatMap((_, i) => stats[i]?.kind === 'file' && (stats[i]!.size !== stamp(i).size || stats[i]!.modifiedMs !== stamp(i).modifiedMs) ? [i] : [])
+  const hashes = await platform.hashMany(toHash.map((i) => targets[i]))
+  const changed = new Set(toHash.filter((i, k) => hashes[k] !== stamp(i).sha256).map((i) => fileKey(deployed[i])))
+  const unchanged = new Set(deployed.map(fileKey).filter((key) => !changed.has(key)))
+  return paths.filter((path) => !unchanged.has(fileKey(path)))
+}
+
 /** Records the directories these paths need that don't exist yet, before any step can create them. */
 async function recordCreatedDirectories(platform: Platform, record: DeploymentRecord, root: string, relatives: string[]) {
   const known = new Set(record.createdDirectories!.map(fileKey))
@@ -923,7 +983,8 @@ async function originalsPutBack(platform: Platform, gameFolder: string, scan: De
  * Config files follow the config update rule the new version gives each one (see `configs.ts`): `keep` leaves it,
  * `addMissingKeys` writes only the keys it lacks, and `replace` writes the new baseline from the stored first-install choices,
  * after the journal has backed the file up. An edited shipped preset is kept when Lucent's version is unchanged, or saved as
- * "(my edits)" when it changed too. Enabled or Disabled, and the stored choices where the tier still offers them, are kept.
+ * "(my edits)" when it changed too or is no longer shipped there. Enabled or Disabled, and the stored choices where the tier
+ * still offers them, are kept.
  * Given another tier and `graphics`, it switches the deployment to that tier's recipe the same way. A failure or
  * interruption undoes only the update. `note` hears one line per config file, once the update has finished.
  */
@@ -972,10 +1033,11 @@ export async function updateDeployment(
     let steps: PlanStep[] = plan.steps
     let expectedFiles = plan.expectedFiles
     const notes: string[] = []
-    if (reset && options.backupPath) await copyReadableBackup(platform, gameFolder, options.backupPath, plan.filesToBackup, report)
+    if (reset && options.backupPath) await copyReadableBackup(platform, gameFolder, options.backupPath, await resetBackupFiles(platform, record, plan), report)
     // A config the player has keeps whatever its rule says. A missing or unreadable config is only written by a rule that
-    // explicitly asks for content; `keep` leaves it alone so Repair remains the operation that restores it. A locked config
-    // is a separate failure: it must not be mistaken for a missing file and overwritten while another process holds it.
+    // explicitly asks for content, or when the deployment doesn't have it yet; `keep` leaves a deployed one alone so Repair
+    // remains the operation that restores it. A locked config is a separate failure: it must not be mistaken for a missing
+    // file and overwritten while another process holds it.
     const keptConfigs: string[] = []
     const untouchedConfigs: string[] = []
     const removeConfigSteps = (key: string) => {
@@ -1014,7 +1076,7 @@ export async function updateDeployment(
           const [, backupHash] = backupEntry
           // A player may have tuned the current version after the update. The journal only knows what was present when
           // Lucent left the target version, so preserve a current file whose hash no longer matches its deployment stamp.
-          const playerChanged = state.kind === 'readable' && stampedPath
+          const playerChanged = (state.kind === 'readable' || state.kind === 'not-text') && stampedPath
             && record.files[stampedPath]?.sha256 !== await platform.hashFile(diskPath)
           if (playerChanged) {
             removeConfigSteps(key)
@@ -1036,21 +1098,32 @@ export async function updateDeployment(
           notes.push(`${config.path}: restored from the previous version's journal`)
         } else {
           removeConfigSteps(key)
-          if (state.kind === 'readable') keptConfigs.push(config.path)
+          if (state.kind === 'readable' || state.kind === 'not-text') keptConfigs.push(config.path)
           else if (stampedPath) untouchedConfigs.push(stampedPath)
           notes.push(`${config.path}: kept as it is during rollback`)
         }
         continue
       }
 
+      if (state.kind === 'not-text') {
+        // Saved in an encoding Lucent can't read as text, it is the player's file all the same: there are no keys to add to
+        // it, and only `replace` writes over it, once the journal has backed it up.
+        if (rule === 'replace') { notes.push(`${config.path}: replaced from the new baseline, the previous file is backed up`); continue }
+        removeConfigSteps(key)
+        keptConfigs.push(config.path)
+        notes.push(`${config.path}: not readable as text, kept as it is`)
+        continue
+      }
       if (state.kind !== 'readable') {
-        if (rule === 'keep') {
+        // A config new to the deployment, with nothing at its path yet, leaves `keep` nothing to keep: it is simply added.
+        const added = !deployed && !await maybeStat(platform, diskPath)
+        if (rule === 'keep' && !added) {
           removeConfigSteps(key)
           if (stampedPath) untouchedConfigs.push(stampedPath)
-          notes.push(`${config.path}: ${deployed ? 'missing or unreadable, kept as it is' : 'not present, kept as it is'}`)
+          notes.push(`${config.path}: ${!deployed ? '' : state.kind === 'missing' ? 'missing, ' : 'unreadable, '}kept as it is`)
           continue
         }
-        notes.push(`${config.path}: ${deployed ? 'missing, written from the new baseline' : 'new, written from the baseline'}`)
+        notes.push(`${config.path}: ${!deployed ? 'new, written from the baseline' : `${state.kind === 'missing' ? 'missing' : 'unreadable'}, written from the new baseline`}`)
         continue
       }
       const diskText = state.text
@@ -1089,6 +1162,18 @@ export async function updateDeployment(
         preservedPresets.set(key, { kind: 'carry', from: preset.path, to: destination })
       }
     }
+    // A preset the new version no longer ships there (dropped, or renamed) is deleted; an edited one is saved as "(my edits)" first.
+    const shipped = new Set(plan.expectedFiles.map((f) => fileKey(f.path)))
+    for (const preset of record.recipe.shippedPresets) {
+      const key = fileKey(preset.path)
+      const stampedPath = Object.keys(record.files).find((p) => fileKey(p) === key)
+      if (!stampedPath || shipped.has(key)) continue
+      const diskPath = await platform.resolveGamePath(root, preset.path)
+      if ((await maybeStat(platform, diskPath))?.kind !== 'file' || await platform.hashFile(diskPath) === record.files[stampedPath].sha256) continue
+      const destination = myEditsPath(preset.path, taken)
+      taken.add(fileKey(destination))
+      preservedPresets.set(key, { kind: 'carry', from: preset.path, to: destination })
+    }
     if (keptPresets.length) {
       const kept = new Set(keptPresets.map((p) => fileKey(p.path)))
       const stagingSources = new Set(steps.filter((s) => s.kind === 'rename' && kept.has(fileKey(s.to))).map((s) => fileKey((s as Extract<PlanStep, { kind: 'rename' }>).from)))
@@ -1101,7 +1186,7 @@ export async function updateDeployment(
     if (preservedPresets.size) {
       const withPreserved: PlanStep[] = []
       for (const step of steps) {
-        const target = writtenPath(step)
+        const target = step.kind === 'delete' ? step.path : writtenPath(step)
         if (target && preservedPresets.has(fileKey(target))) {
           withPreserved.push(preservedPresets.get(fileKey(target))!)
           preservedPresets.delete(fileKey(target))
@@ -1202,9 +1287,9 @@ async function cacheFile(platform: Platform, cache: string, file: ContentFile, s
 /**
  * Puts back the drifted files, through the journal, against the deployed content version. Deployed files come back from the
  * cache, downloading only what is missing, and a Disabled deployment's entry files under their disabled names. A config file
- * is written only when it is missing (or can't be read as text): from the content's baseline and the stored first-install
- * choices, with the frame cap and peak brightness computed from `screen` now. A config that is there is the player's, so
- * Repair never restores its contents.
+ * is written only when it is missing (or can't be read at all): from the content's baseline and the stored first-install
+ * choices, with the frame cap and peak brightness computed from `screen` now. A config that is there is the player's, even
+ * in an encoding Lucent can't read as text, so Repair never restores its contents.
  */
 export async function repairDeployment(
   platform: Platform, gameFolder: string, drifted: string[], content: ContentVersion | null, source: ContentSource | null, report: (progress: DeploymentProgress) => void,
@@ -1221,11 +1306,16 @@ export async function repairDeployment(
     const stamped = Object.keys(record.files).find((p) => fileKey(p) === fileKey(relative))
     if (!stamped) throw new Error(`Repair found a file the deployment does not own: ${relative}`)
     const config = isConfig(stamped)
-    if (config && await readableText(platform, await platform.resolveGamePath(root, stamped)) !== null) continue
+    if (config && await configPresent(platform, await platform.resolveGamePath(root, stamped))) continue
     targets.push({ relative: stamped, config, text: null, sha256: record.files[stamped].sha256 })
   }
   if (!targets.length) return record
   const snapshot = record.cachedVersions?.find((v) => v.content.id === record.contentVersion)
+  // A deployed file comes back only as one the content ships: the published version's list when there is one, which
+  // nothing on this machine can edit, or else the record's own copy of it.
+  const shipped = content?.id === record.contentVersion ? content.files : snapshot?.content.files
+  const unknown = shipped && targets.find((t) => !t.config && !shipped.some((f) => f.sha256 === t.sha256))
+  if (unknown) throw new Error(`Repair found a file the content doesn’t ship: ${unknown.relative}. The deployment record may be damaged.`)
   const baselinePlan = targets.some((t) => t.config) ? storedBaselinePlan(record, content, snapshot, screen) : null
   const assets = [...new Set([...targets.filter((t) => !t.config).map((t) => t.sha256), ...(baselinePlan ? configBaselineAssets(baselinePlan) : [])])]
   const missing: ContentFile[] = []

@@ -1,10 +1,11 @@
 // The frameless window: the rail on the left, the pane with its title strip on the right.
 // The rail and the title strip are the drag regions; a double-click on either maximizes or restores the window.
 // Once there is a deployment, the rail navigates between its sections.
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Copy, Minus, Square, X } from 'lucide-react'
 import { closeWindow, dragWindow, minimizeWindow, observeMaximized, toggleMaximizeWindow } from './shell'
 import { Rail } from './Rail'
+import { focusHeld, focusLost } from './focus'
 import { useCore } from './useCore'
 
 export type Section = 'home' | 'keys' | 'versions' | 'mods' | 'logs' | 'settings' | 'help'
@@ -49,7 +50,7 @@ export function Screen({ title, sub, actions, children }: { title: string; sub?:
     <div className="screen" key={title}>
       <header className={`screen-head${actions ? ' has-actions' : ''}`}>
         <div>
-          <h1>{title}</h1>
+          <ScreenTitle>{title}</ScreenTitle>
           {sub && <p>{sub}</p>}
         </div>
         {actions && <div className="screen-head-actions">{actions}</div>}
@@ -57,4 +58,14 @@ export function Screen({ title, sub, actions, children }: { title: string; sub?:
       {children}
     </div>
   )
+}
+
+/** A new screen replaces the one whose button was pressed, which drops focus to the page; the title takes it so a screen
+    reader announces where the player is and the next Tab starts inside the screen. A player on the rail keeps their place. */
+function ScreenTitle({ children }: { children: ReactNode }) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (focusLost(focusHeld(), document.activeElement, document.body)) heading.current?.focus({ preventScroll: true })
+  }, [])
+  return <h1 ref={heading} tabIndex={-1}>{children}</h1>
 }

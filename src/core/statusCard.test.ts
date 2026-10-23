@@ -86,6 +86,12 @@ it('suppresses every secondary update while busy, the folder is missing, or a ti
   expect(secondaryUpdates({ ...deployment({ update, tierChange }), appUpdate } as State)).toEqual([])
 })
 
+it('suppresses them for a pending tier switch or a missing folder even when drift or the running game is the primary card', () => {
+  expect(secondaryUpdates({ ...deployment({ drift, update, tierChange }), appUpdate } as State)).toEqual([])
+  expect(secondaryUpdates({ ...deployment({ update, tierChange }), appUpdate, gameRunning: true } as State)).toEqual([])
+  expect(secondaryUpdates({ ...deployment({ update }), appUpdate, gameRunning: true, gameFolder: { status: 'missing', path: 'D:\\XIV' } } as State)).toEqual([])
+})
+
 it('does not repeat an update that is already the primary card', () => {
   expect(secondaryUpdates({ ...deployment({ update }), appUpdate })).toEqual([{ kind: 'update', ...update }])
   expect(secondaryUpdates(deployment({ update }))).toEqual([])

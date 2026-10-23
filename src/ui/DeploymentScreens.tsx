@@ -8,6 +8,7 @@ import { useCore } from './useCore'
 import { Path } from './Path'
 import { EasedNumber, ProgressBar, percentLabel } from './Progress'
 import { gameActionsAvailable } from '../core/gameAccess'
+import { GAME_WAITING } from './gameWaiting'
 import { sizeLabel } from '../core/format'
 import { frameGenerationLabel, hdrLabel } from '../core/choices'
 import { neuralRenderingExtras, neuralRenderingSummary } from '../core/neuralRendering'
@@ -32,7 +33,7 @@ const hdrNote = (mode: HdrMode, hdrSupported: boolean) => mode !== 'off' ? <smal
 /** Read-only: Scan listed the files, Profile made the choices. */
 export function ReviewScreen() {
   const [state, core] = useCore()
-  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen, setupMode } = state
+  const { plan, gameFolder, graphics, busy, error, profiles, selfInstalled, addToStartMenu, screen, setupMode, resetBackupPath } = state
   if (!plan) return null
   const required = graphics.status === 'found' && graphics.tier?.requiresReShade
   const profile = profiles.find((p) => p.id === plan.profile)
@@ -40,6 +41,7 @@ export function ReviewScreen() {
   const extras = plan.neuralRendering ? neuralRenderingExtras(controls, plan.neuralRendering) : []
   return <Screen title="Review" sub={setupMode === 'reset' ? 'Here’s the tested setup Lucent will write again.' : setupMode === 'tier' ? 'Here’s the setup for this graphics card.' : 'Here’s what Lucent will put in your game folder.'}>
     {gameFolder.status === 'found' && <div className="destination"><span>Game folder</span><Path path={gameFolder.path} /></div>}
+    {setupMode !== 'install' && resetBackupPath && <div className="destination"><span>Your current config files will be backed up first at</span><Path path={resetBackupPath} /></div>}
     <dl className="card plan-numbers">
       <div><dt>Files backed up</dt><dd>{plan.counts.backedUp}</dd></div>
       <div><dt>Files added</dt><dd>{plan.counts.added}</dd></div>
@@ -101,9 +103,9 @@ export function InstallScreen() {
   </Screen>
 }
 
-/** Keycaps for keys pressed together, such as Shift + F2. */
+/** Keycaps for keys pressed together, such as Shift + F2. A screen reader gets the combination as text instead of the caps. */
 export function Keys({ keys }: { keys: string[] }) {
-  return <span className="keys" aria-label={keys.join(' + ')}>{keys.map((key, i) => <Fragment key={i}>
+  return <span className="keys"><span className="sr-only">{keys.join(' + ')}</span>{keys.map((key, i) => <Fragment key={i}>
     {i > 0 && <span className="keys-plus" aria-hidden>+</span>}<kbd aria-hidden>{key}</kbd>
   </Fragment>)}</span>
 }
@@ -209,10 +211,13 @@ export function UpdateCard({ card }: { card: UpdateCardState }) {
 
 function StatusCardContent({ card }: { card: Card }) {
   const [state, core] = useCore()
-  if (card.kind === 'game-running' || card.kind === 'game-check-failed') return <div className="health-card is-game-waiting" role="status">
-    <TriangleAlert size={20} />
-    <div className="health-body"><h2>{card.kind === 'game-running' ? 'XIV is running' : 'Couldn’t check XIV'}</h2><p>{card.kind === 'game-running' ? 'Changes wait until you close the game. Your actions will return automatically.' : 'Changes wait until Lucent can check whether the game is running. It will try again automatically.'}</p></div>
-  </div>
+  if (card.kind === 'game-running' || card.kind === 'game-check-failed') {
+    const waiting = GAME_WAITING[card.kind === 'game-running' ? 'running' : 'check-failed']
+    return <div className="health-card is-game-waiting" role="status">
+      <TriangleAlert size={20} />
+      <div className="health-body"><h2>{waiting.title}</h2><p>{waiting.text}</p></div>
+    </div>
+  }
   if (card.kind === 'busy') return <div className="health-card is-busy" role="status">
     <LoaderCircle size={20} className="spin" />
     <div className="health-body">
@@ -222,7 +227,7 @@ function StatusCardContent({ card }: { card: Card }) {
   </div>
   if (card.kind === 'folder-missing') return <div className="health-card is-folder-missing" role="alert">
     <FolderX size={20} />
-    <div className="health-body"><h2>Game folder not found</h2><p>The folder Lucent deployed to is gone or has moved.</p><Path path={card.path} /></div>
+    <div className="health-body"><h2>{GAME_WAITING['folder-missing'].title}</h2><p>{GAME_WAITING['folder-missing'].text}</p><Path path={card.path} /></div>
     <button className="btn is-primary" disabled={state.busy} onClick={() => void core.findGameFolder()}><Search size={14} />Find it</button>
   </div>
   if (card.kind === 'switch-tier') return <div className="health-card is-tier" role="status">
@@ -230,7 +235,7 @@ function StatusCardContent({ card }: { card: Card }) {
     <div className="health-body"><h2>New graphics card</h2><p>{card.sameTier
       ? `Your ${card.gpu} is in the ${card.to} tier, but Lucent still has settings for your previous card.`
       : `Your ${card.gpu} matches the ${card.to} tier. Lucent is set up for ${card.from}.`}</p>
-      <p className="update-size">Enabled and your own changes stay as they are, and so does your profile if {card.to} offers it.</p></div>
+      <p className="update-size">Enabled stays as it is, and your earlier choices carry over where {card.to} offers them. Your config files are backed up, then written again.</p></div>
     <button className="btn is-primary" disabled={!gameActionsAvailable(state)} onClick={() => void core.switchTier()}><Cpu size={14} />{card.sameTier ? 'Refresh for this GPU' : 'Switch tier'}</button>
   </div>
   if (card.kind === 'drift') return <div className="health-card is-drift" role="alert">

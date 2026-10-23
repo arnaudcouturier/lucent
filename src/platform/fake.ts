@@ -16,7 +16,7 @@ export interface Machine {
   remoteText?: Record<string, string>
   devContent?: LocalContent | null
   gameRunning?: boolean
-  /** Exe names of other running processes, such as `XIVLauncher.exe`. */
+  /** Other running processes, by exe name (`XIVLauncher.exe`) or by full exe path when a test needs to tell copies apart. */
   processes?: string[]
   /** The headless run this process was started for. */
   headlessMode?: 'uninstall' | HeadlessMode | null
@@ -263,6 +263,9 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     async resolveGamePath(root, relative) {
       await gate
       assertGamePath(relative)
+      // The real port refuses a root that is not a folder on disk ("Game folder is missing").
+      const folder = norm(root)
+      if (!directories.has(folder) && ![...files.keys()].some((path) => path.startsWith(folder + '\\'))) throw new PlatformError('not-found', 'Game folder is missing', root)
       return `${root.replace(/[\\/]$/, '')}\\${relative.replace(/\//g, '\\')}`
     },
     async downloadFile(url, to, progress) {
@@ -276,7 +279,12 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
     async isProcessRunning(exeName) {
       await gate
       const running = [...(machine.processes ?? []), ...(machine.gameRunning ? ['ffxiv_dx11.exe'] : [])]
-      return running.some((name) => name.toLowerCase() === exeName.toLowerCase())
+      return running.some((process) => process.replace(/^.*[\\/]/, '').toLowerCase() === exeName.toLowerCase())
+    },
+    async isExeRunningElsewhere(path) {
+      await gate
+      // `processes` are the others: this process is never among them.
+      return (machine.processes ?? []).some((process) => /[\\/]/.test(process) && norm(process) === norm(path))
     },
     async notify(title, body) { await gate; notifications.push({ title, body }) },
     async exit() { releaseProcessLocks(); exited = true },
@@ -335,8 +343,8 @@ export function createFakePlatform(machine: Machine = {}): FakePlatform {
       await gate
       const p = norm(path)
       const content = files.get(p)
-      if (content !== undefined) return { kind: 'file', size: new TextEncoder().encode(content).length, modifiedMs: modified.get(p) ?? 0 }
-      if (isDir(p)) return { kind: 'dir', size: 0, modifiedMs: 0 }
+      if (content !== undefined) return { kind: 'file', size: new TextEncoder().encode(content).length, modifiedMs: modified.get(p) ?? 0, readOnly: readOnlyFiles.has(p) }
+      if (isDir(p)) return { kind: 'dir', size: 0, modifiedMs: 0, readOnly: false }
       throw new PlatformError('not-found', `Not found: ${path}`, path)
     },
     async readRegistry(hive: RegistryHive, key, value) {

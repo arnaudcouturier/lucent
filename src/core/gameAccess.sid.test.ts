@@ -42,3 +42,28 @@ it.each(['profile', 'frame-generation', 'hdr'])('rejects a leftover %s request: 
   })
   await expect(takeElevationResume(platform)).rejects.toThrow(/administrator resume request is invalid/)
 })
+
+it('carries the player’s own profile folders, redirected ones included, through UAC', async () => {
+  const env = { Documents: 'D:\\OneDrive\\Documents', Pictures: 'D:\\OneDrive\\Pictures', AppData: 'C:\\Users\\Player\\AppData\\Roaming' }
+  const original = createFakePlatform({ readOnlyDirectories: [`${gameFolder}\\game`], userSid: playerSid, env })
+  await gameWriteAccess(original, () => {})({ kind: 'repair', gameFolder }, [])
+  const path = original.elevationRequests[0]
+  const text = await original.readText(path)
+  expect(JSON.parse(text).folders).toEqual(env)
+  const elevated = createFakePlatform({ elevated: true, elevationResumePath: path, files: { [path]: text } })
+  await expect(takeElevationResume(elevated)).resolves.toMatchObject({ folders: env })
+})
+
+it.each([
+  ['a relative folder', { Documents: 'Documents' }],
+  ['a folder that climbs out', { AppData: 'C:\\Users\\Player\\..\\Administrator\\AppData\\Roaming' }],
+  ['a folder Lucent doesn’t carry', { ProgramFiles: 'C:\\Program Files' }],
+])('rejects a resume request with %s', async (_, folders) => {
+  const path = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\resume-123e4567-e89b-12d3-a456-426614174000.json'
+  const platform = createFakePlatform({
+    elevated: true,
+    elevationResumePath: path,
+    files: { [path]: JSON.stringify({ schemaVersion: 2, userSid: playerSid, folders, request: { kind: 'repair', gameFolder } }) },
+  })
+  await expect(takeElevationResume(platform)).rejects.toThrow(/administrator resume request is invalid/)
+})

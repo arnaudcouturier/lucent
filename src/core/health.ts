@@ -3,7 +3,7 @@ import type { FileStat, Platform } from './platform'
 import { dataPaths, maybeStat, type DeploymentRecord } from './deployment'
 import { fileKey } from './planner'
 import { joinPath } from './paths'
-import { readableText } from './configs'
+import { configPresent } from './configs'
 
 export interface Drift {
   /** Game-folder paths, relative to `game\`, that are missing or no longer what Lucent deployed. */
@@ -13,7 +13,8 @@ export interface Drift {
 }
 
 /**
- * The player's changes are never drift: a config file only has to be present and readable, and a shipped preset only present.
+ * The player's changes are never drift: a config file only has to be present and readable (in whatever encoding it was
+ * saved), and a shipped preset only present.
  * Every other file must keep its hash. A matching size and modified time stand in for the hash, unless `full` is set
  * or the game version changed since the last healthy check. A healthy check saves the game version and refreshed stamps.
  */
@@ -34,7 +35,7 @@ export async function checkHealth(platform: Platform, record: DeploymentRecord, 
     if (path === null || stat?.kind !== 'file') { files.push(relative); continue }
     if (presets.has(fileKey(relative))) continue
     if (configs.has(fileKey(relative))) {
-      if (await readableText(platform, path) === null) files.push(relative)
+      if (!await configPresent(platform, path)) files.push(relative)
       continue
     }
     if (!full && stat.size === expected.size && stat.modifiedMs === expected.modifiedMs) continue

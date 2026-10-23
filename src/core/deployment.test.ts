@@ -451,6 +451,43 @@ it('retries a download that failed on the network before giving up on the deploy
   expect(failed.size).toBe(Object.keys(FIXTURE_ASSETS).length)
 })
 
+it('treats a record whose file stamp is not a hash as damaged', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  const record = (await readDeployment(platform, ROOT))!
+  record.files['winmm.dll'].sha256 = '..\\..\\payload'
+  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
+  await expect(readDeployment(platform, ROOT)).rejects.toThrow(/record is damaged/)
+})
+
+it('repairs a file only from one the deployed content ships, whatever the record names', async () => {
+  const platform = createFakePlatform(deploymentMachine())
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  await core.deploy()
+  core.finish()
+  // A record edited to name another file, and that file waiting in the cache.
+  const payload = 'Not from the content'
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
+  const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  const paths = await dataPaths(platform, ROOT)
+  await platform.writeText(`${paths.cache}\\${hash}`, payload)
+  const record = (await readDeployment(platform, ROOT))!
+  record.files['winmm.dll'].sha256 = hash
+  await platform.writeText(paths.record, JSON.stringify(record))
+  await platform.writeText(`${ROOT}\\game\\winmm.dll`, 'Patched by the game')
+  const reopened = createCore(platform)
+  await reopened.scan()
+  expect(reopened.getState().activity).toMatchObject({ kind: 'deployment', drift: { files: ['winmm.dll'] } })
+  await reopened.repair()
+  expect(reopened.getState().error).toMatch(/doesn’t ship: winmm\.dll/)
+  expect(await platform.readText(`${ROOT}\\game\\winmm.dll`)).toBe('Patched by the game')
+})
+
 it('reads the originals Lucent overwrote in place, and none that a takeover removed before the content wrote its own file', () => {
   const [original, written, edited] = ['a', 'b', 'c'].map((digit) => digit.repeat(64))
   const journal: JournalEntry[] = [

@@ -35,7 +35,9 @@ export function statusCard(state: Readonly<State>): StatusCard | null {
     game folder is missing, or a tier switch is pending, acting on anything else isn't safe yet. */
 export function secondaryUpdates(state: Readonly<State>): UpdateCardState[] {
   const primary = cardState(state)
-  if (!primary || primary.kind === 'busy' || primary.kind === 'folder-missing' || primary.kind === 'switch-tier') return []
+  if (!primary || primary.kind === 'busy') return []
+  // Drift and the running game outrank both, so the state itself says whether the folder is missing or a tier switch pending.
+  if (state.gameFolder?.status === 'missing' || (state.activity.kind === 'deployment' && state.activity.tierChange)) return []
   const contentUpdate = state.activity.kind === 'deployment' ? state.activity.update : null
   const items: UpdateCardState[] = []
   if (state.appUpdate && primary.kind !== 'app-update') items.push({ kind: 'app-update', ...state.appUpdate })

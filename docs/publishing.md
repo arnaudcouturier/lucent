@@ -136,6 +136,22 @@ source links are recorded in both the manifest and release notes.
 Content date IDs are immutable. A date already in the manifest or an existing content release,
 including a draft, is refused. Choose a new date after a published version needs changes.
 
+The app announces a version only when its ID sorts after the one the player has, so the ID must
+be a real date that is newer than the manifest's newest ID and at most 7 days after today (UTC).
+That leaves room for a second publication on the same day (use the next date) and still refuses a
+typo such as `2026.11.22` for `2026.10.22`, which would otherwise make every later version
+invisible to anyone who updated to it. A dry run past the limit prints a warning instead of
+failing, so the prepare scripts keep working.
+
+A Stable content version needs a Stable app: the script refuses `"channel": "stable"` with a
+`minAppVersion` that is a beta, and `npm test` checks the repository's own `manifest.json` for the
+same mistake after a hand edit that promotes a version.
+
+The script prints a warning (it does not fail) when a shader file name is deployed with different
+bytes under different paths. ReShade looks for an include in the including file's folder first,
+so two copies of `reshade.fxh` in different folders are usually intended; read the warning, and
+check that the effects that include it still pick the copy you expect.
+
 After all local checks pass, the script paginates every content release and asset list.
 Published hash-named assets are reused at their original release; drafts are not reusable.
 New files are copied to temporary staging and hashed from those bytes, so changing an input

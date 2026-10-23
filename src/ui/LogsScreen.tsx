@@ -4,7 +4,8 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, Check, ClipboardCopy } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen } from './Window'
-import { LUCENT_LOG, logSources, type LogLine, type LogSource } from '../core/log'
+import { LUCENT_LOG, logSources, type LogSource } from '../core/log'
+import { keyLines, type KeyedLine } from './logKeys'
 
 const REFRESH_MS = 1000
 /** How close to the end still counts as following it, in pixels. */
@@ -26,7 +27,7 @@ export function LogsScreen() {
 /** Undefined until the first read; null when the log hasn't been written yet. */
 function useLogTail(source: LogSource) {
   const [, core] = useCore()
-  const [lines, setLines] = useState<LogLine[] | null | undefined>(undefined)
+  const [lines, setLines] = useState<KeyedLine[] | null | undefined>(undefined)
   useEffect(() => {
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
@@ -37,7 +38,7 @@ function useLogTail(source: LogSource) {
       // The tail slides once it is full, so its length alone doesn't say whether it changed.
       const last = next?.at(-1)
       const signature = next ? `${next.length} ${last?.date} ${last?.time} ${last?.text}` : ''
-      if (signature !== shown) { shown = signature; setLines(next) }
+      if (signature !== shown) { shown = signature; setLines((previous) => next && keyLines(previous, next)) }
       timer = setTimeout(() => void refresh(), REFRESH_MS)
     }
     void refresh()
@@ -76,7 +77,7 @@ function Terminal({ source }: { source: LogSource }) {
           onScroll={({ currentTarget: el }) => setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_SLACK)}>
           {lines.map((line, index) => {
             const previous = lines[index - 1]
-            return <Fragment key={index}>
+            return <Fragment key={line.id}>
               {line.date && line.date !== previous?.date && <div className="log-day"><span>{line.date}</span></div>}
               <div className={`log-line is-${line.level}${line.time ? '' : ' is-plain'}`}>
                 {/* Lines of the same second read as one group under its first timestamp. */}

@@ -275,6 +275,10 @@ async fn platform_is_process_running(exe_name: String) -> Result<bool, PlatformE
     files::is_process_running(&exe_name)
 }
 #[tauri::command]
+async fn platform_is_exe_running_elsewhere(path: PathBuf) -> Result<bool, PlatformError> {
+    files::is_exe_running_elsewhere(&path)
+}
+#[tauri::command]
 async fn platform_notify(title: String, body: String) -> Result<(), PlatformError> {
     platform::notify(&title, &body)
 }
@@ -429,6 +433,7 @@ pub fn run() {
             platform_elevation_resume_path,
             platform_request_elevation,
             platform_is_process_running,
+            platform_is_exe_running_elsewhere,
             platform_notify,
             platform_exit,
             platform_create_shortcut,

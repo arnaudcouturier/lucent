@@ -5,6 +5,7 @@ import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame
 import { statusCard } from './statusCard'
 import { dataPaths, readDeployment } from './deployment'
 import { PlatformError } from './platform'
+import { MANIFEST_URL } from './manifest'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -355,4 +356,30 @@ it('continues rollback after elevation without repeating the administrator reque
   expect(resumed.getState().deployment?.contentVersion).toBe('2026.10.12')
   expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
   expect(platform.elevationRequests).toHaveLength(1)
+})
+
+it('refuses Repair and Reset while the deployment needs a newer Lucent than the one open, and writes nothing', async () => {
+  const m = fixture()
+  const platform = createFakePlatform(m)
+  const first = createCore(platform)
+  await first.scan()
+  await first.review()
+  await first.deploy()
+  // A newer copy of Lucent deployed this version; the one opened now is older than it needs, and offline only the record says so.
+  const record = (await readDeployment(platform, ROOT))!
+  record.cachedVersions![0].content.minAppVersion = '9.9.9'
+  await platform.writeText((await dataPaths(platform, ROOT)).record, JSON.stringify(record))
+  delete m.remoteText![MANIFEST_URL]
+  await platform.removeFile(`${GAME}\\ReShade.ini`)
+  await platform.writeText(`${GAME}\\winmm.dll`, 'Patched')
+  const core = createCore(platform)
+  await core.scan()
+  expect(core.getState().activity).toMatchObject({ kind: 'deployment', drift: { files: expect.arrayContaining(['ReShade.ini', 'winmm.dll']) } })
+  const before = await snapshot(platform)
+  await core.repair()
+  expect(core.getState().error).toBe('Update Lucent first: this setup needs a newer Lucent than the one you have open.')
+  await core.resetSetup()
+  expect(core.getState()).toMatchObject({ activity: { kind: 'deployment' }, error: 'Update Lucent first: this setup needs a newer Lucent than the one you have open.' })
+  expect(await snapshot(platform)).toEqual(before)
+  expect(platform.elevationRequests).toEqual([])
 })

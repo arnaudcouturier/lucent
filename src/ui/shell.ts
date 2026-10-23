@@ -22,6 +22,15 @@ export function observeMaximized(listener: (maximized: boolean) => void): () => 
 }
 export const closeWindow = () => (inTauri ? getCurrentWindow().close() : undefined)
 
+/** Runs `handler` instead of closing when the player closes the window by any route (Alt+F4, the taskbar) until the returned function is called. */
+export function interceptClose(handler: () => void): () => void {
+  if (!inTauri) return () => {}
+  let disposed = false
+  let unlisten: (() => void) | undefined
+  void getCurrentWindow().onCloseRequested((event) => { event.preventDefault(); handler() }).then((stop) => { if (disposed) stop(); else unlisten = stop }).catch(() => {})
+  return () => { disposed = true; unlisten?.() }
+}
+
 /** Native focus covers minimize and Alt-Tab even when the WebView's DOM focus is stale. */
 export function observeWindowFocus(listener: (focused: boolean) => void): () => void {
   if (!inTauri) return () => {}
@@ -42,6 +51,12 @@ export function observeWindowFocus(listener: (focused: boolean) => void): () => 
     if (!disposed) listener(document.hasFocus())
   })
   return () => { disposed = true; unlisten?.() }
+}
+
+/** Whether this key press would reload the webview (F5, Ctrl+R, Ctrl+Shift+R) while the core is mid-operation. A reload
+    then hands Recovery a batch the old context is still writing; when idle it stays available. */
+export function blocksReload(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey'>, busy: boolean): boolean {
+  return busy && (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r'))
 }
 
 const INTERACTIVE = 'button, a, input, select, textarea, label, [role="button"], [data-no-drag]'

@@ -281,3 +281,76 @@ it('does not rewrite the HDR keys when Windows HDR or the refresh rate changes l
   expect(reopened.getState()).toMatchObject({ error: null, activity: { kind: 'deployment', drift: null } })
   expect(await config(platform)).toBe(deployedConfig)
 })
+
+/** UAC with another administrator account: Windows names that account's folders and SID, while the request carried the player's. */
+function elevateAsAdministrator(platform: FakePlatform, m: Machine) {
+  m.elevated = true
+  m.userSid = 'S-1-5-21-900-900-900-500'
+  const envFolder = platform.envFolder.bind(platform)
+  platform.envFolder = async (folder) => folder.startsWith('Program') ? envFolder(folder) : (await envFolder(folder)).replace('\\Users\\Player\\', '\\Users\\Administrator\\')
+}
+
+it('reads the player’s FFXIV.cfg and writes the player’s Auto HDR after UAC uses another administrator account', async () => {
+  const m = hdrMachine(MACHINES.screen240Dual, { readOnlyDirectories: [GAME] })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  expect(core.getState()).toMatchObject({ hdrMode: 'hdr', screen: { deviceName: '\\\\.\\DISPLAY2', refreshHz: 240 } })
+  await core.deploy()
+  expect(platform.elevationRequests).toHaveLength(1)
+  elevateAsAdministrator(platform, m)
+
+  const resumed = await reopen(platform)
+
+  expect(resumed.getState()).toMatchObject({ error: null, activity: { kind: 'done' }, screen: { deviceName: '\\\\.\\DISPLAY2' }, deployment: { hdrMode: 'hdr' } })
+  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*true/i)
+  expect(await config(platform)).toMatch(/FrameRateLimit\s*=\s*224\.000000/i)
+  expect(await gpuPreferences(platform)).toBeTruthy()
+  expect(await platform.readUserGpuPreferences('S-1-5-21-900-900-900-500', EXE)).toBeNull()
+})
+
+it('keeps the player’s HDR pick through UAC when the elevated process sees the screen differently', async () => {
+  const m = hdrMachine(MACHINES.screen144Hdr, { readOnlyDirectories: [GAME] })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.continueSetup()
+  core.selectHdrMode('scene-hdr')
+  await core.review()
+  await core.deploy()
+  expect(platform.elevationRequests).toHaveLength(1)
+  m.elevated = true
+  // The elevated process can't tell that XIV's monitor does HDR.
+  m.monitors = m.monitors!.map((monitor) => ({ ...monitor, hdrSupported: false, hdrOn: false, peakNits: null }))
+
+  const resumed = await reopen(platform)
+
+  expect(resumed.getState()).toMatchObject({ error: null, activity: { kind: 'done' }, deployment: { hdrMode: 'scene-hdr' } })
+  expect(await config(platform)).toMatch(/FfxivHDR\s*=\s*true/i)
+})
+
+it('keeps writing Auto HDR for the player when a later Scan in the elevated process finds the request already used', async () => {
+  const m = hdrMachine(MACHINES.screen144Hdr, { readOnlyDirectories: [GAME] })
+  const platform = createFakePlatform(m)
+  const core = createCore(platform)
+  await core.scan()
+  await core.continueSetup()
+  core.selectHdrMode('off')
+  await core.review()
+  await core.deploy()
+  elevateAsAdministrator(platform, m)
+  const resumed = await reopen(platform)
+  expect(resumed.getState()).toMatchObject({ error: null, deployment: { hdrMode: 'off' } })
+  resumed.finish()
+
+  await resumed.scan()
+  await resumed.resetSetup()
+  resumed.selectHdrMode('hdr')
+  await resumed.review()
+  await resumed.deploy()
+
+  expect(resumed.getState()).toMatchObject({ error: null, deployment: { hdrMode: 'hdr' } })
+  expect(await gpuPreferences(platform)).toBeTruthy()
+  expect(await platform.readUserGpuPreferences('S-1-5-21-900-900-900-500', EXE)).toBeNull()
+})

@@ -98,6 +98,27 @@ it.each([0, 1, 2, 3, 4, 5, 6])('recovers a process killed at recipe boundary %i 
   expect(reopened.getState()).toMatchObject({ error: null, activity: { kind: 'done' } })
 })
 
+it('recovers a half-applied install over a file it replaced: the original comes back and what Lucent added goes', async () => {
+  const platform = createFakePlatform(machine(deploymentMachine(), { files: { [`${GAME}\\winmm.dll`]: 'User mod' } }))
+  const before = await snapshot(platform)
+  const core = createCore(platform)
+  await core.scan()
+  await core.review()
+  // The first batch has replaced winmm.dll and added ReShade.download; the process dies at the rename after it.
+  const { crashed, crash } = crashPoint(platform)
+  platform.renameFile = () => crash()
+  void core.deploy()
+  await crashed
+  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
+  expect(await platform.readText(`${GAME}\\ReShade.download`)).toBe('ReShade')
+  const reopened = createCore(platform)
+  await reopened.scan()
+  expect(reopened.getState()).toMatchObject({ error: null, recoveryRequired: false })
+  expect(reopened.getState().notice).toMatch(/unfinished deployment.*restored/)
+  expect(await snapshot(platform)).toEqual(before)
+  expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('User mod')
+})
+
 it('blocks other startup work and deployment until recovery can restore a locked file', async () => {
   const platform = createFakePlatform(recoveryMachine())
   const before = await snapshot(platform)

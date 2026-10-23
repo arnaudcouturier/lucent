@@ -7,7 +7,7 @@ import { readSettings } from './settings'
 import { statusCard } from './statusCard'
 import { createFakePlatform, type FakePlatform, type Machine } from '../platform/fake'
 import { betaContentHost, fixtureContentHost, graphicsCard, machine, manifestHost, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
-import { APP_BETA_RELEASE, APP_RELEASE, appBetaReleaseHost } from '../platform/appUpdateFixture'
+import { APP_BETA_RELEASE, APP_EXE_URL, APP_RELEASE, appBetaReleaseHost } from '../platform/appUpdateFixture'
 import { BETA_CONTENT, BETA_MANIFEST, NEXT_CONTENT, PROFILE_MANIFEST, TEST_CONTENT, betaFixtureUrl, OPTISCALER_NEXT_HASH } from '../platform/contentFixture'
 import type { ContentVersion, Manifest } from '../shared/manifest'
 
@@ -52,7 +52,12 @@ describe('announcements across both channels', () => {
     expect(announcedContent(manifest(version('2026.11.10', { channel: 'beta' }), version('2026.11.20')), { ...facts, channel: 'stable', current: '2026.11.10' })?.id).toBe('2026.11.20')
   })
 
-  const releases = parseAppReleases(JSON.stringify([APP_RELEASE, APP_BETA_RELEASE, { ...APP_RELEASE, tag_name: 'app-v0.3.0-beta.1', prerelease: true }]))
+  // An app release's download link must name its own tag, so a copy of the fixture under another tag carries its own link.
+  const asRelease = (version: string, patch: Record<string, unknown> = {}) => ({
+    ...APP_RELEASE, tag_name: `app-v${version}`,
+    assets: [{ ...APP_RELEASE.assets[0], browser_download_url: APP_EXE_URL.replace('app-v0.2.0', `app-v${version}`) }], ...patch,
+  })
+  const releases = parseAppReleases(JSON.stringify([APP_RELEASE, APP_BETA_RELEASE, asRelease('0.3.0-beta.1', { prerelease: true })]))
   const appFacts = { skipped: [] as string[] }
 
   it('app: Beta offers the newest pre-release, Stable offers only the release', () => {
@@ -64,7 +69,7 @@ describe('announcements across both channels', () => {
   it('app: a running beta is offered only a Stable release newer than it once back on Stable', () => {
     expect(announcedAppUpdate(releases, { ...appFacts, appVersion: '0.3.0-beta.1', channel: 'stable' })).toBeNull()
     expect(announcedAppUpdate(releases, { ...appFacts, appVersion: '0.2.0-beta.1', channel: 'stable' })?.version).toBe('0.2.0')
-    const stable030 = parseAppReleases(JSON.stringify([{ ...APP_RELEASE, tag_name: 'app-v0.3.0' }, { ...APP_RELEASE, tag_name: 'app-v0.3.0-beta.1', prerelease: true }]))
+    const stable030 = parseAppReleases(JSON.stringify([asRelease('0.3.0'), asRelease('0.3.0-beta.1', { prerelease: true })]))
     expect(announcedAppUpdate(stable030, { ...appFacts, appVersion: '0.3.0-beta.1', channel: 'stable' })?.version).toBe('0.3.0')
   })
 })

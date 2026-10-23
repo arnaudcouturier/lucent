@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import manifest from '../../manifest.json'
-import { ManifestError, parseManifest, type Manifest } from './manifest'
+import { assertStableNeedsStableApp, ManifestError, parseManifest, type Manifest } from './manifest'
 
 const screenDerivedManifest = (screenDerivedSettings: unknown): unknown => {
   const hash = 'a'.repeat(64)
@@ -196,6 +196,34 @@ describe('The shared manifest schema', () => {
     ]],
   ])('rejects an invalid frame-generation option: %s', (_, options) => {
     expect(() => parseManifest(JSON.stringify(frameGenerationManifest(options)))).toThrow(ManifestError)
+  })
+
+  describe('a content version’s channel and the app it needs', () => {
+    const needing = (channel: string, minAppVersion: string) => {
+      const m = configRuleManifest([{ path: 'OptiScaler.ini' }]) as { versions: Record<string, unknown>[] }
+      m.versions[0] = { ...m.versions[0], channel, minAppVersion }
+      return JSON.stringify(m)
+    }
+
+    // The app parses the live manifest from main, so a rule here would turn one wrong hand-edit into an invalid
+    // manifest for every player. The publish tool and the test over manifest.json below check it instead.
+    it('is not enforced when the app reads the manifest, which has to stay readable', () => {
+      expect(parseManifest(needing('stable', '0.3.0-beta.8')).versions[0]).toMatchObject({ channel: 'stable', minAppVersion: '0.3.0-beta.8' })
+    })
+
+    it('is refused by the publish check for a Stable version that needs a beta app', () => {
+      expect(() => assertStableNeedsStableApp('stable', '0.3.0-beta.8')).toThrow(/Stable content version cannot require a beta app \(0\.3\.0-beta\.8\)/)
+    })
+
+    it.each([['stable', '0.3.0'], ['stable', '0.1.0'], ['beta', '0.3.0-beta.8'], ['beta', '0.3.0']])('is satisfied by a %s version that needs app %s', (channel, minAppVersion) => {
+      expect(() => assertStableNeedsStableApp(channel, minAppVersion)).not.toThrow()
+    })
+
+    it('holds for every version in manifest.json, so a bad promotion fails here before it is pushed', () => {
+      for (const version of manifest.versions) {
+        expect(() => assertStableNeedsStableApp(version.channel, version.minAppVersion), `Content ${version.id} is Stable but needs app ${version.minAppVersion}, which no Stable player has. Keep it on Beta until a Stable app ships.`).not.toThrow()
+      }
+    })
   })
 
   it('reads a manifest written before existing-setup signatures as having none', () => {

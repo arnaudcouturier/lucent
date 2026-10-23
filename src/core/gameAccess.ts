@@ -1,7 +1,8 @@
-import { PlatformError, type Platform } from './platform'
+import { PlatformError, type EnvFolder, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
-import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, NR_PASSES, NR_PRESET_IDS, NR_SCALES, PROFILE_IDS, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId } from '../shared/manifest'
+import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, NR_PASSES, NR_PRESET_IDS, NR_SCALES, PROFILE_IDS, type ContentVersion, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId } from '../shared/manifest'
 import type { State } from './core'
+import type { DeploymentRecord } from './deployment'
 
 /** UI availability only; every command still checks the machine immediately before writing. */
 export const gameActionsAvailable = (state: Pick<State, 'busy' | 'recoveryRequired' | 'gameRunning' | 'gameFolder'>) =>
@@ -11,6 +12,18 @@ export async function requireGameStopped(platform: Platform, observe?: (running:
   const running = await platform.isGameRunning()
   observe?.(running)
   if (running) throw new PlatformError('locked', 'Close XIV before changing the game folder. Changes wait until the game closes.')
+}
+
+export const NEWER_APP_NEEDED = 'Update Lucent first: this setup needs a newer Lucent than the one you have open.'
+
+/**
+ * The oldest Lucent that may write the deployed content's configs again: a newer copy may have deployed it, and an older one
+ * would write them without what they need (an older Lucent writes `{Pictures}` as it is). Read from the published version,
+ * or offline from the record's own snapshot of it; null when neither says.
+ */
+export function deployedMinAppVersion(record: Pick<DeploymentRecord, 'contentVersion' | 'cachedVersions'>, published: ContentVersion | null | undefined): string | null {
+  return (published?.id === record.contentVersion ? published.minAppVersion : undefined)
+    ?? record.cachedVersions?.find((version) => version.content.id === record.contentVersion)?.content.minAppVersion ?? null
 }
 
 /** Protects every mutation, including recovery. Future recipes inherit the same boundary. */
@@ -65,8 +78,16 @@ export function elevationResumeLocalAppData(path: string): string {
   return match[1]
 }
 
+/** The player's own profile folders besides LocalAppData, which UAC under another administrator account would resolve to that account's. */
+export const PLAYER_FOLDERS = ['AppData', 'Documents', 'Pictures'] as const satisfies readonly EnvFolder[]
+export type PlayerFolders = Partial<Record<(typeof PLAYER_FOLDERS)[number], string>>
+
+const validFolders = (value: unknown): value is PlayerFolders => !!value && typeof value === 'object' && !Array.isArray(value)
+  && Object.entries(value).every(([name, path]) => (PLAYER_FOLDERS as readonly string[]).includes(name) && typeof path === 'string'
+    && /^(?:[a-z]:\\|\\\\[^\\]+\\[^\\]+)/i.test(path) && !/[\u0000-\u001f]/.test(path) && !normalizePath(path).split('\\').includes('..'))
+
 /** The request is consumed before executing it, so failures never retry silently on another launch. */
-export async function takeElevationResume(platform: Platform): Promise<{ localAppData: string; userSid: string | null; request: GameWriteRequest | null } | null> {
+export async function takeElevationResume(platform: Platform): Promise<{ localAppData: string; userSid: string | null; folders: PlayerFolders | null; request: GameWriteRequest | null } | null> {
   const path = await platform.getElevationResumePath()
   if (!path) return null
   // UAC may use another administrator account. The original path carries the player's data context,
@@ -75,12 +96,12 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   if (!await platform.isElevated()) throw new Error('Administrator access was not granted. Try the change again.')
   let text: string
   try { text = await platform.readText(path) }
-  catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') return { localAppData, userSid: null, request: null }; throw error }
+  catch (error) { if (error instanceof PlatformError && error.kind === 'not-found') return { localAppData, userSid: null, folders: null, request: null }; throw error }
   await platform.removeFile(path)
-  const value = JSON.parse(text) as { schemaVersion?: unknown; userSid?: unknown; request?: GameWriteRequest }
+  const value = JSON.parse(text) as { schemaVersion?: unknown; userSid?: unknown; folders?: unknown; request?: GameWriteRequest }
   const request = value?.request
   const hasSid = typeof value?.userSid === 'string' && /^S-1-\d+(?:-\d+)+$/.test(value.userSid)
-  if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || (value.schemaVersion === 2 && !hasSid) || !request || typeof request.gameFolder !== 'string'
+  if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || (value.schemaVersion === 2 && !hasSid) || (value.folders !== undefined && !validFolders(value.folders)) || !request || typeof request.gameFolder !== 'string'
     || !['deploy', 'reset', 'repair', 'uninstall', 'recover', 'update', 'tier', 'enabled'].includes(request.kind)
     || ((request.kind === 'deploy' || request.kind === 'reset' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
     || ((request.kind === 'reset' || request.kind === 'tier') && typeof request.tier !== 'string')
@@ -100,7 +121,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
       if (!request.backupPath.length || request.backupPath.includes('..') || (backup !== backupRoot && !backup.startsWith(`${backupRoot}\\`))) throw new Error('The administrator resume request is invalid.')
     }
   }
-  return { localAppData, userSid: hasSid ? value.userSid as string : null, request }
+  return { localAppData, userSid: hasSid ? value.userSid as string : null, folders: validFolders(value.folders) ? value.folders : null, request }
 }
 
 /** UAC only after a denied game-folder probe; a cancelled prompt doesn't count, so the player can retry. */
@@ -114,7 +135,11 @@ export function gameWriteAccess(platform: Platform, observe: (running: boolean) 
     const path = joinPath(await resumeDirectory(platform), `resume-${crypto.randomUUID()}.json`)
     const userSid = await platform.currentUserSid()
     if (!/^S-1-\d+(?:-\d+)+$/.test(userSid)) throw new Error('The player account SID is invalid; Lucent could not prepare an administrator relaunch.')
-    await platform.writeText(path, JSON.stringify({ schemaVersion: 2, userSid, request }))
+    // The player's folders as Windows names them, redirected or not, since the elevated process may run as another account.
+    // One Windows can't name is left out, and the elevated process uses its own.
+    const folders = Object.fromEntries((await Promise.all(PLAYER_FOLDERS.map(async (folder) => [folder, await platform.envFolder(folder).catch(() => null)])))
+      .filter(([, path]) => path))
+    await platform.writeText(path, JSON.stringify({ schemaVersion: 2, userSid, folders, request }))
     requested = true
     try { await platform.requestElevation(path) }
     catch (error) { requested = false; await platform.removeFile(path); throw error }

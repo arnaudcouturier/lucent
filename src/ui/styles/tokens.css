@@ -19,7 +19,7 @@
   /* Ink */
   --ink: #f4f4f5;
   --ink-2: #a0a0a6; /* secondary */
-  --ink-3: #93969e; /* labels and meta; 4.9:1 or better on every surface */
+  --ink-3: #97999f; /* labels and meta; 4.5:1 or better on every surface it sits on, a selected option's fill included */
 
   /* The only accent: primary action, selection, progress, focus ring, healthy */
   --accent: #f47521;

@@ -17,7 +17,12 @@ export function matchTier(adapter: GpuAdapter, manifest: Manifest): Tier {
 export async function scanGraphics(platform: Platform): Promise<GraphicsState> {
   try {
     const adapters = (await platform.getGpuAdapters()).filter((gpu) => !gpu.software)
-    const adapter = adapters.reduce<GpuAdapter | null>((best, gpu) => !best || gpu.dedicatedMemory > best.dedicatedMemory ? gpu : best, null)
+    // Windows' high-performance order puts a discrete GPU first. Memory alone isn't enough: an integrated GPU can report
+    // a BIOS carve-out larger than the discrete card's memory.
+    const ranked = adapters.filter((gpu) => gpu.highPerformanceRank != null)
+    const adapter = ranked.length
+      ? ranked.reduce((best, gpu) => gpu.highPerformanceRank! < best.highPerformanceRank! ? gpu : best)
+      : adapters.reduce<GpuAdapter | null>((best, gpu) => !best || gpu.dedicatedMemory > best.dedicatedMemory ? gpu : best, null)
     return adapter ? { status: 'found', adapter, tier: null } : { status: 'not-found' }
   } catch (error) {
     return { status: 'unavailable', message: error instanceof Error ? error.message : String(error) }

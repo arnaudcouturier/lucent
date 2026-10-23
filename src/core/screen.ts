@@ -69,7 +69,8 @@ export function parseXivDisplaySettings(text: string | null): XivDisplaySettings
 
 /** OptiScaler stores this as a six-place decimal, including for integer caps. */
 export function frameCapForRefresh(refreshHz: number): number | null {
-  if (!Number.isFinite(refreshHz) || refreshHz <= 0) return null
+  // Windows reports 0 or 1 for a mode's "hardware default" rate: that is no rate, not a cap of 0.
+  if (!Number.isFinite(refreshHz) || refreshHz <= 1) return null
   return Math.floor(refreshHz - refreshHz * refreshHz / 3600)
 }
 
@@ -89,7 +90,7 @@ export function screenDerivedValue(setting: ScreenDerivedSetting, screen: Screen
   throw new Error(`Unknown screen-derived setting: ${setting.value}`)
 }
 
-/** Resolves MainAdapter first, then XIV's stored window origin, then the Windows primary monitor. */
+/** Resolves MainAdapter first, then XIV's stored window position, then the Windows primary monitor. */
 export function resolveScreen(monitors: ScreenMonitor[], configText: string | null): ResolvedScreen | null {
   if (!monitors.length) return null
   const config = parseXivDisplaySettings(configText)
@@ -99,15 +100,22 @@ export function resolveScreen(monitors: ScreenMonitor[], configText: string | nu
     return adapterNumber && monitorNumber ? monitorNumber === adapterNumber
       : config.mainAdapter!.toLowerCase() === monitor.deviceName.toLowerCase()
   }) : undefined
-  const fromPosition = config.screenLeft !== undefined && config.screenTop !== undefined
-    ? monitors.find(({ bounds }) => config.screenLeft! >= bounds.left && config.screenLeft! < bounds.right
-      && config.screenTop! >= bounds.top && config.screenTop! < bounds.bottom)
-    : undefined
-  const monitor = fromAdapter ?? fromPosition ?? monitors.find((candidate) => candidate.primary) ?? monitors[0]
   // XIV uses 0 for windowed, 1 for exclusive full-screen and 2 for borderless full-screen.
   // Windowed uses the saved window size; borderless uses the monitor's active desktop mode.
   const exclusive = config.screenMode === 1
   const windowed = config.screenMode === 0
+  const containing = (x: number, y: number) =>
+    monitors.find(({ bounds }) => x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom)
+  // A window's frame has invisible borders, so a window flush with a monitor's edge starts a few pixels inside the
+  // neighbour: its centre, the point Windows itself goes by, decides. Only in windowed mode is the saved size the window's.
+  const fromCentre = windowed && config.screenLeft !== undefined && config.screenTop !== undefined
+    && config.screenWidth !== undefined && config.screenHeight !== undefined
+    ? containing(config.screenLeft + config.screenWidth / 2, config.screenTop + config.screenHeight / 2)
+    : undefined
+  const fromPosition = config.screenLeft !== undefined && config.screenTop !== undefined
+    ? containing(config.screenLeft, config.screenTop)
+    : undefined
+  const monitor = fromAdapter ?? fromCentre ?? fromPosition ?? monitors.find((candidate) => candidate.primary) ?? monitors[0]
   const refreshHz = exclusive ? config.refreshRate ?? monitor.refreshHz : monitor.refreshHz
   const width = exclusive ? config.fullScreenWidth ?? monitor.width : windowed ? config.screenWidth ?? monitor.width : monitor.width
   const height = exclusive ? config.fullScreenHeight ?? monitor.height : windowed ? config.screenHeight ?? monitor.height : monitor.height

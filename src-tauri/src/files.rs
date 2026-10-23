@@ -386,16 +386,27 @@ pub fn remove_directories_if_empty(paths: &[PathBuf]) -> Result<()> {
 pub fn list_files(root: &Path) -> Result<Vec<String>> {
     fn visit(root: &Path, dir: &Path, files: &mut Vec<String>) -> Result<()> {
         reject_reparse(dir)?;
-        for entry in fs::read_dir(dir).map_err(|e| PlatformError::io(e, Some(dir)))? {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            // A subfolder deleted since its parent was listed holds nothing any more; a missing root is still an error.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && dir != root => return Ok(()),
+            Err(e) => return Err(PlatformError::io(e, Some(dir))),
+        };
+        for entry in entries {
             let path = entry.map_err(|e| PlatformError::io(e, Some(dir)))?.path();
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                // Deleted since read_dir listed it, such as a log a running tool rotated mid-Scan.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(PlatformError::io(e, Some(&path))),
+            };
             // A junction or symlink inside the game folder is the player's own arrangement:
             // skip what it points at instead of failing the whole Scan. Write targets still
             // reject reparse points in resolve_game_paths.
-            let meta = fs::symlink_metadata(&path).map_err(|e| PlatformError::io(e, Some(&path)))?;
             if meta.file_attributes() & 0x400 != 0 {
                 continue;
             }
-            if path.is_dir() {
+            if meta.is_dir() {
                 visit(root, &path, files)?;
             } else {
                 files.push(
@@ -757,11 +768,13 @@ fn download_client() -> std::result::Result<&'static reqwest::Client, reqwest::E
     if let Some(client) = CLIENT.get() {
         return Ok(client);
     }
-    // No total timeout: a 150 MB runtime on a slow line is fine as long as bytes keep arriving.
+    // No total timeout here: `download_file` bounds the whole transfer, and between chunks the read timeout applies.
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(20))
         .read_timeout(std::time::Duration::from_secs(60))
         .pool_max_idle_per_host(16)
+        .gzip(true)
+        .redirect(crate::platform::redirect_policy())
         .user_agent(concat!("Lucent/", env!("CARGO_PKG_VERSION")))
         .build()?;
     Ok(CLIENT.get_or_init(|| client))
@@ -770,41 +783,107 @@ fn download_client() -> std::result::Result<&'static reqwest::Client, reqwest::E
 /// Progress goes to the webview at most this often; every message costs an IPC hop and a UI update.
 const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
+/// What `download_file` accepts, counted as bytes arrive. A plugin repo is untrusted, and its zip is only checked once
+/// it is on disk.
+#[derive(Clone, Copy)]
+struct DownloadLimits {
+    bytes: u64,
+    duration: std::time::Duration,
+}
+
+/// The largest content file, the 310.9.16 Neural Rendering runtime, is 276 MB, and a plugin zip over ZIP_LIMITS'
+/// 256 MB couldn't be unpacked anyway. In two hours that runtime needs about 0.3 Mbit/s.
+const DOWNLOAD_LIMITS: DownloadLimits = DownloadLimits {
+    bytes: 1024 * 1024 * 1024,
+    duration: std::time::Duration::from_secs(2 * 60 * 60),
+};
+
 pub async fn download_file(url: &str, to: &Path, progress: tauri::ipc::Channel<u64>) -> Result<()> {
+    download_limited(
+        url,
+        to,
+        |received| {
+            let _ = progress.send(received);
+        },
+        DOWNLOAD_LIMITS,
+    )
+    .await
+}
+
+async fn download_limited(
+    url: &str,
+    to: &Path,
+    mut progress: impl FnMut(u64),
+    limits: DownloadLimits,
+) -> Result<()> {
     let error = |e: reqwest::Error| {
+        crate::platform::refused_redirect(&e).unwrap_or_else(|| {
+            PlatformError::new(
+                if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    ErrorKind::NotFound
+                } else {
+                    ErrorKind::Network
+                },
+                e.to_string(),
+                None,
+            )
+        })
+    };
+    // Not `Network`: the core retries those, and a retry would only repeat the same refusal.
+    let too_large = || {
         PlatformError::new(
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                ErrorKind::NotFound
-            } else {
-                ErrorKind::Network
-            },
-            e.to_string(),
+            ErrorKind::Unknown,
+            format!(
+                "The download is larger than {} MB.",
+                limits.bytes.div_ceil(1024 * 1024)
+            ),
             None,
         )
     };
+    let started = std::time::Instant::now();
     let mut response = download_client()
         .map_err(error)?
-        .get(url)
+        .get(crate::platform::fetchable_url(url)?)
         .send()
         .await
         .map_err(error)?
         .error_for_status()
         .map_err(error)?;
+    // A gzipped reply has no usable length, so the running count is the real limit.
+    if response
+        .content_length()
+        .is_some_and(|length| length > limits.bytes)
+    {
+        return Err(too_large());
+    }
     let file = temp_file(to, None)?;
     let mut writer = std::io::BufWriter::with_capacity(256 * 1024, file);
     let mut received = 0;
     let mut reported = std::time::Instant::now();
     while let Some(chunk) = response.chunk().await.map_err(error)? {
+        received += chunk.len() as u64;
+        if received > limits.bytes {
+            return Err(too_large());
+        }
+        if started.elapsed() > limits.duration {
+            return Err(PlatformError::new(
+                ErrorKind::Unknown,
+                format!(
+                    "The download didn’t finish within {} minutes.",
+                    limits.duration.as_secs().div_ceil(60)
+                ),
+                None,
+            ));
+        }
         writer
             .write_all(&chunk)
             .map_err(|e| PlatformError::io(e, Some(to)))?;
-        received += chunk.len() as u64;
         if reported.elapsed() >= PROGRESS_INTERVAL {
-            let _ = progress.send(received);
+            progress(received);
             reported = std::time::Instant::now();
         }
     }
-    let _ = progress.send(received);
+    progress(received);
     let file = writer
         .into_inner()
         .map_err(|e| PlatformError::io(e.into_error(), Some(to)))?;
@@ -817,6 +896,67 @@ pub fn is_game_running() -> Result<bool> {
 
 /// True when any process runs an exe with this file name (case-insensitive).
 pub fn is_process_running(name: &str) -> Result<bool> {
+    any_process(|_, exe| exe.eq_ignore_ascii_case(name))
+}
+
+/// True when a process other than this one runs the exe at `path`, compared by full path: case, either slash and short
+/// names don't matter. A process Lucent may not open (another account's, a protected one) counts as not running it.
+pub fn is_exe_running_elsewhere(path: &Path) -> Result<bool> {
+    // The final path, as Windows resolves it, makes every spelling of one file compare equal.
+    let same_file = |path: &Path| {
+        fs::canonicalize(path)
+            .ok()
+            .map(|path| path.to_string_lossy().to_lowercase())
+    };
+    let wanted = match fs::canonicalize(path) {
+        Ok(wanted) => wanted,
+        // An exe that isn't there can't be running.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(PlatformError::io(e, Some(path))),
+    };
+    let name = wanted
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase());
+    let wanted = wanted.to_string_lossy().to_lowercase();
+    let own = std::process::id();
+    any_process(|id, exe| {
+        id != own
+            && name.as_deref() == Some(exe.to_lowercase().as_str())
+            && process_image(id)
+                .is_some_and(|image| same_file(&image).as_deref() == Some(wanted.as_str()))
+    })
+}
+
+/// The full path of the exe process `id` runs, when Lucent may ask.
+fn process_image(id: u32) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is closed before returning, and the buffer outlives the call that fills it.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, id).ok()?;
+        let mut buffer = vec![0u16; 32_768];
+        let mut length = buffer.len() as u32;
+        let queried = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        );
+        let _ = CloseHandle(process);
+        queried.ok()?;
+        Some(PathBuf::from(std::ffi::OsString::from_wide(
+            &buffer[..length as usize],
+        )))
+    }
+}
+
+/// Walks the running processes, by id and exe file name, until `found` says yes.
+fn any_process(mut found: impl FnMut(u32, &str) -> bool) -> Result<bool> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -839,7 +979,10 @@ pub fn is_process_running(name: &str) -> Result<bool> {
                 .iter()
                 .position(|c| *c == 0)
                 .unwrap_or(entry.szExeFile.len());
-            if String::from_utf16_lossy(&entry.szExeFile[..len]).eq_ignore_ascii_case(name) {
+            if found(
+                entry.th32ProcessID,
+                &String::from_utf16_lossy(&entry.szExeFile[..len]),
+            ) {
                 running = true;
                 break;
             }
@@ -869,6 +1012,62 @@ mod tests {
         assert!(is_process_running(&name).unwrap());
         assert!(is_process_running(&name.to_uppercase()).unwrap());
         assert!(!is_process_running("lucent-no-such-process.exe").unwrap());
+    }
+
+    #[test]
+    fn finds_another_process_running_an_exe_by_its_full_path_and_never_itself() {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        let dir = tempfile::tempdir().unwrap();
+        // A copy of this test exe at a path nothing else runs, so only the child below can match it.
+        let exe = dir.path().join("Lucent Test.exe");
+        fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
+        assert!(!is_exe_running_elsewhere(&exe).unwrap());
+        let mut child = Command::new(&exe)
+            .args([
+                "--ignored",
+                "--exact",
+                "files::tests::exe_running_elsewhere_child",
+                "--nocapture",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let seen_by_child = BufReader::new(child.stdout.take().unwrap())
+            .lines()
+            .map_while(std::result::Result::ok)
+            .find(|line| line.starts_with("elsewhere="));
+        let text = exe.to_str().unwrap();
+        let spellings = [
+            exe.clone(),
+            PathBuf::from(text.to_uppercase()),
+            PathBuf::from(text.replace('\\', "/")),
+            dir.path().join("sub").join("..").join("Lucent Test.exe"),
+        ];
+        let seen_by_parent: Vec<_> = spellings
+            .iter()
+            .map(|path| is_exe_running_elsewhere(path).unwrap())
+            .collect();
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        // The child runs that exe itself, and nothing else does.
+        assert_eq!(seen_by_child.as_deref(), Some("elsewhere=false"));
+        assert_eq!(seen_by_parent, [true; 4], "{spellings:?}");
+        assert!(!is_exe_running_elsewhere(&exe).unwrap());
+        assert!(!is_exe_running_elsewhere(&dir.path().join("Missing.exe")).unwrap());
+    }
+
+    #[test]
+    #[ignore = "helper launched only by the exe-running-elsewhere test"]
+    fn exe_running_elsewhere_child() {
+        use std::io::Write;
+        let exe = std::env::current_exe().unwrap();
+        println!("elsewhere={}", is_exe_running_elsewhere(&exe).unwrap());
+        std::io::stdout().flush().unwrap();
+        // Stay running until the parent has looked.
+        let _ = std::io::stdin().read_line(&mut String::new());
     }
 
     #[test]
