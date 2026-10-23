@@ -1470,7 +1470,7 @@ export function createCore(platform: Platform): Core {
           selection.outputHeight = state.screen?.height
           const plan = planDeployment(content, tier, state.includeReShade, scan, state.selectedProfile, existing.enabled, {
             ...selection, frameGenerationOptions: state.frameGenerationOptions, frameGenerationMode: state.frameGenerationMode,
-            neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen,
+            neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, settingChoices: state.settingChoices, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen,
           })
           reviewedPaths = plan.filesToBackup
           set({ plan, includeReShade: plan.includeReShade, spaceWarning: await shortOfSpace(plan, state.gameFolder.path, false), activity: { kind: 'review' } })

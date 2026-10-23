@@ -118,6 +118,8 @@ describe('the UI mode and DLSS-G preset choices on the Profile step', () => {
     reset.selectSettingChoice('ui-mode', 'recomposition')
     reset.selectSettingChoice('dlssg-preset', 'auto')
     await reset.review()
+    // Review shows the picks the Reset will write, not the ones it replaces.
+    expect(reset.getState().plan?.settingChoices).toEqual({ 'ui-mode': 'recomposition', 'dlssg-preset': 'auto' })
     await reset.deploy()
     expect(reset.getState().error).toBeNull()
     expect(await config(platform)).toMatch(/\[HudLess\]\r?\nMode\s*=\s*recomposition/)
