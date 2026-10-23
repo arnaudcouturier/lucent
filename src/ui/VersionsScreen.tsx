@@ -36,7 +36,8 @@ export function VersionsScreen() {
             <div className="version-choice-body">
               <h3 className="mono">{version.id}</h3>
               {!!labels.length && <p className="version-labels">{labels.join(' · ')}</p>}
-              {version.changelog[0] && <p>{version.changelog[0]}</p>}
+              {version.changelog.length === 1 && <p>{version.changelog[0]}</p>}
+              {version.changelog.length > 1 && <ul className="changelog">{version.changelog.map((line, i) => <li key={i}>{line}</li>)}</ul>}
               {!version.current && <p>{version.unavailable ?? download}</p>}
             </div>
             {!version.current && <button className="btn" disabled={!gameActionsAvailable(state) || !!version.unavailable}

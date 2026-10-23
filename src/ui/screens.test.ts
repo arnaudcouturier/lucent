@@ -5,10 +5,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { createCore, type Core } from '../core/core'
 import { createFakePlatform, type FakePlatform } from '../platform/fake'
-import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { CoreContext } from './useCore'
 import { Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
 import { SettingsScreen } from './MainScreens'
+import { VersionsScreen } from './VersionsScreen'
 import { Rail } from './Rail'
 import { SectionContext, type Section } from './Window'
 import { whyGameActionsWait } from './gameWaiting'
@@ -155,4 +156,12 @@ it('the config files the tier switch card promises to back up are in the folder 
   expect(core.getState().error).toBeNull()
   expect(await platform.readText(`${backup}\\OptiScaler.ini`)).toBe('[Upscalers]\nDx11Upscaler=player-choice\n')
   expect(await platform.readText(`${backup}\\ReShade.ini`)).toBe('[GENERAL]\nPresetPath=.\\reshade-presets\\Mine.ini\n')
+})
+
+it('Versions lists every changelog line of a version, not only the first', async () => {
+  const { platform, m } = await deployedOnRtx()
+  Object.assign(m.remoteText!, nextContentHost().remoteText)
+  const text = visibleText(createElement(VersionsScreen), await reopen(platform))
+  expect(text).toContain('OptiScaler 2 with sharper Neural Rendering.')
+  expect(text).toContain('Drops the example shader.')
 })

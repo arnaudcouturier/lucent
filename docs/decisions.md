@@ -366,6 +366,18 @@ judgement the maintainer can overrule; the review file lists the finding behind 
 - Settings shows why Reset setup… and Uninstall… are disabled (XIV running, or the game folder missing) above the Danger zone, in the status card's wording.
 - Log lines keep a stable identity as the 500-line tail slides, so a reader scrolled up is not carried along.
 
+**Built from the review's candidate list (2026-10-23)**
+- Versions shows every changelog line of a version, not only the first: a single line stays a paragraph and several become the same bullet list the status card uses.
+
+**Declined after the review (2026-10-23), with the reason**
+- CFG-4, anchoring the GPU name patterns in `manifest.json`: only "Quadro RTX 5000" and "RTX 5000 Ada" are misclassified (into `rtx-50`); anchoring on "GeForce" would break Quadro RTX 4000 and RTX 2000 Ada, which are right today. A correct fix is a negative guard on `rtx-50` plus explicit workstation patterns, in the manifest and in a new content version. Very few players use these cards and a mistake in a tier pattern breaks matching for everyone from `main`.
+- CORE-7, an elevated XIVLauncher add-on that points at a user-writable exe: inherent to XIVLauncher add-ons, and the only mitigation that keeps auto-repair working for a game under Program Files is none. Code running as the same user already controls the files Lucent trusts.
+- RSF-9, scoping the Rust commands to registered roots: the Rust layer is deliberately dumb primitives and the TypeScript path rules are the boundary. The webview has no HTML sink and a `'self'` CSP, and a root registry across every command could break installs.
+- UPD-4's second half, refreshing the installed exe when an update runs from a portable copy: a second self-replace in the update path for a rare case, and the first half already makes Repair refuse while the installed copy is too old.
+- GAP-4, re-attaching a deployment after the game folder moved: re-keying a record moves its journal and backups, and a crash partway could strand recovery data. It needs its own design. "Find it" and a rescan still work.
+- GAP-1 and GAP-2, content for Radeon and Other cards and promoting anything to Stable: publishing to players is the maintainer's.
+- Candidates left out: clearing old Reset backups (a deletion flow for little gain), a warning for a conflicting mod that appears after deployment (a new status card kind with precedence rules), a "Repair first" hint on Launch (Launch during drift is deliberate), resumable downloads (hash and temp-file risk in the critical path) and a minimum NVIDIA driver notice (no verified fact to base it on).
+
 ## Deferred
 
 - RTX 30 XeFG MFG unlocks (3×, 4× and Dynamic) are excluded from the 2026.10.15 Beta candidate pending Intel license clearance. The candidate ships only Off and experimental 2× FSR for RTX 30; its Windows HDR alternative is XeFG 2× without an unlock.
