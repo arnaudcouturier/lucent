@@ -344,6 +344,22 @@ experimental unlock as its own switch: without it the `gates` modes (3×–6× a
 the `settings` are written after the frame-generation values, so 2× can use the unlock too. A mode in `gates`
 that is already stored turns the switch on. The record keeps the picks (`neuralRendering`, `mfgUnlocked`) for Reset.
 
+## Setting choices
+
+A tier may declare `settingChoices`, a list of further first-install choices whose options each write a set of ini keys: the
+DLSS-G render preset and the UI mode are the first. Lucent 0.3.0-beta.10 and later offer them on the Graphics step, after HDR, and
+write the picks once like the other choices; apps that predate the field ignore it, so content may add it without raising
+`minAppVersion` (they install the base ini's values). Each choice has:
+
+- `id` (lowercase letters, digits and hyphens), `label`, and `options`: at least two, each with an `id`, `label`, a plain `description` shown under the control while it is picked, an optional `experimental` flag and `settings` (ini keys in owned configs). Every option of a choice writes the same keys, and no two choices write the same key.
+- `defaultOption`: the option used until the player picks one. A stored pick the content no longer offers falls back to it.
+- `gpuNamePatterns` (case-insensitive regular expressions on the card's name; absent offers the choice to every card) and `unofferedOption` (the option whose settings are written for a card the choice isn't offered to; absent writes nothing for it).
+- `needsFrameGeneration`: the choice is shown only while frame generation is on. Its settings are still written when frame generation is Off, so turning it on later in OptiScaler's overlay finds them.
+- On an option, `blockedWhen`: a list of `{ reason, choice?: { id, options }, hdr? }`. The option is unavailable, with the reason under the control, while the earlier choice `id` holds one of `options`, or while HDR is anything but Off. A choice may only be blocked by a choice above it in the list, and one option of every choice must have no block, so a valid combination always exists. A pick that becomes blocked is not changed in the stored choices but is written as the choice's default, or its first free option when the default is blocked too.
+
+The planner writes the settings after the frame-generation and unlock values and before the screen-derived ones. The record keeps the resolved
+picks (`settingChoices`, option ids by choice id) for Reset, a tier switch and the UAC resume request.
+
 ## Performance profiles
 
 Older content may supply `performanceProfiles`: the three legacy IDs `fidelity`, `balanced` and

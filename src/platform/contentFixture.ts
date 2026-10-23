@@ -1,6 +1,6 @@
 // Tiny, inert content for tests and browser development. Never published or used by the real app.
 import manifest from '../../manifest.json'
-import type { ContentVersion, HdrOption, Manifest, MfgUnlock, NeuralRenderingControls, PerformanceProfile, TierRecipe } from '../shared/manifest'
+import type { ContentVersion, HdrOption, Manifest, MfgUnlock, NeuralRenderingControls, PerformanceProfile, SettingChoice, TierRecipe } from '../shared/manifest'
 
 export const OPTISCALER_HASH = 'f1a59411e0090ae0608b2e78d73533a7f6ba41442589345f46631822f2dbae02'
 export const RESHADE_HASH = '2b2b1cc6036edf59fae14ea7237a88c38ca7f425b0467046493061c18dc3d3ce'
@@ -243,5 +243,48 @@ export const NEURAL_RENDERING_MANIFEST: Manifest = {
       const { performanceProfiles: _legacy, performanceProfilesV2: _profiles, ...rest } = tier
       return [id, { ...rest, neuralRenderingControls: NEURAL_RENDERING_CONTROLS, ...(id === 'rtx-20-30-40' ? { mfgUnlock: MFG_UNLOCK } : {}) }]
     })),
+  })),
+}
+
+const dlssgCards = ['RTX\\s?40[0-9]{2}', 'RTX\\s?50[0-9]{2}']
+const choiceKey = (section: string, key: string, value: string) => ({ file: 'OptiScaler.ini', section, key, value })
+const recompositionBlock = {
+  reason: 'Preset A and C turn UI recomposition off. Set UI mode to Off or UI-free to use them.',
+  choice: { id: 'ui-mode', options: ['recomposition'] },
+}
+/** The UI mode and DLSS-G preset choices, as the content ships them for NVIDIA cards that run DLSS frame generation. */
+export const SETTING_CHOICES = [
+  {
+    id: 'ui-mode', label: 'UI mode', gpuNamePatterns: dlssgCards, needsFrameGeneration: true, defaultOption: 'recomposition', unofferedOption: 'off',
+    options: [
+      { id: 'off', label: 'Off', description: 'Frame generation treats the interface like the rest of the frame.', settings: [choiceKey('HudLess', 'Mode', 'off')] },
+      {
+        id: 'recomposition', label: 'Recomposition', settings: [choiceKey('HudLess', 'Mode', 'recomposition')],
+        description: 'Gives frame generation the scene and the interface as separate images so it puts the interface back itself, meant to keep it sharp in fast camera motion. Tested at 2× to 4× in SDR, where no visible difference was seen.',
+      },
+      {
+        id: 'ui-free', label: 'UI-free', experimental: true, settings: [choiceKey('HudLess', 'Mode', 'ui_free')],
+        description: 'Frame generation works on the scene alone and the interface is pasted back at the real frame rate. In some scenes it falls back to normal frame generation.',
+        blockedWhen: [{ reason: 'UI-free isn’t supported with HDR yet.', hdr: true as const }],
+      },
+    ],
+  },
+  {
+    id: 'dlssg-preset', label: 'DLSS-G preset', gpuNamePatterns: dlssgCards, needsFrameGeneration: true, defaultOption: 'auto',
+    options: [
+      { id: 'auto', label: 'Auto', description: 'The driver and NVIDIA’s runtime decide.', settings: [choiceKey('DLSSG', 'RenderPreset', '0')] },
+      { id: 'a', label: 'Preset A', description: 'NVIDIA’s preset A. It turns UI recomposition off.', settings: [choiceKey('DLSSG', 'RenderPreset', '1')], blockedWhen: [recompositionBlock] },
+      { id: 'b', label: 'Preset B', description: 'NVIDIA’s preset B. It asks for UI recomposition.', settings: [choiceKey('DLSSG', 'RenderPreset', '2')] },
+      { id: 'c', label: 'Preset C', description: 'NVIDIA’s preset C. It turns UI recomposition off and NVIDIA’s FG Lite on.', settings: [choiceKey('DLSSG', 'RenderPreset', '3')], blockedWhen: [recompositionBlock] },
+    ],
+  },
+] satisfies SettingChoice[]
+
+/** Inert content with the UI mode and DLSS-G preset choices on the NVIDIA tiers, for tests and the gallery; never published. */
+export const SETTING_CHOICE_MANIFEST: Manifest = {
+  ...NEURAL_RENDERING_MANIFEST,
+  versions: NEURAL_RENDERING_MANIFEST.versions.map((content) => ({
+    ...content,
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id.startsWith('rtx-') ? { ...tier, settingChoices: SETTING_CHOICES } : tier])),
   })),
 }

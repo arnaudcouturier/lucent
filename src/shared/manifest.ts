@@ -77,8 +77,42 @@ export interface FrameGenerationOption {
   /** Values that replace these keys when the active display has HDR enabled. */
   hdrSettings?: IniSetting[]
 }
+/** What keeps an option from being picked: an earlier choice holding one of the named options, or HDR being on. */
+export interface SettingChoiceBlock {
+  /** Shown under the control while the option is unavailable. */
+  reason: string
+  /** Unavailable while this earlier choice of the tier holds one of these options. */
+  choice?: { id: string; options: string[] }
+  /** Unavailable while the HDR choice is anything but Off. */
+  hdr?: true
+}
+export interface SettingChoiceOption {
+  id: string
+  label: string
+  /** The line under the control while this option is picked. */
+  description: string
+  experimental?: boolean
+  settings: IniSetting[]
+  blockedWhen?: SettingChoiceBlock[]
+}
+/**
+ * A first-install choice whose options each write a set of ini keys, such as the DLSS-G render preset. Choices are listed in the
+ * order they appear, and an option may only be blocked by a choice above it. Unknown to apps that predate this field, which ignore it.
+ */
+export interface SettingChoice {
+  id: string
+  label: string
+  /** Case-insensitive regular expressions matched against the card's name; absent offers the choice to every card. */
+  gpuNamePatterns?: string[]
+  /** Offered only while frame generation is on. */
+  needsFrameGeneration?: boolean
+  options: SettingChoiceOption[]
+  defaultOption: string
+  /** The option whose settings are written for a card the choice isn't offered to; absent writes nothing for it. */
+  unofferedOption?: string
+}
 /** Also the order of the profile rows and segmented-control options. */
-export const PROFILE_IDS = ['ultra', 'fidelity', 'balanced', 'performance'] as const
+export const PROFILE_IDS =['ultra', 'fidelity', 'balanced', 'performance'] as const
 export type ProfileId = typeof PROFILE_IDS[number]
 export const LEGACY_PROFILE_IDS = ['fidelity', 'balanced', 'performance'] as const
 export type LegacyProfileId = typeof LEGACY_PROFILE_IDS[number]
@@ -181,6 +215,8 @@ export interface TierRecipe {
   screenDerivedSettings?: ScreenDerivedSetting[]
   /** HDR mode choices, absent from older content versions. */
   hdrOptions?: HdrOption[]
+  /** Further first-install choices, such as the DLSS-G render preset; apps that predate this field ignore it. */
+  settingChoices?: SettingChoice[]
 }
 export interface ContentVersion {
   id: string
@@ -420,6 +456,83 @@ function singleLine(value: unknown, field: string): string {
   if (/[\r\n]/.test(nonemptyString(value, field))) invalid(`${field} must be a single line.`)
   return value as string
 }
+const CHOICE_ID = /^[a-z][a-z0-9-]*$/
+const iniKeyId = (setting: IniKey) => JSON.stringify([pathKey(setting.file), setting.section.toLowerCase(), setting.key.toLowerCase()])
+function settingChoiceBlock(value: unknown): SettingChoiceBlock {
+  const block = object(value, 'Choice block')
+  const reason = singleLine(block.reason, 'Choice block reason')
+  let choice: SettingChoiceBlock['choice']
+  if (block.choice !== undefined) {
+    const target = object(block.choice, 'Choice block target')
+    const options = array(target.options, 'Choice block options').map((option) => nonemptyString(option, 'Choice block option'))
+    if (!options.length) invalid('A choice block must name at least one option.')
+    choice = { id: nonemptyString(target.id, 'Choice block choice'), options }
+  }
+  if (block.hdr !== undefined && block.hdr !== true) invalid('A choice block hdr condition must be true.')
+  if (!choice && block.hdr === undefined) invalid('A choice block needs a condition.')
+  return { reason, ...(choice ? { choice } : {}), ...(block.hdr === true ? { hdr: true as const } : {}) }
+}
+function settingChoiceOption(value: unknown): SettingChoiceOption {
+  const option = object(value, 'Choice option')
+  const id = nonemptyString(option.id, 'Choice option id')
+  if (!CHOICE_ID.test(id)) invalid('Choice option ids use lowercase letters, digits and hyphens.')
+  if (option.experimental !== undefined && typeof option.experimental !== 'boolean') invalid('Choice option experimental must be a boolean.')
+  const settings = array(option.settings, 'Choice option settings').map((setting) => iniSetting(object(setting, 'Choice option setting')))
+  if (!settings.length) invalid('A choice option needs settings.')
+  unique(settings.map(iniKeyId), 'Choice option setting keys')
+  const blockedWhen = option.blockedWhen === undefined ? undefined : array(option.blockedWhen, 'Choice option blocks').map(settingChoiceBlock)
+  return { id, label: singleLine(option.label, 'Choice option label'), description: singleLine(option.description, 'Choice option description'),
+    ...(option.experimental === undefined ? {} : { experimental: option.experimental }), settings, ...(blockedWhen?.length ? { blockedWhen } : {}) }
+}
+function settingChoice(value: unknown): SettingChoice {
+  const choice = object(value, 'Setting choice')
+  const id = nonemptyString(choice.id, 'Setting choice id')
+  if (!CHOICE_ID.test(id)) invalid('Setting choice ids use lowercase letters, digits and hyphens.')
+  let gpuNamePatterns: string[] | undefined
+  if (choice.gpuNamePatterns !== undefined) {
+    gpuNamePatterns = array(choice.gpuNamePatterns, 'Setting choice GPU name patterns').map((value) => {
+      const pattern = nonemptyString(value, 'Setting choice GPU name pattern')
+      try { new RegExp(pattern, 'i') } catch { invalid(`Invalid setting choice GPU name pattern: ${pattern}`) }
+      return pattern
+    })
+    if (!gpuNamePatterns.length) invalid('Setting choice GPU name patterns cannot be empty.')
+  }
+  if (choice.needsFrameGeneration !== undefined && typeof choice.needsFrameGeneration !== 'boolean') invalid('Setting choice needsFrameGeneration must be a boolean.')
+  const options = array(choice.options, 'Setting choice options').map(settingChoiceOption)
+  if (options.length < 2) invalid('A setting choice needs at least two options.')
+  unique(options.map((option) => option.id), 'Setting choice option ids')
+  const optionIds = new Set(options.map((option) => option.id))
+  const defaultOption = nonemptyString(choice.defaultOption, 'Setting choice default')
+  if (!optionIds.has(defaultOption)) invalid('A setting choice default must be one of its options.')
+  const unofferedOption = choice.unofferedOption === undefined ? undefined : nonemptyString(choice.unofferedOption, 'Setting choice unoffered option')
+  if (unofferedOption !== undefined && !optionIds.has(unofferedOption)) invalid('A setting choice unoffered option must be one of its options.')
+  // Every option rewrites the same keys, so switching never leaves another option's value behind.
+  const keys = (option: SettingChoiceOption) => option.settings.map(iniKeyId).sort().join('\n')
+  if (options.some((option) => keys(option) !== keys(options[0]))) invalid('The options of a setting choice must write the same keys.')
+  return { id, label: singleLine(choice.label, 'Setting choice label'), ...(gpuNamePatterns ? { gpuNamePatterns } : {}),
+    ...(choice.needsFrameGeneration === undefined ? {} : { needsFrameGeneration: choice.needsFrameGeneration }), options, defaultOption,
+    ...(unofferedOption === undefined ? {} : { unofferedOption }) }
+}
+function settingChoices(value: unknown): SettingChoice[] {
+  const choices = array(value, 'Setting choices').map(settingChoice)
+  unique(choices.map((choice) => choice.id), 'Setting choice ids')
+  const owners = new Map<string, string>()
+  choices.forEach((choice, index) => {
+    for (const key of choice.options[0].settings.map(iniKeyId)) {
+      if (owners.has(key) && owners.get(key) !== choice.id) invalid('Two setting choices write the same key.')
+      owners.set(key, choice.id)
+    }
+    for (const block of choice.options.flatMap((option) => option.blockedWhen ?? [])) {
+      if (!block.choice) continue
+      const above = choices.slice(0, index).find((other) => other.id === block.choice!.id)
+      if (!above) invalid(`A setting choice can only be blocked by a choice above it: ${block.choice.id}.`)
+      if (block.choice.options.some((id) => !above.options.some((option) => option.id === id))) invalid(`A choice block names an option that ${above.id} lacks.`)
+    }
+    // One option is always free, so resolving the choices always finds a valid combination.
+    if (choice.options.every((option) => option.blockedWhen?.length)) invalid(`Every option of ${choice.id} could be blocked; one must always be free.`)
+  })
+  return choices
+}
 function profile(value: unknown): LegacyPerformanceProfile {
   const p = object(value, 'Performance profile')
   if (!LEGACY_PROFILE_IDS.includes(p.id as LegacyProfileId)) invalid('Unknown legacy performance profile.')
@@ -611,6 +724,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     }
     if (r.neuralRenderingControls !== undefined) recipes[id].neuralRenderingControls = neuralRenderingControls(r.neuralRenderingControls)
     if (r.mfgUnlock !== undefined) recipes[id].mfgUnlock = mfgUnlock(r.mfgUnlock)
+    if (r.settingChoices !== undefined) recipes[id].settingChoices = settingChoices(r.settingChoices)
     if (!recipes[id].entryFiles.length) invalid('A tier recipe needs entry files.')
     const ownedConfig = (file: string) => recipes[id].ownedConfigs.find((c) => pathKey(c.path) === pathKey(file)) ?? invalid(`INI settings must target an owned config: ${file}`)
     for (const s of recipe) {
@@ -630,6 +744,7 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
       for (const key of [nr.presetKey, nr.passesKey, nr.scaleKey, nr.spatialCompression.key, nr.residualFg.key]) ownedConfig(key.file)
     }
     for (const s of recipes[id].mfgUnlock?.settings ?? []) ownedConfig(s.file)
+    for (const s of (recipes[id].settingChoices ?? []).flatMap((choice) => choice.options.flatMap((option) => option.settings))) ownedConfig(s.file)
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
     : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))
