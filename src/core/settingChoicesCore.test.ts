@@ -3,6 +3,7 @@ import { createCore } from './core'
 import { createFakePlatform } from '../platform/fake'
 import { graphicsCard, MACHINES, machine } from '../platform/fixtures'
 import { dataPaths, readDeployment } from './deployment'
+import { collectDiagnostics } from './diagnostics'
 
 const ROOT = 'D:\\SteamLibrary\\steamapps\\common\\FINAL FANTASY XIV Online'
 const CONFIG = `${ROOT}\\game\\OptiScaler.ini`
@@ -77,6 +78,9 @@ describe('the UI mode and DLSS-G preset choices on the Profile step', () => {
     expect(text).toMatch(/\[DLSSG\][^[]*RenderPreset\s*=\s*3/)
     expect(await readDeployment(platform, ROOT)).toMatchObject({ settingChoices: { 'ui-mode': 'off', 'dlssg-preset': 'c' } })
     expect(core.getState().settingChoices).toEqual({ 'ui-mode': 'off', 'dlssg-preset': 'c' })
+    const diagnostics = await collectDiagnostics(platform, core.getState(), '0.3.0-beta.10', 'beta')
+    expect(diagnostics).toContain('UI mode Off')
+    expect(diagnostics).toContain('DLSS-G preset Preset C')
   })
 
   it('writes the default for a pick that became blocked, as the Review shows it', async () => {

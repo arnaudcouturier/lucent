@@ -61,9 +61,14 @@ export function settingChoiceSettings(choices: SettingChoice[] | undefined, reso
 
 export interface ChoiceSummary { label: string; value: string }
 
-/** One entry per choice the player saw, naming the option it was written with: for Review, Done, the activity log and the diagnostics. */
-export function settingChoiceSummary(choices: SettingChoice[] | undefined, resolved: SettingPicks | null | undefined, context: ChoiceContext): ChoiceSummary[] {
-  return shownSettingChoices(choices, resolved, context).map(({ choice, selected }) => ({ label: choice.label, value: choice.options.find((option) => option.id === selected)?.label ?? selected }))
+/**
+ * One entry per choice the player saw, naming the option it was written with: for Review, Done, the activity log and the diagnostics.
+ * `written` is what was actually written (a plan's picks, or a record's). A choice it has no pick for is left out, so a deployment
+ * that gained the choice by an update, which never wrote it, doesn't claim the defaults.
+ */
+export function settingChoiceSummary(choices: SettingChoice[] | undefined, written: SettingPicks | null | undefined, context: ChoiceContext): ChoiceSummary[] {
+  return shownSettingChoices(choices, written, context).filter(({ choice }) => written?.[choice.id] !== undefined)
+    .map(({ choice, selected }) => ({ label: choice.label, value: choice.options.find((option) => option.id === selected)?.label ?? selected }))
 }
 
 export interface ShownChoice {

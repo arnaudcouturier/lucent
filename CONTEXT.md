@@ -87,7 +87,7 @@ What a content version does to one config file on update: **keep** (the default:
 _Avoid_: merge, reset key
 
 **First-install choices**:
-What the player picks on the screen shown before the baseline is deployed: the performance profile, the frame generation mode, the HDR mode, Include ReShade and Add to Start menu. Lucent writes them into the config files once and keeps them only so Reset can offer them again.
+What the player picks on the screen shown before the baseline is deployed: the performance profile, the frame generation mode, the HDR mode, the setting choices, Include ReShade and Add to Start menu. Lucent writes them into the config files once and keeps them only so Reset can offer them again.
 _Avoid_: settings, configurator
 
 **Performance profile**:
@@ -105,6 +105,10 @@ _Avoid_: FPS limit, frame limiter
 **HDR mode**:
 Off, HDR or Scene HDR: how OptiScaler presents XIV on an HDR monitor, picked among the first-install choices.
 _Avoid_: OptiHDR (upstream's name)
+
+**Setting choice**:
+A first-install choice the content declares as data (`settingChoices`): a few options that each write the same ini keys, such as the DLSS-G preset and the UI mode. A choice is offered by graphics card and by frame generation, an option can be blocked by a choice above it or by HDR, and a blocked pick is written as the choice's default.
+_Avoid_: toggle, advanced option
 
 **Preset**:
 A ReShade preset file that defines a visual look. Lucent installs all of them and activates none.

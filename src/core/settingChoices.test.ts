@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SETTING_CHOICES } from '../platform/contentFixture'
-import { optionBlock, resolveSettingChoices, settingChoiceSettings, shownSettingChoices, type ChoiceContext } from './settingChoices'
+import { optionBlock, resolveSettingChoices, settingChoiceSettings, settingChoiceSummary, shownSettingChoices, type ChoiceContext } from './settingChoices'
 
 const rtx4090: ChoiceContext = { gpuName: 'NVIDIA GeForce RTX 4090', frameGenerationMode: '2x', hdrMode: 'off' }
 const [ui, preset] = SETTING_CHOICES
@@ -121,5 +121,25 @@ describe('the ini settings the picks write', () => {
 
   it('writes nothing for content without choices', () => {
     expect(settingChoiceSettings(undefined, {})).toEqual([])
+  })
+})
+
+describe('naming what was written', () => {
+  it('names each shown choice and the option it was written with', () => {
+    expect(settingChoiceSummary(SETTING_CHOICES, { 'ui-mode': 'off', 'dlssg-preset': 'c' }, rtx4090)).toEqual([
+      { label: 'UI mode', value: 'Off' }, { label: 'DLSS-G preset', value: 'Preset C' },
+    ])
+  })
+
+  it('names nothing for picks that were never written, such as a deployment that gained the choices by an update', () => {
+    expect(settingChoiceSummary(SETTING_CHOICES, undefined, rtx4090)).toEqual([])
+    expect(settingChoiceSummary(SETTING_CHOICES, {}, rtx4090)).toEqual([])
+    expect(settingChoiceSummary(SETTING_CHOICES, { 'ui-mode': 'off' }, rtx4090)).toEqual([{ label: 'UI mode', value: 'Off' }])
+  })
+
+  it('names nothing while frame generation is Off, or for a card without the choices', () => {
+    const picks = { 'ui-mode': 'off', 'dlssg-preset': 'c' }
+    expect(settingChoiceSummary(SETTING_CHOICES, picks, { ...rtx4090, frameGenerationMode: 'off' })).toEqual([])
+    expect(settingChoiceSummary(SETTING_CHOICES, { 'ui-mode': 'off' }, { ...rtx4090, gpuName: 'NVIDIA GeForce RTX 3080' })).toEqual([])
   })
 })
