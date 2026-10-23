@@ -6,6 +6,7 @@ import { SegmentedControl } from './SegmentedControl'
 import { setupChoices } from '../core/core'
 import { frameGenerationLabel, hdrDescription, hdrLabel } from '../core/choices'
 import { frameGenerationDescription } from '../core/frameGeneration'
+import { shownSettingChoices } from '../core/settingChoices'
 import { profileSummaryForHeight } from '../core/profileValues'
 import { presetRenderResolution, residualFgAvailable, residualFgCardMatches, scaleCostPercent, scaleLabel, SUGGESTED_DLAA_SCALE } from '../core/neuralRendering'
 import { NR_PASSES, NR_SCALES, type NrPasses, type NrScale } from '../shared/manifest'
@@ -142,6 +143,21 @@ function HdrChoice() {
   </ChoiceGroup>
 }
 
+/** The tier's setting choices (UI mode, DLSS-G preset): a card each, the line for the picked option, and why an option can't be picked now. */
+function SettingChoices() {
+  const [{ settingChoiceGroups, settingChoices, graphics, deployment, frameGenerationMode, hdrMode, busy, recoveryRequired }, core] = useCore()
+  const gpuName = graphics.status === 'found' ? graphics.adapter.name : deployment?.graphics.name ?? ''
+  return <>{shownSettingChoices(settingChoiceGroups, settingChoices, { gpuName, frameGenerationMode, hdrMode }).map(({ choice, selected, options }) => {
+    const reasons = [...new Set(options.flatMap(({ blocked }) => blocked ? [blocked] : []))]
+    return <ChoiceGroup title={choice.label} key={choice.id}>
+      <SegmentedControl ariaLabel={choice.label} value={selected} disabled={busy || recoveryRequired}
+        options={options.map(({ option, blocked }) => ({ id: option.id, label: option.label, experimental: option.experimental, disabled: blocked !== null }))}
+        onChange={(id) => core.selectSettingChoice(choice.id, id)} />
+      <p className="choice-line">{options.find(({ option }) => option.id === selected)?.option.description}{reasons.length > 0 && <small>{reasons.join(' ')}</small>}</p>
+    </ChoiceGroup>
+  })}</>
+}
+
 /** Every first-install choice lives here, so Review only reviews. */
 export function ProfileScreen() {
   const [state, core] = useCore()
@@ -152,6 +168,7 @@ export function ProfileScreen() {
     <NeuralRenderingSection />
     <FrameGenerationChoice />
     <HdrChoice />
+    <SettingChoices />
     {(choices.reShade || choices.startMenu) && <div className="card option-list is-inline">
       {choices.reShade && <label className="option-row">
         <input type="checkbox" checked={includeReShade} disabled={busy} onChange={(e) => core.setIncludeReShade(e.target.checked)} />

@@ -16,7 +16,7 @@ import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type HdrOption, type MfgUnlock, type NeuralRenderingChoice, type NeuralRenderingControls, type PerformanceProfile, type ProfileId, type Tier, type TierRecipe } from '../shared/manifest'
 import type { SettingChoice } from '../shared/manifest'
-import { shownSettingChoices, type SettingPicks } from './settingChoices'
+import { settingChoiceSummary, shownSettingChoices, type SettingPicks } from './settingChoices'
 import { frameGenerationOptionsForUnlock, mfgUnlockFor, normalizeNeuralRendering } from './neuralRendering'
 import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
@@ -1531,7 +1531,9 @@ export function createCore(platform: Platform): Core {
           set({ activity: { kind: 'review' } }); return
         }
         const since = performance.now()
-        log.write('info', `Install: content ${content.id}, ${state.graphics.tier.label} tier${profileNote(state.profiles, state.selectedProfile)}${state.neuralRendering ? `, Neural Rendering ${state.neuralRendering.preset}, ${state.neuralRendering.passes} pass${state.neuralRendering.passes === 1 ? '' : 'es'}, ${state.neuralRendering.scale}%${state.neuralRendering.spatialCompression ? ', spatial compression' : ''}${state.neuralRendering.residualFg ? ', residual frame generation' : ''}` : ''}${state.mfgUnlocked ? ', multi-frame unlock' : ''}${state.frameGenerationMode ? `, frame generation ${state.frameGenerationMode}` : ''}${state.hdrMode ? `, HDR ${state.hdrMode}` : ''}${state.includeReShade ? '' : ', without ReShade'}`)
+        const settingNote = settingChoiceSummary(state.plan.recipe.settingChoices, state.plan.settingChoices, { gpuName: state.graphics.adapter.name, frameGenerationMode: state.plan.frameGenerationMode, hdrMode: state.plan.hdrMode })
+          .map(({ label, value }) => `, ${label} ${value}`).join('')
+        log.write('info', `Install: content ${content.id}, ${state.graphics.tier.label} tier${profileNote(state.profiles, state.selectedProfile)}${state.neuralRendering ? `, Neural Rendering ${state.neuralRendering.preset}, ${state.neuralRendering.passes} pass${state.neuralRendering.passes === 1 ? '' : 'es'}, ${state.neuralRendering.scale}%${state.neuralRendering.spatialCompression ? ', spatial compression' : ''}${state.neuralRendering.residualFg ? ', residual frame generation' : ''}` : ''}${state.mfgUnlocked ? ', multi-frame unlock' : ''}${state.frameGenerationMode ? `, frame generation ${state.frameGenerationMode}` : ''}${state.hdrMode ? `, HDR ${state.hdrMode}` : ''}${settingNote}${state.includeReShade ? '' : ', without ReShade'}`)
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source, acknowledged,
           loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))), state.gameFolder.version, selection, playerUserSid)
         installed = record

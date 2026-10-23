@@ -59,6 +59,13 @@ export function settingChoiceSettings(choices: SettingChoice[] | undefined, reso
   return (choices ?? []).flatMap((choice) => choice.options.find((option) => option.id === resolved[choice.id])?.settings ?? [])
 }
 
+export interface ChoiceSummary { label: string; value: string }
+
+/** One entry per choice the player saw, naming the option it was written with: for Review, Done, the activity log and the diagnostics. */
+export function settingChoiceSummary(choices: SettingChoice[] | undefined, resolved: SettingPicks | null | undefined, context: ChoiceContext): ChoiceSummary[] {
+  return shownSettingChoices(choices, resolved, context).map(({ choice, selected }) => ({ label: choice.label, value: choice.options.find((option) => option.id === selected)?.label ?? selected }))
+}
+
 export interface ShownChoice {
   choice: SettingChoice
   selected: string

@@ -260,7 +260,7 @@ export const SETTING_CHOICES = [
       { id: 'off', label: 'Off', description: 'Frame generation treats the interface like the rest of the frame.', settings: [choiceKey('HudLess', 'Mode', 'off')] },
       {
         id: 'recomposition', label: 'Recomposition', settings: [choiceKey('HudLess', 'Mode', 'recomposition')],
-        description: 'Gives frame generation the scene and the interface as separate images so it puts the interface back itself, meant to keep it sharp in fast camera motion. Tested at 2× to 4× in SDR, where no visible difference was seen.',
+        description: 'Gives frame generation the scene and the interface as separate images, meant to keep the interface sharp in fast camera motion. Tested at 2× to 4× in SDR, where no visible difference was seen.',
       },
       {
         id: 'ui-free', label: 'UI-free', experimental: true, settings: [choiceKey('HudLess', 'Mode', 'ui_free')],

@@ -103,6 +103,17 @@ const experimentalPicks = (core: Core) => {
   core.selectFrameGenerationMode('4x')
   core.selectHdrMode('scene-hdr')
 }
+/** UI mode Off with Preset C, which Recomposition would have blocked, and UI-free, which HDR would have blocked. */
+const settingPicks = (core: Core) => {
+  core.selectHdrMode('off')
+  core.selectSettingChoice('ui-mode', 'off')
+  core.selectSettingChoice('dlssg-preset', 'c')
+}
+const settingUiFree = (core: Core) => {
+  core.selectHdrMode('off')
+  core.selectSettingChoice('ui-mode', 'ui-free')
+  core.selectSettingChoice('dlssg-preset', 'a')
+}
 const multipleLaunchers = async () => {
   const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
   await platform.writeText(`${await platform.envFolder('LocalAppData')}\\XIVLauncher\\current\\XIVLauncher.exe`, 'XIVLauncher')
@@ -485,6 +496,12 @@ const STATES: GalleryState[] = [
   { key: 'nr-rtx30', label: 'Graphics · RTX 30, 60 Hz SDR', setup: choicesStep(MACHINES.nr60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
   { key: 'nr-review', label: 'Review · Neural Rendering picks', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'review', nrEverything) },
   { key: 'nr-done', label: 'Done · Neural Rendering picks', setup: choicesStep(MACHINES.nr240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'done', nrEverything) },
+  { key: 'settings-defaults', label: 'Graphics · UI mode and DLSS-G preset, RTX 4090 with HDR', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090')) },
+  { key: 'settings-open', label: 'Graphics · UI mode Off, Preset C (HDR Off)', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', settingPicks) },
+  { key: 'settings-ui-free', label: 'Graphics · UI-free, Preset A (HDR Off)', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', settingUiFree) },
+  { key: 'settings-rtx30', label: 'Graphics · RTX 30 has neither choice', setup: choicesStep(MACHINES.settings60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
+  { key: 'settings-review', label: 'Review · UI mode and DLSS-G preset', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'review', settingPicks) },
+  { key: 'settings-done', label: 'Done · UI mode and DLSS-G preset', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'done', settingPicks) },
   { key: 'choices-experimental', label: 'Profile · Experimental picks (4×, Scene HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', experimentalPicks) },
   { key: 'choices-options', label: 'Options · tier without profiles (Radeon, HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('AMD Radeon RX 7900 XTX', 0x1002)) },
   { key: 'choices-options-intel', label: 'Options · tier without profiles (Intel, ReShade only)', setup: choicesStep(MACHINES.steam, graphicsCard('Intel Arc A770 Graphics', 0x8086)) },

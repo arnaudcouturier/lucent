@@ -4,6 +4,8 @@ export interface SegmentedOption<T extends string> {
   id: T
   label: string
   experimental?: boolean
+  /** Shown but can't be picked now; the screen says why. */
+  disabled?: boolean
 }
 
 /** A compact native radio group styled as an Ember segmented control. */
@@ -20,7 +22,7 @@ export function SegmentedControl<T extends string>({
   return <fieldset className="segmented-choice" disabled={disabled} aria-label={ariaLabel}>
     <div className="segmented-choice-options">
       {options.map((option) => <label className="segmented-choice-option" key={option.id}>
-        <input type="radio" name={name} value={option.id} checked={value === option.id} onChange={() => onChange(option.id)} />
+        <input type="radio" name={name} value={option.id} checked={value === option.id} disabled={option.disabled} onChange={() => onChange(option.id)} />
         <span className="segmented-choice-label">{option.label}</span>
         {option.experimental && <span className="segmented-choice-experimental">Experimental</span>}
       </label>)}

@@ -4,10 +4,11 @@ import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { createCore, type Core } from '../core/core'
-import { createFakePlatform, DEFAULT_ENV, type FakePlatform } from '../platform/fake'
-import { existingSetup, fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
+import { createFakePlatform, DEFAULT_ENV, type FakePlatform, type Machine } from '../platform/fake'
+import { existingSetup, fixtureContentHost, graphicsCard, MACHINES, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { CoreContext } from './useCore'
-import { Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
+import { DoneScreen, Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
+import { ProfileScreen } from './Profiles'
 import { SettingsScreen } from './MainScreens'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
@@ -298,4 +299,80 @@ it('Review says why Install waits above the summary, not under the pinned footer
   const text = visibleText(createElement(ReviewScreen), core)
   expect(text).toContain('XIV is running')
   expect(text.indexOf('XIV is running')).toBeLessThan(text.indexOf('Files backed up'))
+})
+
+describe('the UI mode and DLSS-G preset choices', () => {
+  const RTX_3080 = graphicsCard('NVIDIA GeForce RTX 3080')
+  const profileStep = async (screen = MACHINES.settings240Hdr, card: Machine = graphicsCard()) => {
+    const platform = createFakePlatform(machine(screen, card))
+    const core = createCore(platform)
+    await core.scan()
+    await core.continueSetup()
+    return core
+  }
+  const markup = (element: ReactElement, core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, element))
+
+  it('shows both choices on the Graphics step, after HDR, with their descriptions and the Experimental tag', async () => {
+    const core = await profileStep()
+    const text = visibleText(createElement(ProfileScreen), core)
+    expect(text.indexOf('HDR')).toBeLessThan(text.indexOf('UI mode'))
+    expect(text.indexOf('UI mode')).toBeLessThan(text.indexOf('DLSS-G preset'))
+    for (const label of ['Off', 'Recomposition', 'UI-free', 'Auto', 'Preset A', 'Preset B', 'Preset C']) expect(text).toContain(label)
+    expect(text).toContain('Gives frame generation the scene and the interface as separate images')
+    expect(text).toContain('The driver and NVIDIA’s runtime decide.')
+    expect(text.slice(text.indexOf('UI mode'), text.indexOf('DLSS-G preset'))).toContain('Experimental')
+  })
+
+  it('greys out Preset A and C with the reason while the UI mode is Recomposition, and UI-free while HDR is on', async () => {
+    const core = await profileStep()
+    const html = markup(createElement(ProfileScreen), core)
+    const disabled = (value: string, page = html) => new RegExp(`<input(?=[^>]*disabled)[^>]*value="${value}"`).test(page)
+    expect(disabled('a')).toBe(true)
+    expect(disabled('c')).toBe(true)
+    expect(disabled('b')).toBe(false)
+    expect(disabled('auto')).toBe(false)
+    // HDR is on by default on this panel, so UI-free is greyed out too.
+    expect(disabled('ui-free')).toBe(true)
+    expect(visibleText(createElement(ProfileScreen), core)).toContain('Preset A and C turn UI recomposition off. Set UI mode to Off or UI-free to use them.')
+    expect(visibleText(createElement(ProfileScreen), core)).toContain('UI-free isn’t supported with HDR yet.')
+
+    core.selectSettingChoice('ui-mode', 'off')
+    const open = markup(createElement(ProfileScreen), core)
+    expect(disabled('c', open)).toBe(false)
+    expect(visibleText(createElement(ProfileScreen), core)).not.toContain('Preset A and C turn UI recomposition off')
+  })
+
+  it('hides both while frame generation is Off, and from a card without DLSS frame generation', async () => {
+    const core = await profileStep()
+    core.selectFrameGenerationMode('off')
+    expect(visibleText(createElement(ProfileScreen), core)).not.toContain('DLSS-G preset')
+    expect(visibleText(createElement(ProfileScreen), core)).not.toContain('UI mode')
+    const rtx30 = await profileStep(MACHINES.settings60Sdr, RTX_3080)
+    rtx30.selectFrameGenerationMode('2x')
+    expect(visibleText(createElement(ProfileScreen), rtx30)).not.toContain('DLSS-G preset')
+  })
+
+  it('names the picks on Review and on Done', async () => {
+    const core = await profileStep()
+    core.selectSettingChoice('ui-mode', 'off')
+    core.selectSettingChoice('dlssg-preset', 'b')
+    await core.review()
+    const review = visibleText(createElement(ReviewScreen), core)
+    expect(review).toContain('UI mode Off')
+    expect(review).toContain('DLSS-G preset Preset B')
+    await core.deploy()
+    expect(core.getState().error).toBeNull()
+    const done = visibleText(createElement(DoneScreen), core)
+    expect(done).toContain('UI mode Off')
+    expect(done).toContain('DLSS-G preset Preset B')
+  })
+
+  it('leaves them off Review when frame generation is Off', async () => {
+    const core = await profileStep()
+    core.selectFrameGenerationMode('off')
+    await core.review()
+    const review = visibleText(createElement(ReviewScreen), core)
+    expect(review).not.toContain('UI mode')
+    expect(review).not.toContain('DLSS-G preset')
+  })
 })

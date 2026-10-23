@@ -8,6 +8,7 @@ import { fileKey } from './planner'
 import { fileCount } from './format'
 import { LAUNCH_LABELS } from './launch'
 import { frameGenerationLabel, hdrLabel } from './choices'
+import { settingChoiceSummary } from './settingChoices'
 import { profilesForRecipe } from './profileValues'
 
 const TIER_STATUS = { stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified' }
@@ -59,6 +60,7 @@ function storedChoices(record: DeploymentRecord): string {
     record.mfgUnlocked ? 'multi-frame unlock' : null,
     record.frameGenerationMode ? `frame generation ${frameGenerationLabel(record.frameGenerationMode)}` : null,
     record.hdrMode ? `HDR ${hdrLabel(record.hdrMode)}` : null,
+    ...settingChoiceSummary(record.recipe.settingChoices, record.settingChoices, { gpuName: record.graphics.name, frameGenerationMode: record.frameGenerationMode ?? null, hdrMode: record.hdrMode ?? null }).map(({ label, value }) => `${label} ${value}`),
     record.includeReShade ? 'ReShade included' : 'without ReShade',
   ].filter(Boolean).join(', ')
 }
