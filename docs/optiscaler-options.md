@@ -45,6 +45,23 @@ The fork tested a boot on Auto and on Preset C and live switches without a refus
 - **Frame generation Off hides both.** The values still get written, so turning frame generation on later in the overlay finds the recommended settings.
 - **Only DLSS-G.** Where the choice is not offered Lucent writes `Mode = off` and `RenderPreset = 0`, which for RTX 30 changes what 2026.10.23 wrote (`recomposition`, untested with FSR and XeFG outputs).
 
+### DLSS model (`[DLSS] RenderPresetOverride`, `RenderPresetForAll`)
+
+The DLSS super resolution model NVIDIA's DLL runs, as a letter. The key takes 0 (default) to 15 (O) and the fork forwards the value to NGX unchanged, so what counts is what this DLL does with each letter. NVIDIA's own header and programming guide in Streamline 2.14.16, which ships the DLL Lucent deploys (310.9.16), say:
+
+| Letter | Value | NVIDIA's note | Offered |
+|---|---|---|---|
+| A to D | 1 to 4 | No longer available; use J or K | No |
+| E, F | 5, 6 | Deprecated | No |
+| G, H, I | 7 to 9 | Revert to the default, not recommended | No |
+| J | 10 | Similar to K, slightly less ghosting at the cost of extra flickering; K is recommended over J | Yes |
+| K | 11 | Default for DLAA, Quality and Balanced; its best image quality at a higher performance cost | Yes |
+| L | 12 | Default for Ultra Performance; sharper and more stable than J and K, with less ghosting, and more expensive | Yes |
+| M | 13 | Default for Performance; similar gains to L, closer in speed to J and K | Yes |
+| N, O | 14, 15 | Revert to the default, not recommended | No |
+
+Lucent offers Default (`RenderPresetOverride = false`, `RenderPresetForAll = 0`) and J to M (`true` and 10 to 13), as one choice for every quality mode. It does not offer a letter NVIDIA says is gone or falls back to the default, since that button would do nothing; E and F are the open question, because "deprecated" does not say whether 310.9.16 still honours them. The default stays M, what content has shipped for every mode and what the maintainer plays. Only M has been seen working: his `OptiScaler.log` shows `Using App hint Preset M` for all six quality modes. J, K and L are documented by NVIDIA and not yet seen here, and the same line names the preset in use. Nobody has measured what any of them looks like or costs in XIV, so the descriptions repeat NVIDIA's and add nothing. The card is called "DLSS model" because the Neural Rendering card already has a "DLSS preset" heading that means the quality mode (DLAA to Ultra Performance).
+
 ## Defaults
 
 | Choice | Default | Why |
@@ -63,7 +80,7 @@ The fork tested a boot on Auto and on Preset C and live switches without a refus
 | Automatic multiplier | `[DLSSG] AutoMFG`, `AutoMFGMax` | Deferred | Experimental, tested on one setup, needs the unlock above 2×. A new multiplier id would break the manifest of every older app (an unknown id invalidates it), so it needs its own optional field first |
 | Neural Rendering preset, passes, resolution, compression, residual frame generation | `[DlssNr]` | Already choices | |
 | NR model version | `[DlssNr] Runtime` | Deferred | One runtime per tier is shipped; `NR.310.8.0.0` cannot create its feature on the RTX 4090 |
-| DLSS model letter | `[DLSS] RenderPresetForAll` | Deferred, maintainer's call | Content forces M (`13`); the fork notes L and M cost more fps than K. A real performance choice, not asked for yet |
+| DLSS model | `[DLSS] RenderPresetOverride`, `RenderPresetForAll` | Choice, content 2026.10.25 | Default, J, K, L or M; see below. Content forced M (`13`) for every mode before |
 | HDR | `[HDR]` | Already a choice | |
 | Window mode | `[Window] Mode` | Ships `on`, no choice | Only for the borderless "fullscreen" that `[XeFG] ForceBorderless = true` gives, which content already sets; without ReShade a window-mode call goes through as before |
 | Game jitter correction and source fix | `[FFXIV] JitterCorrection`, `JitterSource` | Ships as the maintainer plays (correction on, source fix off), no choice | Experimental; tuning belongs in the overlay |
