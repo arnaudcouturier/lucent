@@ -3,6 +3,7 @@ import type { ExistingSetup } from './existingSetup'
 import { profileOwnedElsewhereSettingKeys, profileSettingsForHeight, profilesForRecipe, recommendedProfile } from './profileValues'
 import { effectiveFrameGenerationSettings } from './frameGeneration'
 import { mfgUnlockFor, mfgUnlockSettings, neuralRenderingSettings, normalizeNeuralRendering } from './neuralRendering'
+import { resolveSettingChoices, settingChoiceSettings, type SettingPicks } from './settingChoices'
 import { screenDerivedValue, type ScreenValues } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
@@ -48,6 +49,8 @@ export interface Plan {
   mfgUnlocked: boolean
   /** The HDR mode these steps write; null when the tier has no HDR. */
   hdrMode: HdrMode | null
+  /** The option each setting choice is written with (see settingChoices.ts); empty for content without them. */
+  settingChoices: SettingPicks
   steps: PlanStep[]
   files: ContentFile[]
   filesToDownload: ContentFile[]
@@ -87,6 +90,8 @@ export interface PlanSelection extends ProfilePlanContext {
   mfgUnlocked?: boolean
   /** Omit to apply the recipe's default HDR mode; null applies no HDR settings. */
   hdrMode?: HdrMode | null
+  /** The player's picks among the tier's setting choices; one that is unknown or blocked is written as the choice's default. */
+  settingChoices?: SettingPicks | null
   /** Whether Windows HDR is enabled on XIV's current display. */
   hdrOn?: boolean
   /** XIV's screen: the recipe's screen-derived settings (frame cap, peak brightness) are computed from it when the baseline is written. Omit to keep the content's values. */
@@ -123,6 +128,7 @@ export function planDeployment(
   const hdrMode = selection.hdrMode === undefined ? (hdrOptions.length ? 'hdr' : null) : selection.hdrMode
   const selectedHdr = hdrMode === null ? null : hdrOptions.find((option) => option.id === hdrMode) ?? null
   const hdrActive = hdrMode !== null && hdrMode !== 'off'
+  const settingChoices = resolveSettingChoices(recipe.settingChoices, selection.settingChoices, { gpuName: selection.gpuName ?? '', frameGenerationMode, hdrMode: selectedHdr?.id ?? null })
   const profileOwnedElsewhereKeys = profileOwnedElsewhereSettingKeys(recipe)
   const resolvedProfileSettings = selected ? profileSettingsForHeight(selected, selection.outputHeight ?? 2160) : []
   const profileSettings = resolvedProfileSettings.filter((setting) =>
@@ -144,6 +150,7 @@ export function planDeployment(
     ...(selectedFrameGeneration ? effectiveFrameGenerationSettings(selectedFrameGeneration, hdrActive) : [])
       .filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...mfgUnlockSettings(unlock, mfgUnlocked).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...settingChoiceSettings(recipe.settingChoices, settingChoices).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...screenSettings.filter((s) => includedConfig(s.file)),
   ]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))
@@ -208,6 +215,9 @@ export function planDeployment(
     ...(recipe.performanceProfiles ? { performanceProfiles: recipe.performanceProfiles.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.performanceProfilesV2 ? { performanceProfilesV2: recipe.performanceProfilesV2.map((p) => ({ ...p, settings: p.settings.filter((s) => includedConfig(s.file)) })) } : {}),
     ...(recipe.screenDerivedSettings ? { screenDerivedSettings: recipe.screenDerivedSettings.filter((s) => includedConfig(s.file)) } : {}),
+    ...(recipe.settingChoices ? { settingChoices: recipe.settingChoices.map((choice) => ({
+      ...choice, options: choice.options.map((option) => ({ ...option, settings: option.settings.filter((setting) => includedConfig(setting.file)) })),
+    })) } : {}),
     ...(recipe.hdrOptions ? { hdrOptions: recipe.hdrOptions.map((option) => ({ ...option, settings: option.settings.filter((setting) => includedConfig(setting.file)) })) } : {}),
     // Keep every GPU variant in the deployment record. A later Scan can then offer the new card's
     // choices and the deliberate GPU refresh can apply its settings without losing same-id variants.
@@ -234,7 +244,7 @@ export function planDeployment(
   const expectedFiles = [...touched].filter(([key]) => present.has(key)).map(([key, path]) => ({ path, sha256: present.get(key)! }))
   return {
     contentVersion: content.id, tier: tier.id, includeReShade, profile: selected?.id ?? null,
-    frameGenerationMode, neuralRendering, mfgUnlocked, hdrMode: selectedHdr?.id ?? null, steps, files, filesToDownload,
+    frameGenerationMode, neuralRendering, mfgUnlocked, hdrMode: selectedHdr?.id ?? null, settingChoices, steps, files, filesToDownload,
     filesToBackup: [...backups.values()], unclaimedPaths: [...unclaimed.values()], existingSetups, takenOver, expectedFiles, recipe: filteredRecipe,
     counts: { added: expectedFiles.filter((f) => !initial.has(fileKey(f.path))).length, backedUp: backups.size, downloads: filesToDownload.length },
     downloadSize: filesToDownload.reduce((n, f) => n + f.size, 0),

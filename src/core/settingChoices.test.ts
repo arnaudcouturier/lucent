@@ -94,9 +94,9 @@ describe('what a choice shows', () => {
 
   it('reports a block for one option against the choices above it', () => {
     const c = preset.options.find((o) => o.id === 'a')!
-    expect(optionBlock(preset, c, { 'ui-mode': 'recomposition' }, rtx4090)).toMatch(/Preset A and C/)
-    expect(optionBlock(preset, c, { 'ui-mode': 'off' }, rtx4090)).toBeNull()
-    expect(optionBlock(preset, c, {}, rtx4090)).toBeNull()
+    expect(optionBlock(c, { 'ui-mode': 'recomposition' }, rtx4090)).toMatch(/Preset A and C/)
+    expect(optionBlock(c, { 'ui-mode': 'off' }, rtx4090)).toBeNull()
+    expect(optionBlock(c, {}, rtx4090)).toBeNull()
   })
 })
 

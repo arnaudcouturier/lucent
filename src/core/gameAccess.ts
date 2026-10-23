@@ -1,6 +1,7 @@
 import { PlatformError, type EnvFolder, type Platform } from './platform'
 import { joinPath, normalizePath } from './paths'
 import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, NR_PASSES, NR_PRESET_IDS, NR_SCALES, PROFILE_IDS, type ContentVersion, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId } from '../shared/manifest'
+import { validSettingPicks, type SettingPicks } from './settingChoices'
 import type { State } from './core'
 import type { DeploymentRecord } from './deployment'
 
@@ -55,8 +56,8 @@ export async function guardGameWrites(platform: Platform, gameFolder: string): P
 }
 
 export type GameWriteRequest = { gameFolder: string } & (
-  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[] }
-  | { kind: 'reset'; contentVersion: string; tier: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; reviewedPaths: string[]; backupPath: string }
+  | { kind: 'deploy'; contentVersion: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; settingChoices?: SettingPicks; reviewedPaths: string[] }
+  | { kind: 'reset'; contentVersion: string; tier: string; includeReShade: boolean; profile: ProfileId | null; frameGenerationMode: FrameGenerationId | null; hdrMode: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; settingChoices?: SettingPicks; reviewedPaths: string[]; backupPath: string }
   | { kind: 'uninstall'; restoreOriginals?: boolean }
   | { kind: 'repair' | 'recover' }
   | { kind: 'update'; contentVersion: string }
@@ -109,6 +110,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
       || (request.frameGenerationMode !== null && !(FRAME_GENERATION_IDS as readonly string[]).includes(request.frameGenerationMode as string))
       || (request.hdrMode !== null && !(HDR_MODES as readonly string[]).includes(request.hdrMode as string))
       || (request.mfgUnlocked !== undefined && typeof request.mfgUnlocked !== 'boolean')
+      || (request.settingChoices !== undefined && !validSettingPicks(request.settingChoices))
       || (request.neuralRendering !== undefined && request.neuralRendering !== null && !validNeuralRendering(request.neuralRendering))))
     || (request.kind === 'uninstall' && request.restoreOriginals !== undefined && typeof request.restoreOriginals !== 'boolean')
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')) throw new Error('The administrator resume request is invalid.')

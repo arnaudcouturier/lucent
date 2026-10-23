@@ -15,6 +15,8 @@ import { readSettings, writeSettings } from './settings'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { type ContentVersion, type FrameGenerationId, type FrameGenerationOption, type HdrMode, type HdrOption, type MfgUnlock, type NeuralRenderingChoice, type NeuralRenderingControls, type PerformanceProfile, type ProfileId, type Tier, type TierRecipe } from '../shared/manifest'
+import type { SettingChoice } from '../shared/manifest'
+import { shownSettingChoices, type SettingPicks } from './settingChoices'
 import { frameGenerationOptionsForUnlock, mfgUnlockFor, normalizeNeuralRendering } from './neuralRendering'
 import { defaultProfileForRecipe, profilesForRecipe, recommendedProfile, selectProfileForUpdate } from './profileValues'
 import { bugReportUrl, collectDiagnostics } from './diagnostics'
@@ -140,6 +142,10 @@ export interface State {
   hdrOptions: HdrOption[]
   /** The Profile step's pick, or the deployed one; null when the tier has no HDR. */
   hdrMode: HdrMode | null
+  /** The tier's setting choices (the DLSS-G preset, the UI mode); the Profile step shows those the card and frame generation mode allow. Empty once there is a deployment. */
+  settingChoiceGroups: SettingChoice[]
+  /** The player's picks among them, option ids by choice id; one that is blocked or unknown is written as the choice's default. */
+  settingChoices: SettingPicks
   busy: boolean
   error: string | null
   notice: string | null
@@ -192,6 +198,8 @@ export interface Core {
   selectFrameGenerationMode(mode: FrameGenerationId): void
   /** The Profile step's HDR mode, if XIV's monitor offers it. Nothing changes it after the step. */
   selectHdrMode(mode: HdrMode): void
+  /** One of the Profile step's setting choices, when it is shown and the option isn't blocked. Nothing changes it after the step. */
+  selectSettingChoice(choiceId: string, optionId: string): void
   /** Changes some of the Neural Rendering picks; picks the card can't use are dropped. */
   setNeuralRendering(patch: Partial<NeuralRenderingChoice>): void
   /** The experimental multi-frame unlock: without it, 3× to 6× and Dynamic are not offered. */
@@ -267,11 +275,12 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1
 const OPEN_FOLDER_FAILED = 'Lucent couldn’t open that folder.'
 
 type FirstRunChoices = Pick<State, 'setupMode' | 'resetBackupPath' | 'includeReShade' | 'addToStartMenu' | 'profiles' | 'selectedProfile' | 'recommendedProfile'
-  | 'frameGenerationOptions' | 'frameGenerationMode' | 'neuralRenderingControls' | 'neuralRendering' | 'mfgUnlock' | 'mfgUnlocked' | 'hdrOptions' | 'hdrMode'>
+  | 'frameGenerationOptions' | 'frameGenerationMode' | 'neuralRenderingControls' | 'neuralRendering' | 'mfgUnlock' | 'mfgUnlocked' | 'hdrOptions' | 'hdrMode' | 'settingChoiceGroups' | 'settingChoices'>
 /** The first-install choices before the player has made any: a game folder without a deployment starts its first-run flow from these. */
 const firstRunChoices = (): FirstRunChoices => ({
   setupMode: 'install', resetBackupPath: null, includeReShade: true, addToStartMenu: true, profiles: [], selectedProfile: null, recommendedProfile: null,
   frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null,
+  settingChoiceGroups: [], settingChoices: {},
 })
 
 /** What the Profile step offers: the performance profile, frame generation and HDR where the card and monitor allow them, then ReShade and the Start menu where each is still a choice. */
@@ -377,6 +386,7 @@ export function createCore(platform: Platform): Core {
   const recordedChoices = (record: DeploymentRecord): Partial<State> => ({
     profiles: profilesForRecipe(record.recipe), selectedProfile: record.profile ?? null, recommendedProfile: null,
     frameGenerationOptions: [], frameGenerationMode: record.frameGenerationMode ?? null, hdrOptions: [], hdrMode: record.hdrMode ?? null,
+    settingChoiceGroups: [], settingChoices: record.settingChoices ?? {},
     neuralRenderingControls: record.recipe.neuralRenderingControls ?? null, neuralRendering: record.neuralRendering ?? null, mfgUnlock: null, mfgUnlocked: record.mfgUnlocked === true,
     includeReShade: record.includeReShade,
   })
@@ -390,7 +400,7 @@ export function createCore(platform: Platform): Core {
     if (deployed) return storedSelection(deployed, content.tiers[tier.id], gpuName, state.screen)
     const frameGenerationOptions = frameGenerationOptionsForGpu(content.tiers[tier.id]?.frameGenerationOptions ?? [], gpuName)
     return { gpuName, outputHeight: state.screen?.height, frameGenerationOptions, frameGenerationMode: state.frameGenerationMode,
-      neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen }
+      neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, settingChoices: state.settingChoices, hdrOn: state.screen?.hdrOn ?? false, screen: state.screen }
   }
   const elapsed = (since: number) => `${Math.max(1, Math.round((performance.now() - since) / 1000))} s`
   const access = gameWriteAccess(platform, (gameRunning) => set({ gameRunning }))
@@ -785,6 +795,7 @@ export function createCore(platform: Platform): Core {
       mfgUnlock: unlock, mfgUnlocked,
       // A request resumed after UAC keeps its pick whatever this process reads of XIV's screen.
       hdrOptions, hdrMode: resumeHdrMode && recipe.hdrOptions?.some((option) => option.id === resumeHdrMode) ? resumeHdrMode : hdrChoice(recipe, hdrOptions, state.hdrMode),
+      settingChoiceGroups: recipe.settingChoices ?? [],
     })
   }
   /** The recipe the Profile step is showing, so the unlock switch can offer its modes again. */
@@ -853,7 +864,7 @@ export function createCore(platform: Platform): Core {
       if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
       if (!await prepareWrite({ kind: 'reset', gameFolder: deployment.gameFolder, contentVersion: target.content.id, tier: target.tier.id,
         includeReShade: state.includeReShade, profile: state.selectedProfile, frameGenerationMode: state.frameGenerationMode,
-        neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, reviewedPaths: [...reviewedPaths], backupPath: state.resetBackupPath ?? '' })) return
+        neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, settingChoices: state.settingChoices, reviewedPaths: [...reviewedPaths], backupPath: state.resetBackupPath ?? '' })) return
       const since = performance.now()
       const record = await updateDeployment(platform, deployment.gameFolder, target.content, target.tier, manifest.source,
         loggedProgress(log, pacedProgress((progress) => set({ deploymentProgress: progress, activity: { kind: 'deploying', progress: progress.progress } }))),
@@ -1111,7 +1122,7 @@ export function createCore(platform: Platform): Core {
       pendingSetup = null
       setupReturnActivity = null
       notedHealth = null
-      set({ busy: true, error: null, plan: null, setupMode: 'install', resetBackupPath: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
+      set({ busy: true, error: null, plan: null, setupMode: 'install', resetBackupPath: null, existingSetups: [], folderChanges: null, deployment: null, keybinds: null, versions: [], profiles: [], selectedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, settingChoiceGroups: [], settingChoices: {}, activity: { kind: 'scan' }, gameFolder: { status: 'scanning' }, rejectedFolder: null, graphics: { status: 'scanning' }, manifest: { status: 'loading' }, xivLauncher: { status: 'scanning' } })
       let resume: GameWriteRequest | null = null
       try {
         const context = await takeResume()
@@ -1160,7 +1171,7 @@ export function createCore(platform: Platform): Core {
             resumeHdrMode = resume.hdrMode
             prepareProfiles(contentForTier())
             // The player's own process already self-installed before asking for admin access.
-            set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, includeReShade: resume.includeReShade, addToStartMenu: false, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true })
+            set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, includeReShade: resume.includeReShade, addToStartMenu: false, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, settingChoices: resume.settingChoices ?? {} })
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'reset') {
@@ -1170,9 +1181,9 @@ export function createCore(platform: Platform): Core {
             if (!tier || !content) throw new Error('The content for the administrator request is no longer published.')
             pendingSetup = { mode: resume.tier === state.deployment.tier ? 'reset' : 'tier', content, tier, graphics: state.graphics.adapter }
             resumeHdrMode = resume.hdrMode
-            set({ setupMode: pendingSetup.mode, addToStartMenu: false, includeReShade: resume.includeReShade, selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, resetBackupPath: resume.backupPath })
+            set({ setupMode: pendingSetup.mode, addToStartMenu: false, includeReShade: resume.includeReShade, selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, settingChoices: resume.settingChoices ?? {}, resetBackupPath: resume.backupPath })
             prepareProfiles(content, tier)
-            set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, activity: { kind: 'profile' } })
+            set({ selectedProfile: resume.profile, frameGenerationMode: resume.frameGenerationMode, hdrMode: resume.hdrMode, ...(resume.neuralRendering ? { neuralRendering: resume.neuralRendering } : {}), mfgUnlocked: resume.mfgUnlocked === true, settingChoices: resume.settingChoices ?? {}, activity: { kind: 'profile' } })
             resumeReviewedPaths = resume.reviewedPaths
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
@@ -1298,6 +1309,13 @@ export function createCore(platform: Platform): Core {
     selectHdrMode(mode) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'profile' || !state.hdrOptions.some((o) => o.id === mode)) return
       set({ hdrMode: mode, error: null })
+    },
+    selectSettingChoice(choiceId, optionId) {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'profile') return
+      const shown = shownSettingChoices(state.settingChoiceGroups, state.settingChoices, { gpuName: choiceGpuName(), frameGenerationMode: state.frameGenerationMode, hdrMode: state.hdrMode })
+      const option = shown.find((choice) => choice.choice.id === choiceId)?.options.find((candidate) => candidate.option.id === optionId)
+      if (!option || option.blocked) return
+      set({ settingChoices: { ...state.settingChoices, [choiceId]: optionId }, error: null })
     },
     async setEnabled(enabled) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
@@ -1509,7 +1527,7 @@ export function createCore(platform: Platform): Core {
         const selection = planSelection(content, state.graphics.tier)
         // As the player, before any admin prompt, so the shortcut and the entry are theirs.
         if (state.addToStartMenu && !state.selfInstalled) await addToStartMenu()
-        if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile, frameGenerationMode: state.frameGenerationMode, neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, reviewedPaths: acknowledged })) {
+        if (!await prepareWrite({ kind: 'deploy', gameFolder: state.gameFolder.path, contentVersion: content.id, includeReShade: state.includeReShade, profile: state.selectedProfile, frameGenerationMode: state.frameGenerationMode, neuralRendering: state.neuralRendering, mfgUnlocked: state.mfgUnlocked, hdrMode: state.hdrMode, settingChoices: state.settingChoices, reviewedPaths: acknowledged })) {
           set({ activity: { kind: 'review' } }); return
         }
         const since = performance.now()

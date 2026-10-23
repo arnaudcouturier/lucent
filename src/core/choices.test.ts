@@ -85,6 +85,13 @@ describe('stored first-install choices', () => {
       .toMatchObject({ frameGenerationMode: '2x', hdrMode: 'off' })
   })
 
+  it('plans from the stored setting choices, and from none for a deployment that predates them', () => {
+    const screen = { deviceName: 'DISPLAY1', refreshHz: 240, width: 3840, height: 2160, hdrSupported: true, hdrOn: true, peakNits: 1000, frameCap: 224 }
+    const picks = { 'ui-mode': 'off', 'dlssg-preset': 'c' }
+    expect(storedSelection({ frameGenerationMode: '2x', hdrMode: 'off', settingChoices: picks }, recipe, 'NVIDIA GeForce RTX 4090', screen)).toMatchObject({ settingChoices: picks })
+    expect(storedSelection({ frameGenerationMode: '2x', hdrMode: 'off' }, recipe, 'NVIDIA GeForce RTX 4090', screen).settingChoices).toBeNull()
+  })
+
   it('keeps a stored Off selection Off when newer content starts offering frame generation', () => {
     const screen = { deviceName: 'DISPLAY1', refreshHz: 240, width: 3840, height: 2160, hdrSupported: true, hdrOn: true, peakNits: 1000, frameCap: 224 }
     expect(storedSelection({ frameGenerationMode: null, hdrMode: null }, recipe, 'NVIDIA GeForce RTX 4090', screen))

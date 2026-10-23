@@ -6,6 +6,13 @@ import type { FrameGenerationId, HdrMode, IniSetting, SettingChoice, SettingChoi
 /** Option ids by choice id. */
 export type SettingPicks = Record<string, string>
 
+/** Whether a value read back from a record or an administrator request is a plain map of choice ids to option ids. */
+export function validSettingPicks(value: unknown): value is SettingPicks {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const entries = Object.entries(value)
+  return entries.length <= 16 && entries.every(([choice, option]) => /^[a-z][a-z0-9-]*$/.test(choice) && typeof option === 'string' && /^[a-z][a-z0-9-]*$/.test(option))
+}
+
 export interface ChoiceContext {
   gpuName: string
   frameGenerationMode: FrameGenerationId | null
@@ -16,7 +23,7 @@ const offeredTo = (choice: SettingChoice, gpuName: string) =>
   !choice.gpuNamePatterns || choice.gpuNamePatterns.some((pattern) => new RegExp(pattern, 'i').test(gpuName))
 
 /** Why the option can't be picked now, given what the choices above it hold; null when it can. */
-export function optionBlock(choice: SettingChoice, option: SettingChoiceOption, above: SettingPicks, context: ChoiceContext): string | null {
+export function optionBlock(option: SettingChoiceOption, above: SettingPicks, context: ChoiceContext): string | null {
   for (const block of option.blockedWhen ?? []) {
     if (block.hdr && context.hdrMode !== null && context.hdrMode !== 'off') return block.reason
     if (block.choice && block.choice.options.includes(above[block.choice.id])) return block.reason
@@ -38,7 +45,7 @@ export function resolveSettingChoices(choices: SettingChoice[] | undefined, pick
     }
     const free = (id: string) => {
       const option = choice.options.find((o) => o.id === id)
-      return !!option && optionBlock(choice, option, resolved, context) === null
+      return !!option && optionBlock(option, resolved, context) === null
     }
     const pick = picks?.[choice.id]
     const found = [pick, choice.defaultOption, ...choice.options.map((o) => o.id)].find((id): id is string => id !== undefined && free(id))
@@ -66,7 +73,7 @@ export function shownSettingChoices(choices: SettingChoice[] | undefined, picks:
     if (!offeredTo(choice, context.gpuName) || (choice.needsFrameGeneration && !frameGenerationOn)) return []
     return [{
       choice, selected: resolved[choice.id],
-      options: choice.options.map((option) => ({ option, blocked: optionBlock(choice, option, resolved, context) })),
+      options: choice.options.map((option) => ({ option, blocked: optionBlock(option, resolved, context) })),
     }]
   })
 }

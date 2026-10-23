@@ -2,6 +2,7 @@
 import type { FrameGenerationId, FrameGenerationOption, HdrMode, HdrOption, NeuralRenderingChoice, TierRecipe } from '../shared/manifest'
 import { defaultFrameGenerationMode, frameGenerationOptionsForGpu } from './frameGeneration'
 import type { PlanSelection } from './planner'
+import type { SettingPicks } from './settingChoices'
 import { resolvedPeakNits, type ResolvedScreen } from './screen'
 
 export interface ChoiceOptions {
@@ -42,7 +43,7 @@ export function storedHdrChoice(recipe: TierRecipe, stored: HdrMode | null): Hdr
  * What a baseline is written from when the first-install choices were made earlier (an update's replace rule, Repair of a
  * missing config): the stored frame generation and HDR modes where the content still offers them, and XIV's screen as it is now.
  */
-export function storedSelection(stored: { frameGenerationMode?: FrameGenerationId | null; hdrMode?: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean }, recipe: TierRecipe, gpuName: string, screen: ResolvedScreen | null): PlanSelection {
+export function storedSelection(stored: { frameGenerationMode?: FrameGenerationId | null; hdrMode?: HdrMode | null; neuralRendering?: NeuralRenderingChoice | null; mfgUnlocked?: boolean; settingChoices?: SettingPicks }, recipe: TierRecipe, gpuName: string, screen: ResolvedScreen | null): PlanSelection {
   const frameGenerationOptions = frameGenerationOptionsForGpu(recipe.frameGenerationOptions ?? [], gpuName)
   // A null value means the player chose no frame generation (the 0.1.1 migration
   // also records this explicitly). It must not be treated like the card's current
@@ -54,6 +55,7 @@ export function storedSelection(stored: { frameGenerationMode?: FrameGenerationI
     gpuName, outputHeight: screen?.height, frameGenerationOptions,
     frameGenerationMode, neuralRendering: stored.neuralRendering ?? null, mfgUnlocked: stored.mfgUnlocked === true,
     hdrMode: storedHdrChoice(recipe, stored.hdrMode ?? null), hdrOn: screen?.hdrOn ?? false, screen,
+    settingChoices: stored.settingChoices ?? null,
   }
 }
 

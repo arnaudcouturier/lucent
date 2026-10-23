@@ -29,6 +29,8 @@ export function profileOwnedElsewhereSettingKeys(recipe: TierRecipe): Set<string
     ...(recipe.screenDerivedSettings ?? []).map(({ file, section, key }) => `${file.replace(/\\/g, '/').toLowerCase()}|${section.toLowerCase()}|${key.toLowerCase()}`),
     ...(recipe.hdrOptions ?? []).flatMap((option) => option.settings.map(({ file, section, key }) =>
       [file.replace(/\\/g, '/').toLowerCase(), section.toLowerCase(), key.toLowerCase()].join('|'))),
+    ...(recipe.settingChoices ?? []).flatMap((choice) => choice.options.flatMap((option) => option.settings.map(({ file, section, key }) =>
+      [file.replace(/\\/g, '/').toLowerCase(), section.toLowerCase(), key.toLowerCase()].join('|')))),
   ])
 }
 
