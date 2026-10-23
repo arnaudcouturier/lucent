@@ -39,18 +39,25 @@ describe('the setting choices of the content candidates', () => {
   })
 
   it.each([
-    ['default', 'false', '0'], ['j', 'true', '10'], ['k', 'true', '11'], ['l', 'true', '12'], ['m', 'true', '13'],
+    ['default', 'false', '0'], ['j', 'true', '10'], ['k', 'true', '11'], ['l', 'true', '12'], ['m', 'true', '13'], ['e', 'true', '5'], ['f', 'true', '6'],
   ])('writes the DLSS model %s as Override=%s and ForAll=%s', (option, override, preset) => {
     const resolved = resolveSettingChoices(latest.settingChoices, { 'dlss-model': option }, ctx('NVIDIA GeForce RTX 3080'))
     expect(resolved['dlss-model']).toBe(option)
     expect(keys(latest.settingChoices, resolved)).toMatchObject({ 'DLSS.RenderPresetOverride': override, 'DLSS.RenderPresetForAll': preset })
   })
 
-  it('offers only the presets NVIDIA documents for this DLSS generation', () => {
+  it('offers the presets NVIDIA leaves usable, then the deprecated E and F as Experimental, and nothing NVIDIA says is gone', () => {
     const model = latest.settingChoices.find((choice) => choice.id === 'dlss-model')!
-    expect(model.options.map((option) => option.id)).toEqual(['default', 'j', 'k', 'l', 'm'])
-    // NVIDIA's Streamline 2.14.16 header: A to D removed, E and F deprecated, G to I, N and O revert to the default.
-    for (const gone of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'n', 'o']) expect(model.options.map((option) => option.id)).not.toContain(gone)
+    expect(model.options.map((option) => option.id)).toEqual(['default', 'j', 'k', 'l', 'm', 'e', 'f'])
+    expect(model.options.filter((option) => option.experimental).map((option) => option.id)).toEqual(['e', 'f'])
+    // NVIDIA's Streamline 2.14.16 header: A to D removed, G to I, N and O revert to the default.
+    for (const gone of ['a', 'b', 'c', 'd', 'g', 'h', 'i', 'n', 'o']) expect(model.options.map((option) => option.id)).not.toContain(gone)
+  })
+
+  it('keeps Preset M the default, with E and F only ever picked', () => {
+    const model = latest.settingChoices.find((choice) => choice.id === 'dlss-model')!
+    expect(model.defaultOption).toBe('m')
+    expect(resolveSettingChoices(latest.settingChoices, undefined, ctx('NVIDIA GeForce RTX 4090'))['dlss-model']).toBe('m')
   })
 
   it('shows the DLSS model to every NVIDIA card, with frame generation on or off, and the other two only where DLSS frame generation runs', () => {

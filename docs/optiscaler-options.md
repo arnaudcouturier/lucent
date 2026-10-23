@@ -52,7 +52,7 @@ The DLSS super resolution model NVIDIA's DLL runs, as a letter. The key takes 0 
 | Letter | Value | NVIDIA's note | Offered |
 |---|---|---|---|
 | A to D | 1 to 4 | No longer available; use J or K | No |
-| E, F | 5, 6 | Deprecated | No |
+| E, F | 5, 6 | Deprecated (legacy presets) | Yes, Experimental, from content 2026.10.26 |
 | G, H, I | 7 to 9 | Revert to the default, not recommended | No |
 | J | 10 | Similar to K, slightly less ghosting at the cost of extra flickering; K is recommended over J | Yes |
 | K | 11 | Default for DLAA, Quality and Balanced; its best image quality at a higher performance cost | Yes |
@@ -60,7 +60,7 @@ The DLSS super resolution model NVIDIA's DLL runs, as a letter. The key takes 0 
 | M | 13 | Default for Performance; similar gains to L, closer in speed to J and K | Yes |
 | N, O | 14, 15 | Revert to the default, not recommended | No |
 
-Lucent offers Default (`RenderPresetOverride = false`, `RenderPresetForAll = 0`) and J to M (`true` and 10 to 13), as one choice for every quality mode. It does not offer a letter NVIDIA says is gone or falls back to the default, since that button would do nothing; E and F are the open question, because "deprecated" does not say whether 310.9.16 still honours them. The default stays M, what content has shipped for every mode and what the maintainer plays. Only M has been seen working: his `OptiScaler.log` shows `Using App hint Preset M` for all six quality modes. J, K and L are documented by NVIDIA and not yet seen here, and the same line names the preset in use. Nobody has measured what any of them looks like or costs in XIV, so the descriptions repeat NVIDIA's and add nothing. The card is called "DLSS model" because the Neural Rendering card already has a "DLSS preset" heading that means the quality mode (DLAA to Ultra Performance).
+Lucent offers Default (`RenderPresetOverride = false`, `RenderPresetForAll = 0`) and J to M (`true` and 10 to 13), as one choice for every quality mode. It does not offer a letter NVIDIA says is gone or falls back to the default, since that button would do nothing. E and F (`true`, 5 and 6) are offered last and tagged Experimental, because "deprecated" does not say whether 310.9.16 still honours them; the player opts in, and a `Using App hint Preset ...` line in `OptiScaler.log` that still names the default means the DLL ignored the letter. The default stays M, what content has shipped for every mode and what the maintainer plays. Only M has been seen working: his `OptiScaler.log` shows `Using App hint Preset M` for all six quality modes. J, K and L are documented by NVIDIA and not yet seen here, and the same line names the preset in use. Nobody has measured what any of them looks like or costs in XIV, so the descriptions repeat NVIDIA's and add nothing. The card is called "DLSS model" because the Neural Rendering card already has a "DLSS preset" heading that means the quality mode (DLAA to Ultra Performance).
 
 ## Defaults
 
