@@ -6,7 +6,7 @@ import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
 import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { disabledName, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
+import { disabledName, fileKey, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -173,6 +173,11 @@ export interface Core {
   chooseGameFolder(): Promise<void>
   /** Find it: scans again for a missing game folder; if it's still gone, Scan offers the folder picker. */
   findGameFolder(): Promise<void>
+  /**
+   * Settings' Change…: remembers another game folder the player picks, such as a second copy of the game, then scans again.
+   * A folder with a deployment opens on it, one without starts the first-run flow. Writes to neither game folder.
+   */
+  changeGameFolder(): Promise<void>
   continueSetup(): Promise<void>
   /** Starts Reset setup… from Settings, preserving the deployment while choices are reviewed. */
   resetSetup(): Promise<void>
@@ -250,6 +255,14 @@ export interface Core {
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
 
+type FirstRunChoices = Pick<State, 'setupMode' | 'resetBackupPath' | 'includeReShade' | 'addToStartMenu' | 'profiles' | 'selectedProfile' | 'recommendedProfile'
+  | 'frameGenerationOptions' | 'frameGenerationMode' | 'neuralRenderingControls' | 'neuralRendering' | 'mfgUnlock' | 'mfgUnlocked' | 'hdrOptions' | 'hdrMode'>
+/** The first-install choices before the player has made any: a game folder without a deployment starts its first-run flow from these. */
+const firstRunChoices = (): FirstRunChoices => ({
+  setupMode: 'install', resetBackupPath: null, includeReShade: true, addToStartMenu: true, profiles: [], selectedProfile: null, recommendedProfile: null,
+  frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null,
+})
+
 /** What the Profile step offers: the performance profile, frame generation and HDR where the card and monitor allow them, then ReShade and the Start menu where each is still a choice. */
 export function setupChoices(state: State) {
   const tier = state.graphics.status === 'found' ? state.graphics.tier : null
@@ -317,7 +330,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, includeReShade: true, addToStartMenu: true, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, profiles: [], selectedProfile: null, recommendedProfile: null, frameGenerationOptions: [], frameGenerationMode: null, neuralRenderingControls: null, neuralRendering: null, mfgUnlock: null, mfgUnlocked: false, hdrOptions: [], hdrMode: null, busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, setupMode: 'install', resetBackupPath: null, starterSet: { status: 'idle' },
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' },
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -883,6 +896,17 @@ export function createCore(platform: Platform): Core {
       return { path, withRestore: folders.size > 0 }
     } catch { return { path, withRestore: true } }
   }
+  /**
+   * XIVLauncher's add-on is one pair of entries for every copy, repairing whichever deployment its game path leads to, so
+   * it needs administrator access when any deployed game folder does. A folder whose game is gone has nothing to repair.
+   */
+  const deploymentNeedsAdmin = async () => {
+    for await (const record of deploymentRecords(platform)) {
+      if (record.status !== 'complete' || !await isGameFolder(platform, record.gameFolder)) continue
+      if (!await platform.isDirectoryWritable(joinPath(record.gameFolder, 'game'), Object.keys(record.files))) return true
+    }
+    return false
+  }
   const core: Core = {
     getState: () => state,
     subscribe(listener) {
@@ -980,9 +1004,8 @@ export function createCore(platform: Platform): Core {
       if (state.busy || xivLauncher.status !== 'found' || !deployment) return
       set({ busy: true, error: null, notice: null })
       try {
-        // The entries run elevated when the game folder needs it; Lucent only ever elevates for that reason.
-        const runAsAdmin = enabled && (await platform.isElevated()
-          || !await platform.isDirectoryWritable(joinPath(deployment.gameFolder, 'game'), Object.keys(deployment.files)))
+        // The entries run elevated when a game folder needs it; Lucent only ever elevates for that reason.
+        const runAsAdmin = enabled && (await platform.isElevated() || await deploymentNeedsAdmin())
         // A portable copy may be deleted once the installed one exists, so the entries start the installed one.
         const exePath = state.selfInstalled ? await installedExe(platform) : await platform.exePath()
         await setAutoRepair(platform, xivLauncher.configPath, { enabled, exePath, runAsAdmin })
@@ -1136,6 +1159,38 @@ export function createCore(platform: Platform): Core {
         if (folder) await restoreDeployment(folder)
       } catch (error) { set({ error: state.recoveryRequired ? state.error : message(error) }) }
       finally { set({ busy: false }) }
+    },
+    async changeGameFolder() {
+      if (state.busy || state.recoveryRequired) return
+      const current = state.gameFolder.status === 'found' ? state.gameFolder.path : null
+      // The setup being left stays in its folder, so the notice can point the player back to it.
+      const left = state.deployment?.status === 'complete' ? state.deployment.gameFolder : null
+      let chosen: GameFolder | null = null
+      set({ busy: true })
+      try {
+        const picked = await platform.pickFolder({ title: 'Choose the game folder' })
+        if (picked === null) return
+        const folder = await checkPickedFolder(platform, picked)
+        if (!folder) {
+          log.write('warning', `Not a game folder: ${picked}`)
+          set({ rejectedFolder: picked })
+          return
+        }
+        if (current && fileKey(normalizePath(folder.path)) === fileKey(normalizePath(current))) return
+        // Scan reads the folder back from the settings, so an unsaved choice changes nothing. The deployments stay where they are.
+        await writeSettings(platform, { ...await readSettings(platform), gameFolder: folder.path })
+        log.write('info', `Game folder changed${current ? ` from ${current}` : ''} to ${folder.path}`)
+        // Scan keeps notices, and what was said about the last folder ("Everything matches") isn't true of this one. Nor are the
+        // last folder's first-install choices: a folder without a deployment starts afresh, and Scan loads a deployed one's from its record.
+        set({ notice: null, ...firstRunChoices() })
+        chosen = folder
+      } catch (error) { set({ error: `Couldn’t change the game folder. ${message(error)}` }) }
+      finally { set({ busy: false }) }
+      if (!chosen) return
+      await core.scan()
+      // Only once Scan is on the chosen folder, and has nothing of its own to say (a recovery, an error).
+      const landed = state.gameFolder.status === 'found' && fileKey(normalizePath(state.gameFolder.path)) === fileKey(normalizePath(chosen.path))
+      if (left && landed && !state.error && !state.notice) set({ notice: `Lucent is now looking at ${chosen.path}. Your setup in ${left} stays in place; choose that folder again to come back to it.` })
     },
     async continueSetup() {
       if (state.busy || state.deployment || state.recoveryRequired || state.activity.kind !== 'scan') return
@@ -1614,7 +1669,7 @@ export function createCore(platform: Platform): Core {
   }
   return {
     ...core,
-    scan: coordinated(core.scan, false), chooseGameFolder: coordinated(core.chooseGameFolder), findGameFolder: coordinated(core.findGameFolder, false),
+    scan: coordinated(core.scan, false), chooseGameFolder: coordinated(core.chooseGameFolder), findGameFolder: coordinated(core.findGameFolder, false), changeGameFolder: coordinated(core.changeGameFolder, false),
     continueSetup: coordinated(core.continueSetup), resetSetup: coordinated(core.resetSetup), review: coordinated(core.review, false), deploy: coordinated(core.deploy, false),
     selectProfile: coordinated(core.selectProfile, false), setEnabled: coordinated(core.setEnabled), repair: coordinated(core.repair), checkFiles: coordinated(core.checkFiles),
     update: coordinated(core.update), applyVersion: coordinated(core.applyVersion), switchTier: coordinated(core.switchTier),

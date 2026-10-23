@@ -119,6 +119,15 @@ describe('Settings explains why Reset setup and Uninstall are disabled', () => {
   })
 })
 
+it('Settings offers Change… beside Scan, and says so when the picked folder doesn’t hold the game', async () => {
+  const { platform } = await deployedOnRtx()
+  const core = await reopen(platform)
+  expect(visibleText(createElement(SettingsScreen), core)).toContain(`${ROOT} XIVLauncher · game 2026.09.30.0000.0000 Change… Scan`)
+  platform.answerPicker('F:\\Downloads')
+  await core.changeGameFolder()
+  expect(visibleText(createElement(SettingsScreen), core)).toContain('F:\\Downloads doesn’t hold the game. Pick the folder that contains game\\ffxiv_dx11.exe')
+})
+
 describe('the setup rail while Mods is open', () => {
   const railMarkup = async (section: Section) => {
     const core = createCore(createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))))

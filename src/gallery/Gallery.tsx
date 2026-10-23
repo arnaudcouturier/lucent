@@ -525,6 +525,22 @@ const STATES: GalleryState[] = [
     return core
   } },
   { key: 'reset-confirmation', label: 'Settings · Reset setup confirmation', setup: resetFlow('confirmation'), settingsPreview: true, openReset: true },
+  {
+    key: 'settings-folder-rejected',
+    label: 'Settings · Change… picked a folder without the game',
+    async setup() {
+      const platform = createFakePlatform(MACHINES.steam)
+      const core = createCore(platform)
+      await core.scan()
+      await core.review()
+      await core.deploy()
+      core.finish()
+      platform.answerPicker('C:\\Users\\Player\\Downloads')
+      await core.changeGameFolder()
+      return core
+    },
+    settingsPreview: true,
+  },
   { key: 'reset-profile', label: 'Profile · Reset setup prefilled', setup: resetFlow('profile') },
   { key: 'drift', label: 'Main · Drift after a game patch', setup: patched('drift') },
   { key: 'drift-detail', label: 'Main · Drift, missing and changed files behind Show files', setup: driftDetail },

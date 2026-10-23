@@ -1,7 +1,7 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, FolderOpen, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard, UpdateCard } from './DeploymentScreens'
@@ -14,6 +14,7 @@ import { returnFocus } from './focus'
 import { GAME_WAITING, whyGameActionsWait } from './gameWaiting'
 import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
+import { GAME_EXECUTABLE } from '../core/gameFolder'
 import { replacedOriginals } from '../core/deployment'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
@@ -184,8 +185,13 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
           <Path path={gameFolder.path} />
           <small>{SOURCE_LABEL[gameFolder.source]} · game {gameFolder.version ?? 'version unknown'}</small>
         </div>
+        <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.changeGameFolder()}><FolderOpen size={14} strokeWidth={1.75} />Change…</button>
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.checkFiles()}><ScanSearch size={14} strokeWidth={1.75} />Scan</button>
       </div>
+      {state.rejectedFolder && <p className="callout" role="alert">
+        <TriangleAlert size={14} strokeWidth={1.75} />
+        <span><Path path={state.rejectedFolder} /> doesn’t hold the game. Pick the folder that contains <span className="mono nowrap">{GAME_EXECUTABLE}</span>.</span>
+      </p>}
     </SettingsGroup>}
     {deployment && <SettingsGroup title="Danger zone" tone="danger">
       {waiting && <p className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</p>}
