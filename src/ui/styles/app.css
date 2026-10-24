@@ -982,6 +982,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 .settings-folder > div, .settings-danger > span { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .settings-folder .path { color: var(--ink); font-size: var(--text-label); }
 .settings-folder small, .settings-danger small { color: var(--ink-3); font-size: var(--text-label); }
+.settings-folder + .settings-folder { margin-top: var(--space-2); }
 .settings-danger strong { font-weight: 500; }
 .settings-group.is-danger > h2 { color: var(--danger); }
 .settings-reason { margin: 0 0 var(--space-3); color: var(--ink-2); font-size: var(--text-label); }

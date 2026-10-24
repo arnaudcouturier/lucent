@@ -86,7 +86,8 @@ for files the game itself generates. Use two real content versions for the updat
   Settings → Apps entry, then uninstall from Settings → Apps with "Restore the game folder" on.
   Confirm Lucent's data folder and installed exe are gone after it exits.
 - [ ] Before installing over an existing setup, open Scan's Show files and confirm the list and the
-  "Backed up to" folder. After installing, confirm that folder holds every listed file.
+  "Backed up to" folder. After installing, confirm that folder holds every listed file, and that Settings → Game folder → Backups
+  shows `Lucent\Backups` and its Open folder button opens it.
 - [ ] Uninstall and compare the game folder against the pre-deployment hash listing. Confirm the
   readable backup folder is gone.
 - [ ] Check the window chrome on Windows 11 and in a Windows 10 22H2 x64 VM: dragging,

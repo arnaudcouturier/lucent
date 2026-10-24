@@ -120,6 +120,8 @@ export interface State {
   appUninstalled: boolean
   /** Settings → Apps' uninstall window: the folder of readable copies the data folder takes with it, and whether any outlast "Restore the game folder". */
   appUninstallBackups: { path: string; withRestore: boolean } | null
+  /** Settings' Backups row: `Lucent\Backups` while it holds readable copies, otherwise null. Kept current by `refreshBackupsFolder`. */
+  backupsFolder: string | null
   /** The uninstall window waits while the installed Lucent is open in another window: its exe couldn't go, and it would write its data again. */
   lucentOpenElsewhere: boolean
   profiles: PerformanceProfile[]
@@ -265,6 +267,8 @@ export interface Core {
    * Any other path is ignored; a folder Windows won't open gives a notice. Works while Lucent is busy.
    */
   openFolder(path: string): Promise<void>
+  /** Re-reads whether Lucent's readable copies exist, for Settings' Backups row. Works while Lucent is busy. */
+  refreshBackupsFolder(): Promise<void>
   /** Reads what the Mods section shows. Waits for the manifest; the section calls it again when the manifest arrives. */
   refreshStarterSet(): Promise<void>
   /** Fetches the named Starter set plugins from their repos and places them in Dalamud. XIV and XIVLauncher must be closed. */
@@ -350,7 +354,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, backupsFolder: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -920,6 +924,11 @@ export function createCore(platform: Platform): Core {
       return { path, withRestore: folders.size > 0 }
     } catch { return { path, withRestore: true } }
   }
+  /** Lucent's `Backups` folder while it holds a copy: a put-back Uninstall removes its copies and then the empty folder, so a missing or bare one has nothing to show. */
+  const readableBackupsFolder = async () => {
+    const path = joinPath(await lucentFolder(platform), 'Backups')
+    try { return (await platform.listFolders(path)).length ? path : null } catch { return null }
+  }
   /** Review's free-space warning for a plan; a reading that fails warns of nothing, since the warning never holds Install up. */
   const shortOfSpace = async (plan: Plan, gameFolder: string, firstDeployment: boolean) => {
     try {
@@ -1010,6 +1019,10 @@ export function createCore(platform: Platform): Core {
         log.write('warning', `Couldn’t open ${path}: ${message(error)}`)
         set({ notice: OPEN_FOLDER_FAILED })
       }
+    },
+    async refreshBackupsFolder() {
+      const folder = await readableBackupsFolder()
+      if (folder !== state.backupsFolder) set({ backupsFolder: folder })
     },
     async refreshStarterSet() {
       const { manifest } = state

@@ -123,7 +123,7 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
 
 export function SettingsScreen({ openReset = false }: { openReset?: boolean } = {}) {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath, backupsFolder } = state
   const [confirming, setConfirming] = useState(false)
   const [resetConfirming, setResetConfirming] = useState(false)
   const [now, setNow] = useState(Date.now())
@@ -138,6 +138,8 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
   useEffect(() => {
     if (openReset && deployment && resetBackupPath) setResetConfirming(true)
   }, [openReset, deployment, resetBackupPath])
+  // An install, Reset or Uninstall adds or removes the copies; reading again once the work stops (busy) and the record changes picks that up.
+  useEffect(() => { void core.refreshBackupsFolder() }, [core, deployment, busy])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
@@ -188,6 +190,13 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.changeGameFolder()}><FolderPen size={14} strokeWidth={1.75} />Change…</button>
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.checkFiles()}><ScanSearch size={14} strokeWidth={1.75} />Scan</button>
       </div>
+      {backupsFolder && <div className="card settings-folder">
+        <div>
+          <strong>Backups</strong>
+          <FolderPath path={backupsFolder} />
+          <small>Copies of the files Lucent replaced, each under its own path. Uninstall doesn’t need them.</small>
+        </div>
+      </div>}
       {state.rejectedFolder && <p className="callout" role="alert">
         <TriangleAlert size={14} strokeWidth={1.75} />
         <span><Path path={state.rejectedFolder} /> doesn’t hold the game. Pick the folder that contains <span className="mono nowrap">{GAME_EXECUTABLE}</span>.</span>
