@@ -179,6 +179,22 @@ describe('keeping it', () => {
     expect(await platform.readText(INI)).toMatch(/FfxivUnknownBuildHooks=false/)
   })
 
+  it('writes it again when a new graphics card rewrites the baseline, which starts from the shipped ini', async () => {
+    const { platform, core, m } = await deployed()
+    await core.setUnknownBuildHooks(true)
+    const before = await platform.readText(INI)
+    m.gpus = graphicsCard('NVIDIA GeForce RTX 3080').gpus
+    const changed = await reopen(platform)
+    await changed.switchTier()
+    await changed.review()
+    await changed.deploy()
+    expect(changed.getState()).toMatchObject({ error: null, deployment: { unknownBuildHooks: true } })
+    const after = await platform.readText(INI)
+    // The ini really was rewritten from the baseline for the new card, and the key is the player's.
+    expect(after).not.toBe(before)
+    expect(after).toMatch(/FfxivUnknownBuildHooks\s*=\s*true/)
+  })
+
   it('keeps it through a content update, which leaves the player’s ini as it is', async () => {
     const { platform, core, m } = await deployed()
     await core.setUnknownBuildHooks(true)

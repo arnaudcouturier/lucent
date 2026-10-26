@@ -1462,12 +1462,40 @@ export function originalHashes(record: Pick<DeploymentRecord, 'journal'>): Recor
   return Object.fromEntries(firstBefores(record).flatMap(({ path, before, after }) => before !== null && after !== null ? [[path, before]] : []))
 }
 
+/**
+ * Before a vanilla Uninstall leaves the replaced originals out of the game folder, makes sure their readable copies are there: from then
+ * on they are all the player has of those files. Clear backups treats a live deployment's copy as redundant, since the journal holds the
+ * same files, so a copy it removed is written again from the journal's own backups, each checked against its hash. The deployment's
+ * record keeps reserving its folder name in `Backups` (see `backupFolderName`), so no other game folder has taken it meanwhile.
+ */
+async function ensureReadableCopies(platform: Platform, record: DeploymentRecord) {
+  const originals = firstBefores(record).flatMap(({ path, before }) => before !== null ? [{ path, hash: before }] : [])
+  if (!originals.length || !record.backupFolder) return
+  originals.forEach(({ path }) => assertGamePath(path))
+  const { backups, readableBackups } = await dataPaths(platform, record.gameFolder)
+  const destinations = originals.map(({ path }) => joinPath(readableBackups, record.backupFolder!, 'game', path))
+  const stats = await platform.statMany(destinations)
+  const missing = originals.flatMap((original, i) => stats[i]?.kind === 'file' ? [] : [{ ...original, to: destinations[i] }])
+  for (const { hash, to } of missing) {
+    const from = joinPath(backups, hash)
+    if ((await maybeStat(platform, from))?.kind !== 'file') throw new PlatformError('not-found', 'Lucent’s own backup of an original is missing, so it can’t leave that file out of the game folder.', from)
+    await platform.copyFile(from, to, false)
+    if (await platform.hashFile(to) !== hash) {
+      // A copy that doesn't match must not stand as the player's copy next time, when an existing one is taken to be good.
+      await platform.removeFile(to).catch(() => {})
+      throw new PlatformError('hash-mismatch', `A readable copy failed its hash check: ${to}`)
+    }
+  }
+}
+
 /** Undoes a complete deployment and removes what its mods generated, leaving the folder vanilla. */
 export async function uninstallDeployment(platform: Platform, gameFolder: string, options: { restoreOriginals?: boolean } = {}): Promise<void> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('There is no deployment to uninstall.')
   const { record: path } = await dataPaths(platform, gameFolder)
+  // Before anything changes, so a copy that can't be written stops the uninstall with the game folder as it was.
+  if (options.restoreOriginals === false) await ensureReadableCopies(platform, record)
   record.status = 'applying'
   record.uninstalling = true
   if (options.restoreOriginals === false) record.leaveOriginals = true

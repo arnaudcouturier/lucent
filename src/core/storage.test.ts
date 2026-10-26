@@ -7,6 +7,7 @@ import { existingSetup, fixtureContentHost, graphicsCard, machine, vanillaGame, 
 import { statusCard } from './statusCard'
 import { sizeLabel } from './format'
 import { startsTicked } from './storage'
+import { readDeployment, replacedOriginals } from './deployment'
 
 const ROOT = 'C:\\Games\\XIV'
 const GAME = `${ROOT}\\game`
@@ -318,5 +319,86 @@ describe('refusing', () => {
     await core.clearBackups(['XIV'])
     expect(await tree(platform, CACHE)).toEqual(cache)
     expect(await tree(platform, BACKUPS)).toEqual(backups)
+  })
+})
+
+describe('a vanilla Uninstall after Clear backups', () => {
+  /** The files the existing setup left in `game\`, before Lucent changes anything. */
+  async function withExistingSetup() {
+    const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT), existingSetup(ROOT, 'reshade')))
+    const originals = await tree(platform, GAME)
+    const core = createCore(platform)
+    await core.scan(); await core.review(); await core.deploy(); core.finish()
+    expect(core.getState().error).toBeNull()
+    return { platform, core, originals }
+  }
+
+  it('writes the copies again from the journal’s backups, so the files it leaves out are still readable', async () => {
+    const { platform, core, originals } = await withExistingSetup()
+    const replaced = replacedOriginals(core.getState().deployment!)
+    expect(replaced.length).toBeGreaterThan(0)
+    await core.clearBackups(['xiv'])
+    expect(await platform.listFiles(BACKUPS)).toEqual([])
+    await core.uninstall(false)
+    expect(core.getState()).toMatchObject({ error: null, deployment: null })
+    expect(core.getState().notice).toContain(`copies are in ${BACKUPS}\\XIV\\game`)
+    for (const relative of replaced) expect(await platform.readText(`${BACKUPS}\\XIV\\game\\${relative}`)).toBe(originals[relative.toLowerCase()])
+    // None of them came back to the game folder: it is vanilla, as that choice says.
+    const left = (await platform.listFiles(GAME)).map((name) => name.toLowerCase())
+    for (const relative of replaced) expect(left).not.toContain(relative.toLowerCase())
+  })
+
+  it('adds only the copies that are gone, and leaves the ones that are there', async () => {
+    const { platform, core, originals } = await withExistingSetup()
+    const replaced = replacedOriginals(core.getState().deployment!)
+    const [gone, kept] = [replaced[0], replaced[1]]
+    await platform.removeFile(`${BACKUPS}\\XIV\\game\\${gone}`)
+    await platform.writeText(`${BACKUPS}\\XIV\\game\\${kept}`, 'edited by the player')
+    await core.uninstall(false)
+    expect(await platform.readText(`${BACKUPS}\\XIV\\game\\${gone}`)).toBe(originals[gone.toLowerCase()])
+    expect(await platform.readText(`${BACKUPS}\\XIV\\game\\${kept}`)).toBe('edited by the player')
+  })
+
+  it('stops with the game folder as it was when a journal backup is missing, rather than leave a file out with no copy', async () => {
+    const { platform, core } = await withExistingSetup()
+    await core.clearBackups(['xiv'])
+    const backups = (await platform.listFiles(`${DATA}\\deployments`)).filter((name) => /\\backups\\/.test(name))
+    for (const name of backups) await platform.removeFile(`${DATA}\\deployments\\${name}`)
+    const game = await tree(platform, ROOT)
+    await core.uninstall(false)
+    expect(core.getState().error).toMatch(/Lucent’s own backup of an original is missing/)
+    expect(core.getState()).toMatchObject({ recoveryRequired: false, busy: false })
+    expect(await tree(platform, ROOT)).toEqual(game)
+    expect((await readDeployment(platform, ROOT))?.status).toBe('complete')
+  })
+
+  it('stops with the game folder as it was when a copy it wrote does not match its backup, and does not keep the bad copy', async () => {
+    const { platform, core } = await withExistingSetup()
+    await core.clearBackups(['xiv'])
+    const copy = platform.copyFile.bind(platform)
+    platform.copyFile = async (from, to, replace, staging) => {
+      await copy(from, to, replace, staging)
+      if (to.startsWith(BACKUPS)) await platform.writeText(to, 'garbled')
+    }
+    const game = await tree(platform, ROOT)
+    await core.uninstall(false)
+    expect(core.getState().error).toMatch(/failed its hash check/)
+    expect(await tree(platform, ROOT)).toEqual(game)
+    // The first copy failed its check and went; none was written after it, so nothing is left to be taken for a good copy next time.
+    expect(await platform.listFiles(BACKUPS)).toEqual([])
+    expect((await readDeployment(platform, ROOT))?.status).toBe('complete')
+  })
+
+  it('can rely on the folder’s name staying its own: a second game folder with the same name gets another, even after the copy is cleared', async () => {
+    const other = 'D:\\XIV'
+    const platform = createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), vanillaGame(other), xivLauncher(ROOT), existingSetup(ROOT, 'reshade'), existingSetup(other, 'reshade')))
+    const core = createCore(platform)
+    await core.scan(); await core.review(); await core.deploy(); core.finish()
+    await core.clearBackups(['xiv'])
+    expect(await platform.listFiles(BACKUPS)).toEqual([])
+    platform.answerPicker(other)
+    await core.changeGameFolder()
+    await core.review(); await core.deploy(); core.finish()
+    expect(core.getState()).toMatchObject({ error: null, deployment: { gameFolder: other, backupFolder: 'XIV (2)' } })
   })
 })

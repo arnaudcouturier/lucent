@@ -280,7 +280,7 @@ function ClearCacheDialog({ onClose }: { onClose: () => void }) {
 }
 
 const BACKUP_KIND: Record<BackupKind, string> = {
-  install: 'The files Lucent replaced in your game folder. Uninstall puts them back from Lucent’s own backups.',
+  install: 'The files Lucent replaced in your game folder. Uninstall puts them back from Lucent’s own backups, and a vanilla Uninstall writes these copies again if they are gone.',
   reset: 'What a Reset set aside of your config files and edits. Lucent’s own backups hold the same files.',
   kept: 'The only copies of files Lucent replaced and an Uninstall left out, or of a game folder that is gone.',
   other: 'A folder none of Lucent’s installs names.',
