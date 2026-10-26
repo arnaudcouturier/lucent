@@ -80902,6 +80902,12 @@
         "label": "IINACT",
         "author": "marzent",
         "url": "https://raw.githubusercontent.com/marzent/IINACT/main/repo.json"
+      },
+      {
+        "id": "haselnussbomber",
+        "label": "MyDalamudPlugins",
+        "author": "Haselnussbomber",
+        "url": "https://raw.githubusercontent.com/Haselnussbomber/MyDalamudPlugins/main/repo.json"
       }
     ],
     "plugins": [
@@ -80996,6 +81002,16 @@
         "repo": "iinact",
         "group": "extra",
         "setup": "In the game, type /iinact, choose an overlay and copy its URL, then paste it into Browsingway."
+      },
+      {
+        "internalName": "HaselTweaks",
+        "name": "HaselTweaks",
+        "author": "Haselnussbomber",
+        "summary": "An all-in-one collection of the author’s quality-of-life tweaks and helpers for the game’s interface. Not part of Dalamud’s own repository.",
+        "source": "https://github.com/Haselnussbomber/HaselTweaks",
+        "repo": "haselnussbomber",
+        "group": "extra",
+        "setup": "In the game, type /haseltweaks to open its settings and choose the tweaks you want."
       }
     ],
     "mods": [

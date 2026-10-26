@@ -22,15 +22,16 @@ describe('the published Starter set', () => {
   it('offers the agreed plugins and mods', () => {
     const { plugins, mods, repos } = set()
     expect(plugins.filter((p) => p.group === 'core').map((p) => p.internalName)).toEqual(['Penumbra', 'Glamourer', 'heliosphere-plugin', 'Weatherman', 'AcrylicXIV', 'ActionTimelineReplacement'])
-    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit', 'Browsingway', 'IINACT'])
+    expect(plugins.filter((p) => p.group === 'extra').map((p) => p.internalName)).toEqual(['CharacterPanelRefined', 'MultiHit', 'Browsingway', 'IINACT', 'HaselTweaks'])
     expect(mods.map((m) => m.name)).toEqual(['Hair Defined 2', 'AETHERIS UI AIO', 'The Body SE'])
-    expect(repos.map((r) => r.id)).toEqual(['seaofstars', 'action-timeline-replacement', 'iinact'])
+    expect(repos.map((r) => r.id)).toEqual(['seaofstars', 'action-timeline-replacement', 'iinact', 'haselnussbomber'])
   })
 
-  it('tells the player what to set up for Browsingway and IINACT, which Lucent can’t write for them', () => {
+  it('tells the player what to set up for Browsingway, IINACT and HaselTweaks, which Lucent can’t write for them', () => {
     const setups = Object.fromEntries(set().plugins.filter((p) => p.setup).map((p) => [p.internalName, p.setup]))
-    expect(Object.keys(setups)).toEqual(['Browsingway', 'IINACT'])
+    expect(Object.keys(setups)).toEqual(['Browsingway', 'IINACT', 'HaselTweaks'])
     expect(setups.IINACT).toMatch(/\/iinact/)
+    expect(setups.HaselTweaks).toMatch(/\/haseltweaks/)
     expect(setups.Browsingway).toMatch(/\/bw config/)
   })
 

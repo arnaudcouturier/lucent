@@ -15,6 +15,10 @@ What is already checked, and the one run in the game that is left.
 - **The spike (2026-10-17):** a plugin placed by script loads on the very next start. See `docs/decisions.md`, Implementation notes.
 - **The release build:** `tauri build --ci --no-bundle --target x86_64-pc-windows-msvc`, as `release.yml` runs it.
 
+## HaselTweaks (added 2026-10-26)
+
+Checked against the real thing before it went into the set: the author's repository (`https://raw.githubusercontent.com/Haselnussbomber/MyDalamudPlugins/main/repo.json`, the address the plugin's README gives) lists `HaselTweaks` 50.0.2.0 at Dalamud API level 15, the level of 412 of the 500 plugins in Dalamud's own repository. Its `DownloadLinkInstall` was downloaded with Lucent's user agent (HTTP 200, 9,599,922 bytes), and the zip's own `HaselTweaks.json` matches the repo entry (`InternalName`, `AssemblyVersion`, `DalamudApiLevel`). The Rust `extract_zip` unpacked it (40 files, 50,597,911 bytes, against limits of 4,000 files, 256 MB and 128 MB per file; the largest entry is the 26 MB `FFXIVClientStructs.xml`), including the `runtimes/win/lib/net10.0` subfolder, and `assertGamePath` accepts all 40 entries. `src/core/starterSetHaselTweaks.test.ts` runs the Add against the repository's own set: the repository is appended with its exact address, the plugin lands with every file and `InstalledFromUrl` equal to that address, an existing entry is left alone, and a switched-off repository skips the plugin with a reason. Not run in the game.
+
 ## In the game: one combined run
 
 This covers what nothing above can: the real window, the real Tauri port, Lucent writing the repository entry itself, and adding a plugin the player had removed. It uses ActionTimelineReplacement because its repository is the one Dalamud will load only if the entry is exactly right.
