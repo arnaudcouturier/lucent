@@ -22,12 +22,14 @@ export const startsTicked = (kind: BackupKind) => kind === 'install' || kind ===
 
 export interface BackupGroup { folder: string; kind: BackupKind; files: number; bytes: number }
 
+/** `unreadable`: the folder couldn't be listed (a link to somewhere else, a drive that is gone); it shows with no size and nothing to clear. */
 export interface Storage {
-  cache: { path: string; files: number; bytes: number }
-  backups: { path: string; groups: BackupGroup[] }
+  cache: { path: string; files: number; bytes: number; unreadable?: boolean }
+  backups: { path: string; groups: BackupGroup[]; unreadable?: boolean }
 }
 
-export interface Cleared { files: number; bytes: number }
+/** `skipped`: folders asked for that were left, because they are no longer what the list said. */
+export interface Cleared { files: number; bytes: number; skipped?: string[] }
 
 /** The cache holds the hash-named assets and the `.tmp` files downloads stream into; `pruneContentCache` leaves other files alone too. */
 const CACHE_FILE = /^(?:[a-f0-9]{64}|\.tmp[^\\/]*)$/i
@@ -70,7 +72,7 @@ async function backupKinds(platform: Platform, folders: string[]): Promise<Map<s
       named.set(key, (named.get(key) ?? false) || live)
     }
   } catch {
-    // A record that can't be read leaves every deployment's copies unexplained: offer none of them as redundant.
+    // A record that can't be read leaves every deployment's install copy unexplained, so none is offered as redundant. A Reset's copy is known by its name alone.
     for (const folder of folders) kinds.set(fileKey(folder), RESET_COPY.test(folder) ? 'reset' : 'other')
     return kinds
   }
@@ -89,7 +91,9 @@ export async function readStorage(platform: Platform): Promise<Storage> {
   const data = await lucentFolder(platform)
   const cache = joinPath(data, 'cache')
   const backups = joinPath(data, 'Backups')
-  const [cached, copies] = await Promise.all([cacheFiles(platform, cache), backupFiles(platform, backups)])
+  // Each folder on its own: one that can't be listed leaves the other's size showing.
+  const read = async (list: () => Promise<Listed[]>) => list().then((files) => ({ files, unreadable: false }), () => ({ files: [] as Listed[], unreadable: true }))
+  const [{ files: cached, unreadable: cacheUnreadable }, { files: copies, unreadable: backupsUnreadable }] = await Promise.all([read(() => cacheFiles(platform, cache)), read(() => backupFiles(platform, backups))])
   const byFolder = new Map<string, Listed[]>()
   for (const file of copies) {
     const key = fileKey(topFolder(file.relative))
@@ -98,7 +102,7 @@ export async function readStorage(platform: Platform): Promise<Storage> {
   const kinds = await backupKinds(platform, [...byFolder.values()].map((files) => topFolder(files[0].relative)))
   const groups = [...byFolder.entries()].map(([key, files]) => ({ folder: topFolder(files[0].relative), kind: kinds.get(key)!, ...total(files) }))
     .sort((a, b) => a.folder.localeCompare(b.folder))
-  return { cache: { path: cache, ...total(cached) }, backups: { path: backups, groups } }
+  return { cache: { path: cache, ...total(cached), ...(cacheUnreadable ? { unreadable: true } : {}) }, backups: { path: backups, groups, ...(backupsUnreadable ? { unreadable: true } : {}) } }
 }
 
 /** Removes the folders left empty by the files just removed, and the `extra` ones if empty too, deepest first. */
@@ -119,14 +123,21 @@ export async function clearCache(platform: Platform): Promise<Cleared> {
   return total(files)
 }
 
-/** Removes the named folders of readable copies and what they hold. A name that isn't one of the folders is ignored. */
-export async function clearBackups(platform: Platform, folders: string[]): Promise<Cleared> {
+/**
+ * Removes the named folders of readable copies and what they hold. A name that isn't one of the folders is ignored.
+ * `shown` is the list the player ticked from: a folder that list called redundant (an install or Reset copy) and that has since become
+ * the only copy of something (another window started a vanilla Uninstall, the game folder went away) is left, and reported in `skipped`.
+ */
+export async function clearBackups(platform: Platform, folders: string[], shown: BackupGroup[] = []): Promise<Cleared> {
   const backups = joinPath(await lucentFolder(platform), 'Backups')
-  const wanted = new Set(folders.map(fileKey))
+  const asShown = new Map(shown.map((group) => [fileKey(group.folder), startsTicked(group.kind)]))
+  const now = new Map((await readStorage(platform)).backups.groups.map((group) => [fileKey(group.folder), startsTicked(group.kind)]))
+  const skipped = folders.filter((folder) => asShown.get(fileKey(folder)) === true && now.get(fileKey(folder)) === false)
+  const wanted = new Set(folders.filter((folder) => !skipped.includes(folder)).map(fileKey))
   const files = (await backupFiles(platform, backups)).filter((file) => wanted.has(fileKey(topFolder(file.relative))))
   await platform.removeMany(files.map((file) => file.path))
   // Listed from `Backups` last, so it goes too once nothing is left in it, as a put-back Uninstall leaves it.
   const named = [...new Set(files.map((file) => joinPath(backups, topFolder(file.relative))))]
   await removeEmptyFolders(platform, backups, files, [...named, backups])
-  return total(files)
+  return { ...total(files), ...(skipped.length ? { skipped } : {}) }
 }

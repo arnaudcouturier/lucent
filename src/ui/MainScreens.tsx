@@ -221,8 +221,8 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
       <div className="card settings-folder">
         <div>
           <strong>Cache</strong>
-          {storage.cache.files ? <FolderPath path={storage.cache.path} /> : <Path path={storage.cache.path} />}
-          <small>{storage.cache.files ? `${fileCount(storage.cache.files)} · ${sizeLabel(storage.cache.bytes)}. ` : 'Empty. '}Content Lucent downloaded, kept so an install, update or repair doesn’t download it again.</small>
+          {storage.cache.files || storage.cache.unreadable ? <FolderPath path={storage.cache.path} /> : <Path path={storage.cache.path} />}
+          <small>{storage.cache.unreadable ? 'Lucent can’t read this folder, so it can’t show its size or clear it. ' : storage.cache.files ? `${fileCount(storage.cache.files)} · ${sizeLabel(storage.cache.bytes)}. ` : 'Empty. '}Content Lucent downloaded, kept so an install, update or repair doesn’t download it again.</small>
         </div>
         <button className="btn" disabled={busy || recoveryRequired || !storage.cache.files} onClick={(e) => { opener.current = e.currentTarget; setClearing('cache') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
       </div>
@@ -230,7 +230,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <div>
           <strong>Backups</strong>
           <FolderPath path={backupsFolder} />
-          <small>{storage.backups.groups.length ? `${storage.backups.groups.length === 1 ? '1 folder' : `${storage.backups.groups.length} folders`} · ${sizeLabel(storage.backups.groups.reduce((sum, group) => sum + group.bytes, 0))}. ` : ''}Copies of the files Lucent replaced, each under its own path. Uninstall doesn’t need them.</small>
+          <small>{storage.backups.unreadable ? 'Lucent can’t read this folder, so it can’t show its size or clear it. ' : storage.backups.groups.length ? `${storage.backups.groups.length === 1 ? '1 folder' : `${storage.backups.groups.length} folders`} · ${sizeLabel(storage.backups.groups.reduce((sum, group) => sum + group.bytes, 0))}. ` : ''}Copies of the files Lucent replaced, each under its own path. Uninstall doesn’t need them.</small>
         </div>
         <button className="btn" disabled={busy || recoveryRequired || !storage.backups.groups.length} onClick={(e) => { opener.current = e.currentTarget; setClearing('backups') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
       </div>}
@@ -281,7 +281,7 @@ function ClearCacheDialog({ onClose }: { onClose: () => void }) {
 
 const BACKUP_KIND: Record<BackupKind, string> = {
   install: 'The files Lucent replaced in your game folder. Uninstall puts them back from Lucent’s own backups, and a vanilla Uninstall writes these copies again if they are gone.',
-  reset: 'What a Reset set aside of your config files and edits. Lucent’s own backups hold the same files.',
+  reset: 'What a Reset set aside of your config files and edits. Lucent’s own backups hold the same files, but nothing in Lucent puts them back; these are for you to look at.',
   kept: 'The only copies of files Lucent replaced and an Uninstall left out, or of a game folder that is gone.',
   other: 'A folder none of Lucent’s installs names.',
 }

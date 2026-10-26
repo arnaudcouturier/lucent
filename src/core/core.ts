@@ -963,7 +963,8 @@ export function createCore(platform: Platform): Core {
     set({ busy: true, error: null, notice: null })
     try {
       const cleared = await clear()
-      set({ notice: cleared.files ? `Cleared ${sizeLabel(cleared.bytes)} from ${what} (${fileCount(cleared.files)}).` : `There was nothing to clear from ${what}.` })
+      const answer = cleared.files ? `Cleared ${sizeLabel(cleared.bytes)} from ${what} (${fileCount(cleared.files)}).` : `There was nothing to clear from ${what}.`
+      set({ notice: cleared.skipped?.length ? `${answer} ${cleared.skipped.join(', ')} changed since the list was shown and was left; open Clear again to see what it holds now.` : answer })
     } finally {
       set({ busy: false })
       await core.refreshStorage()
@@ -1099,7 +1100,7 @@ export function createCore(platform: Platform): Core {
       await clearStorage('the cache', () => clearCachedFiles(platform))
     },
     async clearBackups(folders) {
-      await clearStorage('backup copies', () => clearBackupFolders(platform, folders))
+      await clearStorage('backup copies', () => clearBackupFolders(platform, folders, state.storage?.backups.groups))
     },
     async refreshStarterSet() {
       const { manifest } = state
@@ -1712,6 +1713,7 @@ export function createCore(platform: Platform): Core {
     async uninstall(restoreOriginals = true) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
       const folder = state.gameFolder
+      let uncopied: string[] = []
       const restored = replacedOriginals(state.deployment).length
       const backupFolder = state.deployment.backupFolder
       const deployedFolder = state.deployment.gameFolder
@@ -1719,7 +1721,7 @@ export function createCore(platform: Platform): Core {
       try {
         if (!await prepareWrite({ kind: 'uninstall', gameFolder: state.deployment.gameFolder, restoreOriginals })) { set({ busy: false }); return }
         log.write('info', `Uninstall: ${state.deployment.gameFolder}${restored ? restoreOriginals ? ', putting back the files it replaced' : ', leaving the files it replaced out (vanilla)' : ''}`)
-        await uninstallDeployment(platform, state.deployment.gameFolder, { restoreOriginals })
+        uncopied = await uninstallDeployment(platform, state.deployment.gameFolder, { restoreOriginals })
       } catch (error) {
         const recoveryRequired = error instanceof DeploymentError && error.recoveryRequired
         // A half-undone deployment is no longer the one the main screen describes.
@@ -1732,7 +1734,7 @@ export function createCore(platform: Platform): Core {
         ? 'Lucent is uninstalled. It removed everything it added; it hadn’t replaced any of your files.'
         : restoreOriginals
           ? `Lucent is uninstalled. It put back the ${files} it had replaced, so your game folder is as it was before.`
-          : `Lucent is uninstalled and your game folder is vanilla. It left the ${files} it had replaced out${readable ? `; copies are in ${readable}` : ''}.` })
+          : `Lucent is uninstalled and your game folder is vanilla. It left the ${files} it had replaced out${readable ? `; copies are in ${readable}${uncopied.length ? `, except ${fileCount(uncopied.length)} whose backup in Lucent’s own folder was missing` : ''}` : ''}.` })
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })

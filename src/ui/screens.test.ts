@@ -411,7 +411,7 @@ describe('Settings’ Storage card', () => {
     expect(text.indexOf('Backups')).toBeGreaterThan(text.indexOf('Storage'))
   })
 
-  it('leaves both Clear… buttons off while Lucent needs recovery or is busy', async () => {
+  it('leaves both Clear… buttons off while Lucent is busy, and on otherwise', async () => {
     const { core } = await storageCore(existingSetup(ROOT, 'reshade'))
     const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
     expect(buttonsNamed(markup, 'Clear…', 'disabled=""')).toHaveLength(0)
