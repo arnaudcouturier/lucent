@@ -17,8 +17,12 @@ import { fileKey } from './planner'
  */
 export type BackupKind = 'install' | 'reset' | 'kept' | 'other'
 
-/** The copies nothing else holds, and any Lucent can't explain, start unticked in Clear backups: removing them is a deliberate extra tick. */
-export const startsTicked = (kind: BackupKind) => kind === 'install' || kind === 'reset'
+/**
+ * Only the install copy of a live deployment starts ticked in Clear backups: the journal holds the same files and Uninstall restores or
+ * rewrites them from it. A Reset's copy, the only copies and any folder Lucent can't explain start unticked, since nothing in Lucent puts
+ * a Reset's copy back: removing those is a deliberate extra tick.
+ */
+export const startsTicked = (kind: BackupKind) => kind === 'install'
 
 export interface BackupGroup { folder: string; kind: BackupKind; files: number; bytes: number }
 

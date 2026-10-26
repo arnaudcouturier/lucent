@@ -90,8 +90,8 @@ for files the game itself generates. Use two real content versions for the updat
   shows `Lucent\Backups` and its Open folder button opens it.
 - [ ] In Settings → Storage, Cache and Backups show their sizes. Clear cache removes the cached files (the
   row then reads Empty and a notice at the top says how much), and Repair, a version change and Reset download
-  what they need again. Clear backups lists each folder with its kind, starts the install copy and Reset copies
-  ticked and the kept originals unticked, and removes only what is ticked. Uninstall afterwards still puts the
+  what they need again. Clear backups lists each folder with its kind, starts the install copy
+  ticked and a Reset copy, the kept originals and any other folder unticked, and removes only what is ticked. Uninstall afterwards still puts the
   player’s files back from Lucent’s own backups.
 - [ ] On content 2026.10.30 or newer, Settings → After a game patch shows the switch off. With XIV closed, turn
   it on: `OptiScaler.ini` gets `FfxivUnknownBuildHooks=true` and no other change; off writes `false`. Reset setup

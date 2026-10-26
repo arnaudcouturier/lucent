@@ -101,8 +101,8 @@ describe('reading the storage', () => {
 })
 
 describe('what Clear backups ticks to start with', () => {
-  it('ticks the copies the journal also holds, and leaves the only copies and the unexplained ones for the player to tick', () => {
-    expect((['install', 'reset', 'kept', 'other'] as const).map((kind) => [kind, startsTicked(kind)])).toEqual([['install', true], ['reset', true], ['kept', false], ['other', false]])
+  it('ticks only the install copy, which the journal also holds, and leaves a Reset’s copy, the only copies and the unexplained ones for the player to tick', () => {
+    expect((['install', 'reset', 'kept', 'other'] as const).map((kind) => [kind, startsTicked(kind)])).toEqual([['install', true], ['reset', false], ['kept', false], ['other', false]])
   })
 })
 
