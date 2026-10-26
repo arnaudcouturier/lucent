@@ -52,7 +52,9 @@ describe('the latest content candidate', () => {
     expect(text).toMatch(/pattern search/)
     expect(text).toMatch(/FfxivUnknownBuildHooks=true/)
     expect(text).toMatch(/update check/)
-    expect(latest.changelog.some((line) => /Automatic ReShade scene depth, which Lucent turns on by default/.test(line))).toBe(true)
+    // The feature arrived in 2026.10.28 (fork v0.2.0); 2026.10.27 never had it, and a player on it must not read "you already have this".
+    expect(text).toMatch(/Since 2026\.10\.28 it has Automatic ReShade scene depth/)
+    expect(text).not.toMatch(/2026\.10\.27/)
   })
 
   it('keeps the character preview Neural Rendering off, as 2026.10.28 does', () => {
