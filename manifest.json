@@ -68158,7 +68158,7 @@
     },
     {
       "id": "2026.10.28",
-      "channel": "beta",
+      "channel": "stable",
       "minAppVersion": "1.0.2",
       "changelog": [
         "OptiScaler-FFXIV is updated to v0.2.0. It adds Automatic ReShade scene depth, an option that is off until you turn it on in the OptiScaler menu (the FFXIV tab, ReShade depth compatibility). When the game renders below your screen resolution, it lines up the depth, normals and motion vectors that ReShade effects read with the upscaled picture, so ambient occlusion such as MXAO stops drawing shapes into walls. Lucent adds its two new keys to your OptiScaler.ini switched off; nothing changes unless you turn it on.",
