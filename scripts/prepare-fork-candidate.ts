@@ -11,7 +11,7 @@ import { createReadStream, existsSync } from 'node:fs'
 import { access, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import type { Component, FrameGenerationOption, SettingChoice, Step } from '../src/shared/manifest'
+import type { Component, ConfigKeySetting, FrameGenerationOption, SettingChoice, Step } from '../src/shared/manifest'
 import { runCommand } from './command'
 import { prepareOutputFolder } from './candidate-output'
 import { mergeIni, type IniKey, type IniOverride } from './candidate-ini'
@@ -35,8 +35,14 @@ interface ForkRecipe {
   iniNotCarried: { section: string; key: string; reason: string }[]
   /** Optional: writes the Ember palette (the fork's own dump, content/ember/palette.json) over the [STYLE] of the base ReShade.ini, so ReShade's menu matches OptiScaler's. */
   reshadeStyle?: { palette: string; baseIniSha256: string }
-  /** Optional ReShade.ini keys the install sets after it copies the file; a value may name `{Pictures}`, which the app resolves to the player's Pictures folder. */
-  reshadeSettings?: { section: string; key: string; value: string }[]
+  /**
+   * Optional ReShade.ini keys the install sets after it copies the file; a value may name `{Pictures}`, which the app resolves to the player's Pictures folder.
+   * `onUpdate` also makes an update set the key in a ReShade.ini the player has (the config's `setKeys`, which needs an app that reads them); `ifPath` makes
+   * it an update-only change, applied when the key's current value is that path, and the install writes nothing for it.
+   */
+  reshadeSettings?: { section: string; key: string; value: string; onUpdate?: boolean; ifPath?: string }[]
+  /** Optional game-folder paths of ReShade files this version stops shipping: the base's copy steps and shipped-preset entries for them are left out. Each must name a copy step in the base. */
+  dropReshadeFiles?: string[]
   /** Optional folders the mods fill while the game runs, which Uninstall removes with everything in them (relative to the game folder). */
   generatedFolders?: string[]
   /**
@@ -201,7 +207,11 @@ async function main() {
     copy('OptiScaler.ini'), copy('winmm.dll'), copy('nvngx_dlssnr.dll'),
     ...baseTier.recipe!.filter((s) => s.kind === 'ini_set'),
   ]
-  const reshade = baseTier.recipe!.filter((s) => s.kind !== 'ini_set' && s.when === 'reshade')
+  const reshadeBase = baseTier.recipe!.filter((s) => s.kind !== 'ini_set' && s.when === 'reshade')
+  const gone = new Set((recipe.dropReshadeFiles ?? []).map((path) => path.toLowerCase()))
+  const unknownDrops = [...gone].filter((path) => !reshadeBase.some((s) => s.kind === 'copy' && s.to.toLowerCase() === path))
+  if (unknownDrops.length) throw new Error(`The base copies no ReShade file to: ${unknownDrops.join(', ')}.`)
+  const reshade = reshadeBase.filter((s) => !(s.kind === 'copy' && gone.has(s.to.toLowerCase())))
   // What the previous version copied for every player and this one no longer ships; the update deletes these, so the report names each.
   const dropped = baseTier.recipe!.flatMap((s) => s.kind === 'copy' && !s.when && !optiscaler.some((o) => o.kind === 'copy' && o.to.toLowerCase() === s.to.toLowerCase()) ? [s.to] : [])
 
@@ -211,9 +221,14 @@ async function main() {
     nrRoots[id] = join(sources, 'neural-rendering', id)
     await stage(join(nrFolder, nr.file), join(nrRoots[id], 'nvngx_dlssnr.dll'))
   }
-  const reshadeSettings: Step[] = (recipe.reshadeSettings ?? []).map((s) => ({ kind: 'ini_set', file: 'ReShade.ini', section: s.section, key: s.key, value: s.value, when: 'reshade' }))
+  const reshadeSettings: Step[] = (recipe.reshadeSettings ?? []).filter((s) => s.ifPath === undefined).map((s) => ({ kind: 'ini_set', file: 'ReShade.ini', section: s.section, key: s.key, value: s.value, when: 'reshade' }))
+  const reshadeUpdateKeys: ConfigKeySetting[] = (recipe.reshadeSettings ?? []).filter((s) => s.onUpdate || s.ifPath !== undefined)
+    .map((s) => ({ section: s.section, key: s.key, value: s.value, ...(s.ifPath === undefined ? {} : { ifPath: s.ifPath }) }))
+  if (reshadeUpdateKeys.length && !baseTier.ownedConfigs.some((config) => config.path === 'ReShade.ini')) throw new Error('The base owns no ReShade.ini to set keys in on update.')
   const tier = (id: string, nrComponent: { component: string }, base: PublishTier): PublishTier => ({
     ...base,
+    ownedConfigs: base.ownedConfigs.map((config) => config.path === 'ReShade.ini' && reshadeUpdateKeys.length ? { ...config, setKeys: reshadeUpdateKeys } : config),
+    shippedPresets: base.shippedPresets.filter((preset) => !gone.has(preset.path.toLowerCase())),
     generatedFiles: [...(base.generatedFiles ?? []), ...(recipe.generatedFolders ?? []).map((path) => ({ path }))],
     ...(recipe.settingChoices ? { settingChoices: recipe.settingChoices } : {}),
     sources: [
@@ -249,6 +264,7 @@ async function main() {
     neuralRendering: recipe.neuralRendering,
     savedIni: { sha256: recipe.tunedIni.sha256, carried: merge.carried, leftToTheInstall: merge.skipped, overridden: merge.overridden, lost: merge.lost },
     droppedFromPrevious: dropped,
+    droppedReshadeFiles: recipe.dropReshadeFiles ?? [],
     carriedLicences: carried,
     reshadeStyle: reshadeStyleReport,
     dryRun: true,

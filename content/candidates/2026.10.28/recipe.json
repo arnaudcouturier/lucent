@@ -1,0 +1,796 @@
+{
+  "basedOnContent": "2026.10.17",
+  "id": "2026.10.28",
+  "channel": "beta",
+  "minAppVersion": "1.0.2",
+  "changelog": [
+    "OptiScaler-FFXIV is updated to v0.2.0. It adds Automatic ReShade scene depth, an option that is off until you turn it on in the OptiScaler menu (the FFXIV tab, ReShade depth compatibility). When the game renders below your screen resolution, it lines up the depth, normals and motion vectors that ReShade effects read with the upscaled picture, so ambient occlusion such as MXAO stops drawing shapes into walls. Lucent adds its two new keys to your OptiScaler.ini switched off; nothing changes unless you turn it on.",
+    "Removes the Alive NEXT Stable 4K preset and the two shaders only it used (ffxiv_crashpad_4K and ffxiv_common_4K). Alive NEXT Stable stays. If the 4K preset was your selected preset, ReShade is switched to Alive NEXT Stable. If you edited the 4K preset, the update saves your copy as Alive NEXT Stable 4K (my edits).ini before it removes the original.",
+    "ReShade now loads every effect, including the ones your preset turns off, so the game can take a little longer to load, and it compiles shaders with debug information. Your keybinds and the rest of your ReShade settings stay as they are. It needs Lucent 1.0.2.",
+    "The Graphics step has three new choices inside the Neural Rendering card, in a collapsed Advanced section: the model hint each pass receives (Pass 1, Pass 2 and Pass 3 preset hint). Their effect on the picture is unverified. The defaults are what Lucent shipped before, so nothing changes unless you pick one, and they apply to a new install or Reset setup, not to an update.",
+    "The Graphics step has a new choice in the Neural Rendering card, Character preview Neural Rendering, which runs the Neural Rendering model on the character, equipment and glamour previews. It is Off by default because the model takes a lot of video memory for each open preview window; the previous setup had it on. It applies to a new install or Reset setup, so an existing setup keeps what it has."
+  ],
+  "fork": {
+    "component": "OptiScaler-FFXIV",
+    "tag": "ffxiv-2026.10.25-d9b62110",
+    "commit": "6d1265d2",
+    "zipName": "OptiScaler-FFXIV-ffxiv-2026.10.25-d9b62110.zip",
+    "zipSha256": "d7583a0df0f686ea3fd695188462e6c903282aa1a7fd51bf47f0382cd9160b9e",
+    "winmmSha256": "f98a9221e96407cca22a79826bb5b9b82fc9c629f6fd33fe52eb5f06dd6949e9",
+    "iniSha256": "6857d09521f2c744c18e4f37687f8b7f2b78cfc16e981b060f70cffe232765d7"
+  },
+  "streamline": {
+    "component": "NVIDIA Streamline",
+    "tag": "v2.14.16",
+    "zipName": "streamline-sdk-v2.14.16.zip",
+    "zipSha256": "32041e51db0cab709a271b72a352281b690c2abbd669a827809401a5dd23956b",
+    "files": [
+      {
+        "from": "bin/x64/nvngx_dlss.dll",
+        "to": "OptiScaler/nvngx_dlss.dll",
+        "sha256": "d00b5b0ab29c3ca101b70c3a5ecb3a01b7ef33766a3383a28a18623083e6123e"
+      },
+      {
+        "from": "bin/x64/nvngx_dlssg.dll",
+        "to": "OptiScaler/nvngx_dlssg.dll",
+        "sha256": "8d59d49b36410dd6b62fef2503a5871d347415bd85d943fa0848563a95dd50c7"
+      },
+      {
+        "from": "bin/x64/sl.common.dll",
+        "to": "OptiScaler/streamline/sl.common.dll",
+        "sha256": "38eea3b4209afc455636ea372b5933d65fcc13becec6c84d101dcfc4d8648f75"
+      },
+      {
+        "from": "bin/x64/sl.dlss_g.dll",
+        "to": "OptiScaler/streamline/sl.dlss_g.dll",
+        "sha256": "3ed9538df724993bea8a050195a6a78b9c8c8a566d5b05ade477aab3c390e90f"
+      },
+      {
+        "from": "bin/x64/sl.interposer.dll",
+        "to": "OptiScaler/streamline/sl.interposer.dll",
+        "sha256": "b1d7395aebd7b9722841d64dcf7433680020b6a8e421f851c16d5ba0c2182edf"
+      },
+      {
+        "from": "bin/x64/sl.pcl.dll",
+        "to": "OptiScaler/streamline/sl.pcl.dll",
+        "sha256": "5698c38e722318681f215c9fe68e45b9bedd51378acc699d8eee26e961e57770"
+      },
+      {
+        "from": "bin/x64/sl.reflex.dll",
+        "to": "OptiScaler/streamline/sl.reflex.dll",
+        "sha256": "443577e869352436ff7ec8f4d9c90418d3e95368436ce219261e0f4f07a38122"
+      },
+      {
+        "from": "bin/x64/nvngx_dlss.license.txt",
+        "to": "OptiScaler/streamline/nvngx_dlss.license.txt",
+        "sha256": "3027f23ca5a46dd9cb8183fbd522983a86f64d7daac5982912bf9f214671f294"
+      },
+      {
+        "from": "bin/x64/reflex.license.txt",
+        "to": "OptiScaler/streamline/reflex.license.txt",
+        "sha256": "ebf83c07fb3b2939908c3795d887afde3161c89a28ba391724efc784ce1bdabe"
+      },
+      {
+        "from": "license.txt",
+        "to": "licenses/Streamline_LICENSE.txt",
+        "sha256": "7b6f23e7d6f3ad6292f9308d2b42cdc3d82ae4e9b2abb55f230279d83bedd43d"
+      }
+    ]
+  },
+  "neuralRendering": {
+    "rtx-20-30-40": {
+      "component": "Neural Rendering compatibility runtime",
+      "file": "20-30-40 series patched/nvngx_dlssnr.dll",
+      "size": 276162560,
+      "sha256": "cdfa6c1ec784867182164c7836f324f087b5c9f374d0c9fe46f54999feabf3ed"
+    },
+    "rtx-50": {
+      "component": "NVIDIA DLSS Neural Rendering runtime",
+      "file": "50 series/nvngx_dlssnr.dll",
+      "size": 266424944,
+      "sha256": "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f"
+    }
+  },
+  "newComponents": [
+    {
+      "name": "OptiScaler-FFXIV",
+      "upstream": "arnaudcouturier",
+      "licence": "GPL-3.0",
+      "source": "https://github.com/arnaudcouturier/OptiScaler-FFXIV/tree/ffxiv-2026.10.25-d9b62110"
+    },
+    {
+      "name": "NVIDIA Streamline",
+      "upstream": "NVIDIA",
+      "licence": "MIT (Streamline); NVIDIA DLSS SDK License (nvngx runtimes)",
+      "source": "https://github.com/NVIDIA-RTX/Streamline/releases/tag/v2.14.16"
+    },
+    {
+      "name": "NVIDIA DLSS Neural Rendering runtime",
+      "upstream": "NVIDIA",
+      "licence": "NVIDIA DLSS SDK License",
+      "source": "https://developer.nvidia.com/rtx/dlss"
+    }
+  ],
+  "tunedIni": {
+    "sha256": "492c314334fb53a893e4d31666d7521731d3517ae402aef8dfe08e036f4b26ec",
+    "description": "The maintainer's OptiScaler.ini as it stood on 2026-10-19 18:12, backed up by builds\\Install-Build.ps1 before it installed the 2026.10.19 release (backup-game-20261019-1834-release-20261019)."
+  },
+  "iniNotCarried": [
+    {
+      "section": "Log",
+      "key": "LogToFile",
+      "reason": "Ships with logging off: the log reached 125 MB."
+    },
+    {
+      "section": "Menu",
+      "key": "Height",
+      "reason": "A menu size dragged out on one screen."
+    }
+  ],
+  "reshadeStyle": {
+    "palette": "../../ember/palette.json",
+    "baseIniSha256": "663cf31060cf151a65101d3928599a6fb24532c9e7cb5d64f8934dbcd18426e2"
+  },
+  "dropReshadeFiles": [
+    "reshade-presets/Alive NEXT WIP/Alive NEXT Stable 4K.ini",
+    "reshade-shaders/Shaders/ffxiv_crashpad_4K.fx",
+    "reshade-shaders/Shaders/ffxiv_common_4K.fxh"
+  ],
+  "reshadeSettings": [
+    {
+      "section": "SCREENSHOT",
+      "key": "SavePath",
+      "value": "{Pictures}\\FFXIV Screenshots"
+    },
+    {
+      "section": "GENERAL",
+      "key": "SkipLoadingDisabledEffects",
+      "value": "0",
+      "onUpdate": true
+    },
+    {
+      "section": "GENERAL",
+      "key": "NoDebugInfo",
+      "value": "0",
+      "onUpdate": true
+    },
+    {
+      "section": "OVERLAY",
+      "key": "ShowForceLoadEffectsButton",
+      "value": "1",
+      "onUpdate": true
+    },
+    {
+      "section": "GENERAL",
+      "key": "PresetPath",
+      "value": ".\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable.ini",
+      "ifPath": ".\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable 4K.ini"
+    },
+    {
+      "section": "GENERAL",
+      "key": "StartupPresetPath",
+      "value": ".\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable.ini",
+      "ifPath": ".\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable 4K.ini"
+    }
+  ],
+  "generatedFolders": [
+    "OptiScaler/hudless-diag"
+  ],
+  "settingChoices": [
+    {
+      "id": "dlss-model",
+      "label": "DLSS model",
+      "defaultOption": "m",
+      "options": [
+        {
+          "id": "default",
+          "label": "Default",
+          "description": "Lets the game and NVIDIA’s DLL choose. NVIDIA’s defaults are K for DLAA, Quality and Balanced, M for Performance and L for Ultra Performance.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "false"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "id": "j",
+          "label": "Preset J",
+          "description": "NVIDIA describes it as similar to K, with slightly less ghosting at the cost of extra flickering, and recommends K over J.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "10"
+            }
+          ]
+        },
+        {
+          "id": "k",
+          "label": "Preset K",
+          "description": "NVIDIA’s default for DLAA, Quality and Balanced, and its best image quality preset at a higher performance cost.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "11"
+            }
+          ]
+        },
+        {
+          "id": "l",
+          "label": "Preset L",
+          "description": "NVIDIA’s default for Ultra Performance. A sharper, more stable image with less ghosting than J and K, and more expensive.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "12"
+            }
+          ]
+        },
+        {
+          "id": "m",
+          "label": "Preset M",
+          "description": "NVIDIA’s default for Performance. Similar gains to L, closer in speed to J and K. Lucent has used M for every mode so far.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "13"
+            }
+          ]
+        },
+        {
+          "id": "e",
+          "label": "Preset E",
+          "experimental": true,
+          "description": "NVIDIA lists it as a legacy preset and has deprecated support for it, so whether this DLL still honours it is not known. OptiScaler.log names the preset in use.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "5"
+            }
+          ]
+        },
+        {
+          "id": "f",
+          "label": "Preset F",
+          "experimental": true,
+          "description": "NVIDIA lists it as a legacy preset and has deprecated support for it, so whether this DLL still honours it is not known. OptiScaler.log names the preset in use.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetOverride",
+              "value": "true"
+            },
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSS",
+              "key": "RenderPresetForAll",
+              "value": "6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui-mode",
+      "label": "UI mode",
+      "gpuNamePatterns": [
+        "RTX\\s?40[0-9]{2}",
+        "RTX\\s?50[0-9]{2}"
+      ],
+      "needsFrameGeneration": true,
+      "defaultOption": "recomposition",
+      "unofferedOption": "off",
+      "options": [
+        {
+          "id": "off",
+          "label": "Off",
+          "description": "Frame generation treats the interface like the rest of the frame.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "HudLess",
+              "key": "Mode",
+              "value": "off"
+            }
+          ]
+        },
+        {
+          "id": "recomposition",
+          "label": "Recomposition",
+          "description": "Gives frame generation the scene and the interface as separate images, meant to keep the interface sharp in fast camera motion. Tested at 2× to 4× in SDR, where no visible difference was seen.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "HudLess",
+              "key": "Mode",
+              "value": "recomposition"
+            }
+          ]
+        },
+        {
+          "id": "ui-free",
+          "label": "UI-free",
+          "experimental": true,
+          "description": "Frame generation works on the scene alone and the interface is pasted back at the real frame rate. In some scenes it falls back to normal frame generation.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "HudLess",
+              "key": "Mode",
+              "value": "ui_free"
+            }
+          ],
+          "blockedWhen": [
+            {
+              "reason": "UI-free isn’t supported with HDR yet.",
+              "hdr": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dlssg-preset",
+      "label": "DLSS-G preset",
+      "gpuNamePatterns": [
+        "RTX\\s?40[0-9]{2}",
+        "RTX\\s?50[0-9]{2}"
+      ],
+      "needsFrameGeneration": true,
+      "defaultOption": "auto",
+      "options": [
+        {
+          "id": "auto",
+          "label": "Auto",
+          "description": "The driver and NVIDIA’s runtime decide.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSSG",
+              "key": "RenderPreset",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "id": "a",
+          "label": "Preset A",
+          "description": "NVIDIA’s preset A. It turns UI recomposition off.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSSG",
+              "key": "RenderPreset",
+              "value": "1"
+            }
+          ],
+          "blockedWhen": [
+            {
+              "reason": "Preset A and C turn UI recomposition off. Set UI mode to Off or UI-free to use them.",
+              "choice": {
+                "id": "ui-mode",
+                "options": [
+                  "recomposition"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "b",
+          "label": "Preset B",
+          "description": "NVIDIA’s preset B. It asks for UI recomposition.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSSG",
+              "key": "RenderPreset",
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "id": "c",
+          "label": "Preset C",
+          "description": "NVIDIA’s preset C. It turns UI recomposition off and NVIDIA’s FG Lite on.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DLSSG",
+              "key": "RenderPreset",
+              "value": "3"
+            }
+          ],
+          "blockedWhen": [
+            {
+              "reason": "Preset A and C turn UI recomposition off. Set UI mode to Off or UI-free to use them.",
+              "choice": {
+                "id": "ui-mode",
+                "options": [
+                  "recomposition"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "preview-nr",
+      "label": "Character preview Neural Rendering",
+      "placement": {
+        "in": "neural-rendering"
+      },
+      "options": [
+        {
+          "id": "off",
+          "label": "Off",
+          "description": "The character, equipment and glamour previews are drawn without the Neural Rendering model, so no video memory goes to it. This is the default, because the model takes a lot of video memory for each open preview window.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "FFXIV",
+              "key": "PreviewNR",
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "id": "on",
+          "label": "On",
+          "description": "Runs the Neural Rendering model on each open preview window. It takes a lot of video memory for each open window (roughly 180 MB or more in the fork’s own tests) and some GPU time.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "FFXIV",
+              "key": "PreviewNR",
+              "value": "true"
+            }
+          ]
+        }
+      ],
+      "defaultOption": "off"
+    },
+    {
+      "id": "nr-hint-pass-1",
+      "label": "Pass 1 preset hint",
+      "placement": {
+        "in": "neural-rendering",
+        "group": "Advanced Neural Rendering model hints (effect unverified)",
+        "note": "Hints the Neural Rendering model receives for each pass. The fork marks their visual effect as unverified. Style, which picks a profile, is only in OptiScaler’s menu."
+      },
+      "options": [
+        {
+          "id": "default",
+          "label": "Default",
+          "description": "Pass 1 sends preset hint 0 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Preset",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "id": "preset-1",
+          "label": "Preset 1",
+          "description": "Pass 1 sends preset hint 1 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Preset",
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "id": "preset-2",
+          "label": "Preset 2",
+          "description": "Pass 1 sends preset hint 2 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Preset",
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "id": "preset-3",
+          "label": "Preset 3",
+          "description": "Pass 1 sends preset hint 3 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Preset",
+              "value": "3"
+            }
+          ]
+        }
+      ],
+      "defaultOption": "preset-1"
+    },
+    {
+      "id": "nr-hint-pass-2",
+      "label": "Pass 2 preset hint",
+      "minPasses": 2,
+      "placement": {
+        "in": "neural-rendering",
+        "group": "Advanced Neural Rendering model hints (effect unverified)",
+        "note": "Hints the Neural Rendering model receives for each pass. The fork marks their visual effect as unverified. Style, which picks a profile, is only in OptiScaler’s menu."
+      },
+      "options": [
+        {
+          "id": "auto",
+          "label": "Auto (inherit pass 1)",
+          "description": "Pass 2 sends the same hint as pass 1.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass2Preset",
+              "value": "auto"
+            }
+          ]
+        },
+        {
+          "id": "default",
+          "label": "Default",
+          "description": "Pass 2 sends preset hint 0 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass2Preset",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "id": "preset-1",
+          "label": "Preset 1",
+          "description": "Pass 2 sends preset hint 1 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass2Preset",
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "id": "preset-2",
+          "label": "Preset 2",
+          "description": "Pass 2 sends preset hint 2 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass2Preset",
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "id": "preset-3",
+          "label": "Preset 3",
+          "description": "Pass 2 sends preset hint 3 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass2Preset",
+              "value": "3"
+            }
+          ]
+        }
+      ],
+      "defaultOption": "default"
+    },
+    {
+      "id": "nr-hint-pass-3",
+      "label": "Pass 3 preset hint",
+      "minPasses": 3,
+      "placement": {
+        "in": "neural-rendering",
+        "group": "Advanced Neural Rendering model hints (effect unverified)",
+        "note": "Hints the Neural Rendering model receives for each pass. The fork marks their visual effect as unverified. Style, which picks a profile, is only in OptiScaler’s menu."
+      },
+      "options": [
+        {
+          "id": "auto",
+          "label": "Auto (inherit pass 1)",
+          "description": "Pass 3 sends the same hint as pass 1.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass3Preset",
+              "value": "auto"
+            }
+          ]
+        },
+        {
+          "id": "default",
+          "label": "Default",
+          "description": "Pass 3 sends preset hint 0 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass3Preset",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "id": "preset-1",
+          "label": "Preset 1",
+          "description": "Pass 3 sends preset hint 1 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass3Preset",
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "id": "preset-2",
+          "label": "Preset 2",
+          "description": "Pass 3 sends preset hint 2 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass3Preset",
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "id": "preset-3",
+          "label": "Preset 3",
+          "description": "Pass 3 sends preset hint 3 to the model.",
+          "settings": [
+            {
+              "file": "OptiScaler.ini",
+              "section": "DlssNr",
+              "key": "Pass3Preset",
+              "value": "3"
+            }
+          ]
+        }
+      ],
+      "defaultOption": "default"
+    }
+  ],
+  "iniOverrides": [
+    {
+      "section": "Menu",
+      "key": "AccentColorR",
+      "value": "1.000000"
+    },
+    {
+      "section": "Menu",
+      "key": "AccentColorG",
+      "value": "0.392157"
+    },
+    {
+      "section": "Menu",
+      "key": "AccentColorB",
+      "value": "0.039216"
+    },
+    {
+      "section": "Menu",
+      "key": "BGColorR",
+      "value": "0.078431"
+    },
+    {
+      "section": "Menu",
+      "key": "BGColorG",
+      "value": "0.082353"
+    },
+    {
+      "section": "Menu",
+      "key": "BGColorB",
+      "value": "0.098039"
+    },
+    {
+      "section": "Menu",
+      "key": "BGColorA",
+      "value": "0.92"
+    },
+    {
+      "section": "Menu",
+      "key": "OverlaysUseTheme",
+      "value": "true"
+    },
+    {
+      "section": "Menu",
+      "key": "TTFFontPath",
+      "value": "C:\\\\Windows\\\\Fonts\\\\segoeui.ttf"
+    },
+    {
+      "section": "Menu",
+      "key": "FontSize",
+      "value": "13.0"
+    },
+    {
+      "section": "Log",
+      "key": "LogToFile",
+      "value": "false"
+    },
+    {
+      "section": "Menu",
+      "key": "Style",
+      "value": "ember"
+    },
+    {
+      "section": "HudLess",
+      "key": "Diagnostics",
+      "value": "false"
+    },
+    {
+      "section": "FFXIV",
+      "key": "PreviewNR",
+      "value": "false"
+    }
+  ]
+}
