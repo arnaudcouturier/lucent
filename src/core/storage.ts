@@ -135,7 +135,10 @@ export async function clearCache(platform: Platform): Promise<Cleared> {
 export async function clearBackups(platform: Platform, folders: string[], shown: BackupGroup[] = []): Promise<Cleared> {
   const backups = joinPath(await lucentFolder(platform), 'Backups')
   const asShown = new Map(shown.map((group) => [fileKey(group.folder), startsTicked(group.kind)]))
-  const now = new Map((await readStorage(platform)).backups.groups.map((group) => [fileKey(group.folder), startsTicked(group.kind)]))
+  const fresh = (await readStorage(platform)).backups
+  // Without a fresh reading there is nothing to check the list against, so nothing is removed.
+  if (fresh.unreadable) throw new Error('Lucent can’t read the Backups folder right now, so it can’t tell which copies are safe to clear. Try again.')
+  const now = new Map(fresh.groups.map((group) => [fileKey(group.folder), startsTicked(group.kind)]))
   const skipped = folders.filter((folder) => asShown.get(fileKey(folder)) === true && now.get(fileKey(folder)) === false)
   const wanted = new Set(folders.filter((folder) => !skipped.includes(folder)).map(fileKey))
   const files = (await backupFiles(platform, backups)).filter((file) => wanted.has(fileKey(topFolder(file.relative))))

@@ -288,13 +288,14 @@ const BACKUP_KIND: Record<BackupKind, string> = {
 function ClearBackupsDialog({ onClose }: { onClose: () => void }) {
   const [state, core] = useCore()
   const { busy, recoveryRequired } = state
-  const groups = state.storage?.backups.groups ?? []
+  // The list as it was when the dialog opened: what the player ticks from, and what Clear checks against what is there now.
+  const [groups] = useState(() => state.storage?.backups.groups ?? [])
   const ref = useRef<HTMLDialogElement>(null)
   const [ticked, setTicked] = useState(() => new Set(groups.filter((group) => startsTicked(group.kind)).map((group) => group.folder)))
   useEffect(() => { ref.current?.showModal() }, [])
   const chosen = groups.filter((group) => ticked.has(group.folder))
   const clear = async () => {
-    await core.clearBackups(chosen.map((group) => group.folder))
+    await core.clearBackups(chosen.map((group) => group.folder), groups)
     onClose()
   }
   const toggle = (folder: string, on: boolean) => setTicked((current) => { const next = new Set(current); if (on) next.add(folder); else next.delete(folder); return next })

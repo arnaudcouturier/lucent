@@ -30,7 +30,7 @@ import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount, sizeLabel } from './format'
 import { readPatchSwitch, type PatchSwitch } from './gamePatch'
-import { clearBackups as clearBackupFolders, clearCache as clearCachedFiles, readStorage, type Cleared, type Storage } from './storage'
+import { clearBackups as clearBackupFolders, clearCache as clearCachedFiles, readStorage, type BackupGroup, type Cleared, type Storage } from './storage'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
@@ -283,7 +283,7 @@ export interface Core {
    */
   clearCache(): Promise<void>
   /** Removes the named folders of readable copies (see `storage.groups`). The journal's own backups, which Uninstall restores from, stay. Refused while Lucent is busy or needs recovery. */
-  clearBackups(folders: string[]): Promise<void>
+  clearBackups(folders: string[], shown?: BackupGroup[]): Promise<void>
   /** Reads the "After a game patch" switch from OptiScaler.ini again. Works while Lucent is busy. */
   refreshPatchSwitch(): Promise<void>
   /**
@@ -1070,7 +1070,13 @@ export function createCore(platform: Platform): Core {
       try {
         const [storage, backupsFolder] = await Promise.all([readStorage(platform), readableBackupsFolder()])
         // A slower read that a newer one has overtaken, or a Clear's own refresh, must not put older sizes back.
-        if (read === storageReads) set({ storage, backupsFolder })
+        if (read === storageReads) {
+          // Said once, when a folder first can't be listed, not at every reading.
+          if ((storage.cache.unreadable && !state.storage?.cache.unreadable) || (storage.backups.unreadable && !state.storage?.backups.unreadable)) {
+            log.write('warning', `Couldn’t list ${[storage.cache.unreadable ? storage.cache.path : null, storage.backups.unreadable ? storage.backups.path : null].filter(Boolean).join(' and ')}, so Settings can’t show its size.`)
+          }
+          set({ storage, backupsFolder })
+        }
       } catch (error) { log.write('warning', `Couldn’t read the size of Lucent’s cache and backups: ${message(error)}`) }
     },
     async refreshPatchSwitch() {
@@ -1099,8 +1105,9 @@ export function createCore(platform: Platform): Core {
     async clearCache() {
       await clearStorage('the cache', () => clearCachedFiles(platform))
     },
-    async clearBackups(folders) {
-      await clearStorage('backup copies', () => clearBackupFolders(platform, folders, state.storage?.backups.groups))
+    async clearBackups(folders, shown) {
+      // `shown` is the list the player ticked from; without one, what the card shows now.
+      await clearStorage('backup copies', () => clearBackupFolders(platform, folders, shown ?? state.storage?.backups.groups))
     },
     async refreshStarterSet() {
       const { manifest } = state
@@ -1734,7 +1741,7 @@ export function createCore(platform: Platform): Core {
         ? 'Lucent is uninstalled. It removed everything it added; it hadn’t replaced any of your files.'
         : restoreOriginals
           ? `Lucent is uninstalled. It put back the ${files} it had replaced, so your game folder is as it was before.`
-          : `Lucent is uninstalled and your game folder is vanilla. It left the ${files} it had replaced out${readable ? `; copies are in ${readable}${uncopied.length ? `, except ${fileCount(uncopied.length)} whose backup in Lucent’s own folder was missing` : ''}` : ''}.` })
+          : `Lucent is uninstalled and your game folder is vanilla. It left the ${files} it had replaced out${uncopied.length >= restored ? `; their copies could not be written, because Lucent’s own backup of ${restored === 1 ? 'it' : 'them'} was missing, so ${restored === 1 ? 'it is' : 'they are'} gone` : readable ? `; copies are in ${readable}${uncopied.length ? `, except ${fileCount(uncopied.length)} whose backup in Lucent’s own folder was missing` : ''}` : ''}.` })
       await core.scan()
       // Scan may not find a folder the player picked; stay with the one just uninstalled.
       if (!state.deployment && folder.status === 'found') set({ gameFolder: folder, rejectedFolder: null })

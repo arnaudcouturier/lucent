@@ -411,6 +411,18 @@ describe('Settings’ Storage card', () => {
     expect(text.indexOf('Backups')).toBeGreaterThan(text.indexOf('Storage'))
   })
 
+  it('says a folder can’t be read, and leaves its Clear… off, when Lucent can’t list it', async () => {
+    const { platform, core } = await storageCore(existingSetup(ROOT, 'reshade'))
+    const list = platform.listFiles.bind(platform)
+    platform.listFiles = async (root) => { if (root.endsWith('\\Lucent\\Backups')) throw new Error('A link to a drive that is gone'); return list(root) }
+    await core.refreshStorage()
+    const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
+    expect(visibleText(createElement(SettingsScreen), core)).toMatch(/Backups .*Lucent\\Backups Lucent can’t read this folder, so it can’t show its size or clear it\. Copies of the files Lucent replaced/)
+    // The Cache row still clears; the Backups row has nothing it can clear.
+    expect(buttonsNamed(markup, 'Clear…', 'disabled=""')).toHaveLength(1)
+    expect(buttonsNamed(markup, 'Clear…')).toHaveLength(2)
+  })
+
   it('leaves both Clear… buttons off while Lucent is busy, and on otherwise', async () => {
     const { core } = await storageCore(existingSetup(ROOT, 'reshade'))
     const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))

@@ -7,6 +7,7 @@ import { existingSetup, fixtureContentHost, graphicsCard, machine, vanillaGame, 
 import { statusCard } from './statusCard'
 import { sizeLabel } from './format'
 import { PlatformError } from './platform'
+import { LUCENT_LOG } from './log'
 import { startsTicked } from './storage'
 import { readDeployment, replacedOriginals } from './deployment'
 
@@ -371,7 +372,8 @@ describe('a vanilla Uninstall after Clear backups', () => {
     for (const name of (await platform.listFiles(`${DATA}\\deployments`)).filter((file) => hashes.some((hash) => file.endsWith(hash)))) await platform.removeFile(`${DATA}\\deployments\\${name}`)
     await core.uninstall(false)
     expect(core.getState()).toMatchObject({ error: null, deployment: null })
-    expect(core.getState().notice).toContain(`except ${replaced.length} files whose backup in Lucent’s own folder was missing`)
+    expect(core.getState().notice).toContain(`their copies could not be written, because Lucent’s own backup of them was missing, so they are gone`)
+    expect(core.getState().notice).not.toContain('copies are in')
     expect((await readDeployment(platform, ROOT))?.status).toBe('rolled-back')
   })
 
@@ -457,7 +459,49 @@ describe('a list that went stale before the player pressed Clear', () => {
   })
 })
 
+describe('the list the player ticked from', () => {
+  it('is what Clear checks against, even when the card has been read again since, so a folder that turned into the only copy is left', async () => {
+    const { platform, core } = await deployed(existingSetup(ROOT, 'reshade'))
+    await core.refreshStorage()
+    const ticked = core.getState().storage!.backups.groups
+    expect(ticked).toMatchObject([{ folder: 'xiv', kind: 'install' }])
+    const other = createCore(platform)
+    await other.scan()
+    await other.uninstall(false)
+    // The card reads again while the dialog is open: it now says kept, but the player ticked the folder as an install copy.
+    await core.refreshStorage()
+    expect(core.getState().storage!.backups.groups).toMatchObject([{ folder: 'xiv', kind: 'kept' }])
+    const before = await tree(platform, BACKUPS)
+    await core.clearBackups(['xiv'], ticked)
+    expect(await tree(platform, BACKUPS)).toEqual(before)
+    expect(core.getState().notice).toMatch(/xiv changed since the list was shown and was left/)
+  })
+
+  it('removes nothing when Backups can’t be read for the check, rather than clear without it', async () => {
+    const { platform, core } = await deployed(existingSetup(ROOT, 'reshade'))
+    await core.refreshStorage()
+    const ticked = core.getState().storage!.backups.groups
+    const before = await tree(platform, BACKUPS)
+    const list = platform.listFiles.bind(platform)
+    platform.listFiles = async (root) => { if (root === BACKUPS) throw new PlatformError('access-denied', 'A link to a drive that is gone', root); return list(root) }
+    await core.clearBackups(['xiv'], ticked)
+    platform.listFiles = list
+    expect(core.getState().error).toMatch(/can’t read the Backups folder right now/)
+    expect(await tree(platform, BACKUPS)).toEqual(before)
+  })
+})
+
 describe('a folder Lucent cannot list', () => {
+  it('says so once in the log, not at every reading', async () => {
+    const { platform, core } = await deployed()
+    const list = platform.listFiles.bind(platform)
+    platform.listFiles = async (root) => { if (root === CACHE) throw new PlatformError('access-denied', 'A link to a drive that is gone', root); return list(root) }
+    await core.refreshStorage()
+    await core.refreshStorage()
+    const lines = (await core.readLog(LUCENT_LOG))!.map((line) => line.text)
+    expect(lines.filter((line) => /Couldn’t list/.test(line))).toEqual([`Couldn’t list ${CACHE}, so Settings can’t show its size.`])
+  })
+
   it('shows the other folder’s size, and nothing to clear for the one it can’t read', async () => {
     const { platform, core } = await deployed(existingSetup(ROOT, 'reshade'))
     const list = platform.listFiles.bind(platform)
