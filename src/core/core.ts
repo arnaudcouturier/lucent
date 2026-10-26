@@ -629,7 +629,7 @@ export function createCore(platform: Platform): Core {
     const profile = selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, state.graphics.status === 'found' ? state.graphics.adapter.name : '')
     const plan = planDeployment(content, tier, record.includeReShade, scan, profile, record.enabled,
       { ...planSelection(content, tier, record), gpuName: state.graphics.status === 'found' ? state.graphics.adapter.name : '', outputHeight: state.screen?.height })
-    return { version: content.id, changelog: [...content.changelog, ...configUpdateNotes(plan.recipe.ownedConfigs, Object.keys(record.files))], downloadSize: plan.downloadSize }
+    return { version: content.id, changelog: [...content.changelog, ...configUpdateNotes(plan.recipe.ownedConfigs, Object.keys(record.files), record.recipe.ownedConfigs)], downloadSize: plan.downloadSize }
   }
   /** The latest health check and content announcement, shown once the player leaves Done: Install and Reset finish there. */
   let deployedDrift: Drift | null = null
@@ -1325,7 +1325,7 @@ export function createCore(platform: Platform): Core {
     },
     selectSettingChoice(choiceId, optionId) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'profile') return
-      const shown = shownSettingChoices(state.settingChoiceGroups, state.settingChoices, { gpuName: choiceGpuName(), frameGenerationMode: state.frameGenerationMode, hdrMode: state.hdrMode })
+      const shown = shownSettingChoices(state.settingChoiceGroups, state.settingChoices, { gpuName: choiceGpuName(), frameGenerationMode: state.frameGenerationMode, hdrMode: state.hdrMode, passes: state.neuralRendering?.passes ?? null })
       const option = shown.find((choice) => choice.choice.id === choiceId)?.options.find((candidate) => candidate.option.id === optionId)
       if (!option || option.blocked) return
       set({ settingChoices: { ...state.settingChoices, [choiceId]: optionId }, error: null })
@@ -1544,7 +1544,7 @@ export function createCore(platform: Platform): Core {
           set({ activity: { kind: 'review' } }); return
         }
         const since = performance.now()
-        const settingNote = settingChoiceSummary(state.plan.recipe.settingChoices, state.plan.settingChoices, { gpuName: state.graphics.adapter.name, frameGenerationMode: state.plan.frameGenerationMode, hdrMode: state.plan.hdrMode })
+        const settingNote = settingChoiceSummary(state.plan.recipe.settingChoices, state.plan.settingChoices, { gpuName: state.graphics.adapter.name, frameGenerationMode: state.plan.frameGenerationMode, hdrMode: state.plan.hdrMode, passes: state.plan.neuralRendering?.passes ?? null })
           .map(({ label, value }) => `, ${label} ${value}`).join('')
         log.write('info', `Install: content ${content.id}, ${state.graphics.tier.label} tier${profileNote(state.profiles, state.selectedProfile)}${state.neuralRendering ? `, Neural Rendering ${state.neuralRendering.preset}, ${state.neuralRendering.passes} pass${state.neuralRendering.passes === 1 ? '' : 'es'}, ${state.neuralRendering.scale}%${state.neuralRendering.spatialCompression ? ', spatial compression' : ''}${state.neuralRendering.residualFg ? ', residual frame generation' : ''}` : ''}${state.mfgUnlocked ? ', multi-frame unlock' : ''}${state.frameGenerationMode ? `, frame generation ${state.frameGenerationMode}` : ''}${state.hdrMode ? `, HDR ${state.hdrMode}` : ''}${settingNote}${state.includeReShade ? '' : ', without ReShade'}`)
         const record = await deployContent(platform, state.gameFolder.path, content, signatures(), state.graphics.tier, state.includeReShade, state.selectedProfile, state.graphics.adapter, state.manifest.source, acknowledged,

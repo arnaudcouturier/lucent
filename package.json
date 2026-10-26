@@ -1,7 +1,7 @@
 {
   "name": "lucent",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Windows manager for XIV graphics mods: DLSS 5 through OptiScaler, and ReShade with shaders and presets.",
   "license": "MIT",
   "type": "module",

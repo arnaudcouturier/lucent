@@ -128,7 +128,7 @@ export function planDeployment(
   const hdrMode = selection.hdrMode === undefined ? (hdrOptions.length ? 'hdr' : null) : selection.hdrMode
   const selectedHdr = hdrMode === null ? null : hdrOptions.find((option) => option.id === hdrMode) ?? null
   const hdrActive = hdrMode !== null && hdrMode !== 'off'
-  const settingChoices = resolveSettingChoices(recipe.settingChoices, selection.settingChoices, { gpuName: selection.gpuName ?? '', frameGenerationMode, hdrMode: selectedHdr?.id ?? null })
+  const settingChoices = resolveSettingChoices(recipe.settingChoices, selection.settingChoices, { gpuName: selection.gpuName ?? '', frameGenerationMode, hdrMode: selectedHdr?.id ?? null, passes: neuralRendering?.passes ?? null })
   const profileOwnedElsewhereKeys = profileOwnedElsewhereSettingKeys(recipe)
   const resolvedProfileSettings = selected ? profileSettingsForHeight(selected, selection.outputHeight ?? 2160) : []
   const profileSettings = resolvedProfileSettings.filter((setting) =>

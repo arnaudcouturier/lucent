@@ -104,6 +104,29 @@ line per config file. Older Lucent releases ignore `update` and merge as they al
 require an app version that supports it with `minAppVersion`. There is no record of what Lucent last wrote and no
 list of keys to reset: the former `resetKeys` field is ignored.
 
+An entry may also carry `setKeys`, the one way a content version changes a value in a file the player already has without
+replacing it (added 2026-10-24 for content 2026.10.28, app 1.0.2):
+
+```json
+{ "path": "ReShade.ini", "update": "keep", "when": "reshade", "setKeys": [
+  { "section": "GENERAL", "key": "NoDebugInfo", "value": "0" },
+  { "section": "GENERAL", "key": "PresetPath", "value": ".\\reshade-presets\\New.ini", "ifPath": ".\\reshade-presets\\Removed.ini" }
+] }
+```
+
+An update to this version sets each listed key in the file on disk to `value`, adds it if it is absent and leaves every other
+byte alone (layout, comments, BOM and line endings). With `ifPath` a key is set only when it exists and its current value is
+that path, compared as a path (case, slashes either way and a leading `.\` are ignored); use it to move a selected preset
+off a file the version removes. `setKeys` apply under `keep` and `addMissingKeys` (after the missing keys are added), and
+`replace` ignores them since it writes the whole baseline. They apply **once**: a key is skipped when the deployed version's
+recipe carries the same entry, so a recipe copied forward does not set it again on every update and a player's later
+choice stays. A file that cannot be read as text is left as it is; a locked one fails the update, as it does for `replace`.
+The journal backs the file up first, and a rollback restores that copy unless the player has changed the file since the update (ReShade rewrites it whenever a setting or preset changes), in which case the rollback keeps their file. A first install, Reset and Repair of a missing file write the
+baseline, so the same values also belong in the recipe's `ini_set` steps. The status card's changelog lists the keys that
+are set whatever their value ("Sets NoDebugInfo and … in ReShade.ini to the tested values. Your other settings stay."); an
+`ifPath` key is not listed, since it may not apply to a player. Older apps drop the field and treat the file as `keep`, so
+content that uses it must require the app version that reads it.
+
 A tier recipe may also declare `screenDerivedSettings`, settings Lucent computes from the monitor XIV uses at the moment it
 writes a config file from the baseline: the first deployment, a `replace` update, a key an `addMissingKeys` update adds,
 and Repair of a missing file. Nothing recalculates them otherwise, because once deployed the config files belong to the player.
@@ -355,6 +378,8 @@ write the picks once like the other choices; apps that predate the field ignore 
 - `defaultOption`: the option used until the player picks one. A stored pick the content no longer offers falls back to it.
 - `gpuNamePatterns` (case-insensitive regular expressions on the card's name; absent offers the choice to every card) and `unofferedOption` (the option whose settings are written for a card the choice isn't offered to; absent writes nothing for it).
 - `needsFrameGeneration`: the choice is shown only while frame generation is on. Its settings are still written when frame generation is Off, so turning it on later in OptiScaler's overlay finds them.
+- `minPasses` (2 or 3, app 1.0.2): the choice is shown only while the Neural Rendering passes picked are at least that many; its settings are still written, like `needsFrameGeneration`. It is for settings that belong to one pass, such as the second pass's preset hint.
+- `placement` (app 1.0.2): `{ "in": "neural-rendering", "group"?: string, "note"?: string }` puts the choice inside the Neural Rendering card as a block, instead of a card of its own. Choices that name the same `group` (up to 80 characters) share one collapsed disclosure with that title, and the first `note` (up to 240) is shown under it. A choice with no `group` is a plain block in the card. Older apps ignore the field and would show the choice as its own card, so content that uses it requires 1.0.2.
 - On an option, `blockedWhen`: a list of `{ reason, choice?: { id, options }, hdr? }`. The option is unavailable, with the reason under the control, while the earlier choice `id` holds one of `options`, or while HDR is anything but Off. A choice may only be blocked by a choice above it in the list, and one option of every choice must have no block, so a valid combination always exists. A pick that becomes blocked is not changed in the stored choices but is written as the choice's default, or its first free option when the default is blocked too.
 
 The planner writes the settings after the frame-generation and unlock values and before the screen-derived ones. The record keeps the resolved

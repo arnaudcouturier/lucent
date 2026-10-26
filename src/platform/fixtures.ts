@@ -5,7 +5,7 @@ import type { MonitorInfo } from '../core/platform'
 import manifest from '../../manifest.json'
 import { MANIFEST_URL } from '../core/manifest'
 import { appBetaReleaseHost } from './appUpdateFixture'
-import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, HDR_FRAME_GENERATION_MANIFEST, NEURAL_RENDERING_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, SETTING_CHOICE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
+import { BETA_MANIFEST, FRAME_GENERATION_MANIFEST, HDR_FRAME_GENERATION_MANIFEST, NEURAL_RENDERING_MANIFEST, NEXT_MANIFEST, OPTISCALER_NEXT_HASH, PROFILE_ASSETS, PROFILE_MANIFEST, PASS_HINT_MANIFEST, SETTING_CHOICE_MANIFEST, betaFixtureUrl, fixtureUrl, nextFixtureUrl } from './contentFixture'
 
 export const STEAM_DEFAULT = 'C:\\Program Files (x86)\\Steam'
 export const SQUARE_ENIX_DEFAULT = 'C:\\Program Files (x86)\\SquareEnix\\FINAL FANTASY XIV - A Realm Reborn'
@@ -185,6 +185,11 @@ export function settingChoiceContentHost(): Machine {
   return { remoteText: { [MANIFEST_URL]: JSON.stringify(SETTING_CHOICE_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
 }
 
+/** The same with the Neural Rendering model's per-pass preset hints, placed inside the Neural Rendering card. */
+export function passHintContentHost(): Machine {
+  return { remoteText: { [MANIFEST_URL]: JSON.stringify(PASS_HINT_MANIFEST), ...Object.fromEntries(Object.entries(PROFILE_ASSETS).map(([hash, text]) => [fixtureUrl(hash), text])) } }
+}
+
 /** The release host after the next content version is published: its manifest and its one new asset. */
 export function nextContentHost(): Machine {
   return { remoteText: { ...fixtureContentHost().remoteText, [MANIFEST_URL]: JSON.stringify(NEXT_MANIFEST), [nextFixtureUrl(OPTISCALER_NEXT_HASH)]: 'OptiScaler 2' } }
@@ -253,6 +258,8 @@ export const MACHINES = {
   /** The same panels with the UI mode and DLSS-G preset choices: an RTX 40 on a 240 Hz HDR panel, and an RTX 30 on a 60 Hz SDR one. */
   settings240Hdr: machine(screenGallery(240, true, false, settingChoiceContentHost()), graphicsCard()),
   settings60Sdr: machine(screenGallery(60, false, false, settingChoiceContentHost()), graphicsCard('NVIDIA GeForce RTX 3080')),
+  hints240Hdr: machine(screenGallery(240, true, false, passHintContentHost()), graphicsCard()),
+  hints60Sdr: machine(screenGallery(60, false, false, passHintContentHost()), graphicsCard('NVIDIA GeForce RTX 3080')),
   /** Beta content and an app pre-release are published; turn on Beta channel in Settings to be offered them. */
   beta: machine(betaContentHost(), graphicsCard(), steam({ libraries: ['D:\\SteamLibrary'], game: 'D:\\SteamLibrary' }), vanillaGame(steamGameFolder('D:\\SteamLibrary')), appBetaReleaseHost()),
 } satisfies Record<string, Machine>

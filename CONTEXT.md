@@ -86,6 +86,10 @@ _Avoid_: managed config, settings file
 What a content version does to one config file on update: **keep** (the default: leave it alone), **add missing keys** (write the keys absent on disk with the baseline's value, leaving every other key as the player has it) or **replace** (back it up, then write the baseline from the first-install choices). The changelog announces add missing keys and replace.
 _Avoid_: merge, reset key
 
+**Set keys** (`setKeys`):
+Keys a content version sets in a config file the player already has, under keep or add missing keys, whatever their value, while every other byte stays. Applied once: a key the deployed version's recipe already carried is skipped. With `ifPath` a key is set only when its current value is that path, to move a selected preset off a file the version removes. The changelog names the keys that are set whatever their value. Needs an app that reads the field, so content that uses it requires that app version.
+_Avoid_: reset key, forced key
+
 **First-install choices**:
 What the player picks on the screen shown before the baseline is deployed: the performance profile, the frame generation mode, the HDR mode, the setting choices, Include ReShade and Add to Start menu. Lucent writes them into the config files once and keeps them only so Reset can offer them again.
 _Avoid_: settings, configurator

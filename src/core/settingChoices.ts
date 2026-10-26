@@ -17,6 +17,8 @@ export interface ChoiceContext {
   gpuName: string
   frameGenerationMode: FrameGenerationId | null
   hdrMode: HdrMode | null
+  /** The Neural Rendering passes picked, or null for a tier without the control. Decides which pass-specific choices are shown. */
+  passes: number | null
 }
 
 const offeredTo = (choice: SettingChoice, gpuName: string) =>
@@ -77,12 +79,13 @@ export interface ShownChoice {
   options: { option: SettingChoiceOption; blocked: string | null }[]
 }
 
-/** The choices the Graphics step shows: offered to the card and, where they need it, with frame generation on. */
+/** The choices the Graphics step shows: offered to the card and, where they need it, with frame generation on or enough Neural Rendering passes. */
 export function shownSettingChoices(choices: SettingChoice[] | undefined, picks: SettingPicks | null | undefined, context: ChoiceContext): ShownChoice[] {
   const resolved = resolveSettingChoices(choices, picks, context)
   const frameGenerationOn = context.frameGenerationMode !== null && context.frameGenerationMode !== 'off'
   return (choices ?? []).flatMap((choice) => {
     if (!offeredTo(choice, context.gpuName) || (choice.needsFrameGeneration && !frameGenerationOn)) return []
+    if (choice.minPasses !== undefined && (context.passes ?? 1) < choice.minPasses) return []
     return [{
       choice, selected: resolved[choice.id],
       options: choice.options.map((option) => ({ option, blocked: optionBlock(option, resolved, context) })),

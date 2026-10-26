@@ -57,7 +57,13 @@ export interface ConditionalPath { path: string; when?: 'reshade' }
 /** What an update does to a config file the player already has. Absent means `keep`. */
 export const CONFIG_UPDATE_RULES = ['keep', 'addMissingKeys', 'replace'] as const
 export type ConfigUpdateRule = typeof CONFIG_UPDATE_RULES[number]
-export interface ConfigPath extends ConditionalPath { update?: ConfigUpdateRule }
+/**
+ * A key an update sets in a config the player already has, whatever their value, while the rest of the file stays. With `ifPath`
+ * it sets the key only when its current value is that path (compared as a path: case, slashes and a leading `.\` don't matter).
+ */
+export interface ConfigKeySetting { section: string; key: string; value: string; ifPath?: string }
+/** `setKeys` apply with `keep` and `addMissingKeys`, once per key: an update to a version that carries a key the deployed version already carried leaves it alone. Older apps ignore them. */
+export interface ConfigPath extends ConditionalPath { update?: ConfigUpdateRule; setKeys?: ConfigKeySetting[] }
 export interface IniKey { file: string; section: string; key: string }
 export interface IniSetting extends IniKey { value: string }
 export interface ScreenDerivedSetting extends IniKey { value: 'frameCap' | 'peakNits' }
@@ -96,6 +102,11 @@ export interface SettingChoiceOption {
   blockedWhen?: SettingChoiceBlock[]
 }
 /**
+ * Where the Graphics step shows a choice that doesn't get a card of its own: inside the Neural Rendering card. Choices that name the
+ * same `group` share one collapsed disclosure under that title, with the first one's `note` under it; none names no disclosure.
+ */
+export interface SettingChoicePlacement { in: 'neural-rendering'; group?: string; note?: string }
+/**
  * A first-install choice whose options each write a set of ini keys, such as the DLSS-G render preset. Choices are listed in the
  * order they appear, and an option may only be blocked by a choice above it. Unknown to apps that predate this field, which ignore it.
  */
@@ -106,6 +117,10 @@ export interface SettingChoice {
   gpuNamePatterns?: string[]
   /** Offered only while frame generation is on. */
   needsFrameGeneration?: boolean
+  /** Shown only while the Neural Rendering passes are at least this many; the pick is written either way, as with frame generation Off. */
+  minPasses?: 2 | 3
+  /** Absent: a card of its own. */
+  placement?: SettingChoicePlacement
   options: SettingChoiceOption[]
   defaultOption: string
   /** The option whose settings are written for a card the choice isn't offered to; absent writes nothing for it. */
@@ -389,20 +404,43 @@ function hash(value: unknown): string {
   return value
 }
 function configPaths(value: unknown): ConfigPath[] {
-  const rules = array(value, 'Owned configs').map((v) => object(v, 'Owned configs').update)
+  const entries = array(value, 'Owned configs').map((v) => object(v, 'Owned configs'))
   return paths(value, 'Owned configs').map((p, i) => {
-    const rule = rules[i]
-    if (rule === undefined) return p
-    if (!CONFIG_UPDATE_RULES.includes(rule as ConfigUpdateRule)) invalid(`Unknown config update rule: ${p.path}`)
-    return { ...p, update: rule as ConfigUpdateRule }
+    const { update: rule, setKeys } = entries[i]
+    const config: ConfigPath = { ...p }
+    if (rule !== undefined) {
+      if (!CONFIG_UPDATE_RULES.includes(rule as ConfigUpdateRule)) invalid(`Unknown config update rule: ${p.path}`)
+      config.update = rule as ConfigUpdateRule
+    }
+    if (setKeys !== undefined) {
+      const keys = configKeySettings(setKeys)
+      if (keys.length) config.setKeys = keys
+    }
+    return config
   })
 }
-function iniKey(value: unknown): IniKey {
-  const k = object(value, 'INI key')
+function configKeySettings(value: unknown): ConfigKeySetting[] {
+  const list = array(value, 'Config keys')
+  if (list.length > 64) invalid('A config may set at most 64 keys on update.')
+  const keys = list.map((v): ConfigKeySetting => {
+    const s = object(v, 'Config key')
+    if (typeof s.value !== 'string' || /[\r\n\0]/.test(s.value)) invalid('INI values must be single-line strings.')
+    if (s.ifPath !== undefined && (typeof s.ifPath !== 'string' || !s.ifPath.trim() || /[\r\n\0]/.test(s.ifPath))) invalid('ifPath must be a single-line path.')
+    return { ...iniSectionKey(s), value: s.value, ...(s.ifPath === undefined ? {} : { ifPath: s.ifPath as string }) }
+  })
+  unique(keys.map((k) => `${k.section}\0${k.key}\0${k.ifPath ?? ''}`.toLowerCase()), 'Config keys')
+  return keys
+}
+function iniSectionKey(k: Record<string, unknown>): { section: string; key: string } {
   if (typeof k.section !== 'string' || /[\r\n\0\[\]]/.test(k.section) || k.section !== k.section.trim()) invalid('Invalid INI section.')
   const key = nonemptyString(k.key, 'INI key')
   if (/[\r\n\0=;#\[\]]/.test(key) || key !== key.trim()) invalid('Invalid INI key.')
-  return { file: gamePath(k.file), section: k.section, key }
+  return { section: k.section, key }
+}
+function iniKey(value: unknown): IniKey {
+  const k = object(value, 'INI key')
+  const { section, key } = iniSectionKey(k)
+  return { file: gamePath(k.file), section, key }
 }
 function iniSetting(s: Record<string, unknown>): IniSetting {
   if (typeof s.value !== 'string' || /[\r\n\0]/.test(s.value)) invalid('INI values must be single-line strings.')
@@ -498,6 +536,14 @@ function settingChoice(value: unknown): SettingChoice {
     if (!gpuNamePatterns.length) invalid('Setting choice GPU name patterns cannot be empty.')
   }
   if (choice.needsFrameGeneration !== undefined && typeof choice.needsFrameGeneration !== 'boolean') invalid('Setting choice needsFrameGeneration must be a boolean.')
+  if (choice.minPasses !== undefined && choice.minPasses !== 2 && choice.minPasses !== 3) invalid('Setting choice minPasses must be 2 or 3.')
+  let placement: SettingChoicePlacement | undefined
+  if (choice.placement !== undefined) {
+    const p = object(choice.placement, 'Setting choice placement')
+    if (p.in !== 'neural-rendering') invalid('Unknown setting choice placement.')
+    const text = (value: unknown, field: string, max: number) => { const line = singleLine(value, field); if (line.length > max) invalid(`${field} is longer than ${max} characters.`); return line }
+    placement = { in: 'neural-rendering', ...(p.group === undefined ? {} : { group: text(p.group, 'Setting choice group', 80) }), ...(p.note === undefined ? {} : { note: text(p.note, 'Setting choice note', 240) }) }
+  }
   const options = array(choice.options, 'Setting choice options').map(settingChoiceOption)
   if (options.length < 2) invalid('A setting choice needs at least two options.')
   unique(options.map((option) => option.id), 'Setting choice option ids')
@@ -510,7 +556,8 @@ function settingChoice(value: unknown): SettingChoice {
   const keys = (option: SettingChoiceOption) => option.settings.map(iniKeyId).sort().join('\n')
   if (options.some((option) => keys(option) !== keys(options[0]))) invalid('The options of a setting choice must write the same keys.')
   return { id, label: singleLine(choice.label, 'Setting choice label'), ...(gpuNamePatterns ? { gpuNamePatterns } : {}),
-    ...(choice.needsFrameGeneration === undefined ? {} : { needsFrameGeneration: choice.needsFrameGeneration }), options, defaultOption,
+    ...(choice.needsFrameGeneration === undefined ? {} : { needsFrameGeneration: choice.needsFrameGeneration }),
+    ...(choice.minPasses === undefined ? {} : { minPasses: choice.minPasses as 2 | 3 }), ...(placement ? { placement } : {}), options, defaultOption,
     ...(unofferedOption === undefined ? {} : { unofferedOption }) }
 }
 function settingChoices(value: unknown): SettingChoice[] {
@@ -745,6 +792,8 @@ function contentVersion(value: unknown, tiers: Tier[]): ContentVersion {
     }
     for (const s of recipes[id].mfgUnlock?.settings ?? []) ownedConfig(s.file)
     for (const s of (recipes[id].settingChoices ?? []).flatMap((choice) => choice.options.flatMap((option) => option.settings))) ownedConfig(s.file)
+    // A choice placed in the Neural Rendering card, or one that counts its passes, is only ever shown by a tier that has those controls.
+    if (!nr && (recipes[id].settingChoices ?? []).some((choice) => choice.placement || choice.minPasses !== undefined)) invalid('A setting choice that is placed in the Neural Rendering card or needs passes needs the tier’s Neural Rendering controls.')
   }
   const knownBrokenGameVersions = v.knownBrokenGameVersions === undefined ? undefined
     : array(v.knownBrokenGameVersions, 'Known-broken game versions').map((version) => singleLine(version, 'Known-broken game version'))

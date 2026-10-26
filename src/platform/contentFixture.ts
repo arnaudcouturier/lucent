@@ -280,11 +280,35 @@ export const SETTING_CHOICES = [
   },
 ] satisfies SettingChoice[]
 
-/** Inert content with the UI mode and DLSS-G preset choices on the NVIDIA tiers, for tests and the gallery; never published. */
-export const SETTING_CHOICE_MANIFEST: Manifest = {
+const hintPlacement = { in: 'neural-rendering', group: 'Advanced Neural Rendering model hints (effect unverified)', note: 'Hints the Neural Rendering model receives for each pass.' } as const
+const hintOptions = (key: string, pass: number, inherits: boolean) => [
+  ...(inherits ? [{ id: 'auto', label: 'Auto (inherit pass 1)', description: `Pass ${pass} sends the same hint as pass 1.`, settings: [choiceKey('DlssNr', key, 'auto')] }] : []),
+  { id: 'default', label: 'Default', description: `Pass ${pass} sends preset hint 0 to the model.`, settings: [choiceKey('DlssNr', key, '0')] },
+  ...[1, 2, 3].map((n) => ({ id: `preset-${n}`, label: `Preset ${n}`, description: `Pass ${pass} sends preset hint ${n} to the model.`, settings: [choiceKey('DlssNr', key, String(n))] })),
+]
+/** The Neural Rendering model's per-pass preset hints: placed inside the Neural Rendering card, the second and third shown only with that many passes. */
+export const PASS_HINT_CHOICES = [
+  { id: 'nr-hint-pass-1', label: 'Pass 1 preset hint', placement: hintPlacement, defaultOption: 'preset-1', options: hintOptions('Preset', 1, false) },
+  { id: 'nr-hint-pass-2', label: 'Pass 2 preset hint', minPasses: 2, placement: hintPlacement, defaultOption: 'default', options: hintOptions('Pass2Preset', 2, true) },
+  { id: 'nr-hint-pass-3', label: 'Pass 3 preset hint', minPasses: 3, placement: hintPlacement, defaultOption: 'default', options: hintOptions('Pass3Preset', 3, true) },
+] satisfies SettingChoice[]
+
+/** The character preview's Neural Rendering: a plain block inside the Neural Rendering card, Off unless the player turns it on. */
+export const PREVIEW_NR_CHOICE = {
+  id: 'preview-nr', label: 'Character preview Neural Rendering', placement: { in: 'neural-rendering' }, defaultOption: 'off',
+  options: [
+    { id: 'off', label: 'Off', description: 'The character, equipment and glamour previews are drawn without the Neural Rendering model, so no video memory goes to it. This is the default, because the model takes a lot of video memory for each open preview window.', settings: [choiceKey('FFXIV', 'PreviewNR', 'false')] },
+    { id: 'on', label: 'On', description: 'Runs the Neural Rendering model on each open preview window. It takes a lot of video memory for each open window (roughly 180 MB or more in the fork’s own tests) and some GPU time.', settings: [choiceKey('FFXIV', 'PreviewNR', 'true')] },
+  ],
+} satisfies SettingChoice
+const withChoices = (choices: SettingChoice[]): Manifest => ({
   ...NEURAL_RENDERING_MANIFEST,
   versions: NEURAL_RENDERING_MANIFEST.versions.map((content) => ({
     ...content,
-    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id.startsWith('rtx-') ? { ...tier, settingChoices: SETTING_CHOICES } : tier])),
+    tiers: Object.fromEntries(Object.entries(content.tiers).map(([id, tier]) => [id, id.startsWith('rtx-') ? { ...tier, settingChoices: choices } : tier])),
   })),
-}
+})
+/** Inert content with the UI mode and DLSS-G preset choices on the NVIDIA tiers, for tests and the gallery; never published. */
+export const SETTING_CHOICE_MANIFEST: Manifest = withChoices(SETTING_CHOICES)
+/** The same with the character preview's Neural Rendering and the pass preset hints after them, for tests and the gallery; never published. */
+export const PASS_HINT_MANIFEST: Manifest = withChoices([...SETTING_CHOICES, PREVIEW_NR_CHOICE, ...PASS_HINT_CHOICES])

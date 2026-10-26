@@ -20,7 +20,7 @@ const asManifest = (choices: SettingChoice[]) => JSON.stringify({
   })),
 })
 const latest = recipes.at(-1)!
-const ctx = (gpuName: string, frameGenerationMode: '2x' | 'off' = '2x') => ({ gpuName, frameGenerationMode, hdrMode: 'off' as const })
+const ctx = (gpuName: string, frameGenerationMode: '2x' | 'off' = '2x', passes = 1) => ({ gpuName, frameGenerationMode, hdrMode: 'off' as const, passes })
 const keys = (choices: SettingChoice[], resolved: Record<string, string>) => Object.fromEntries(settingChoiceSettings(choices, resolved).map((s) => [`${s.section}.${s.key}`, s.value]))
 
 describe('the setting choices of the content candidates', () => {

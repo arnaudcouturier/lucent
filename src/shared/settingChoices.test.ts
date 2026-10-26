@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ManifestError, parseManifest, type SettingChoice } from './manifest'
-import { SETTING_CHOICES, SETTING_CHOICE_MANIFEST } from '../platform/contentFixture'
+import { PASS_HINT_CHOICES, SETTING_CHOICES, SETTING_CHOICE_MANIFEST } from '../platform/contentFixture'
 
 /** The fixture manifest with `choices` on every NVIDIA tier, as the text a player's app would read. */
 const withChoices = (choices: unknown): string => JSON.stringify({
@@ -23,6 +23,27 @@ describe('setting choices in the manifest', () => {
     const parsed = parseManifest(JSON.stringify(SETTING_CHOICE_MANIFEST))
     expect(parsed.versions[0].tiers['rtx-20-30-40'].settingChoices).toEqual(SETTING_CHOICES)
     expect(parsed.versions[0].tiers['radeon']?.settingChoices).toBeUndefined()
+  })
+
+  it('reads where a choice sits on the Graphics step and how many passes it needs, and leaves both absent otherwise', () => {
+    expect(tierChoices(withChoices([...SETTING_CHOICES, ...PASS_HINT_CHOICES]))).toEqual([...SETTING_CHOICES, ...PASS_HINT_CHOICES])
+    const read = tierChoices(withChoices([...SETTING_CHOICES, ...PASS_HINT_CHOICES]))!
+    expect(read.map((choice) => [choice.id, choice.minPasses ?? null, choice.placement?.in ?? null])).toEqual([
+      ['ui-mode', null, null], ['dlssg-preset', null, null],
+      ['nr-hint-pass-1', null, 'neural-rendering'], ['nr-hint-pass-2', 2, 'neural-rendering'], ['nr-hint-pass-3', 3, 'neural-rendering'],
+    ])
+    expect(read[2].placement).toEqual({ in: 'neural-rendering', group: 'Advanced Neural Rendering model hints (effect unverified)', note: 'Hints the Neural Rendering model receives for each pass.' })
+  })
+
+  it('rejects a placed or pass-counting choice on a tier that has no Neural Rendering controls, where nothing would show it', () => {
+    const noControls = (choices: unknown) => {
+      const manifest = JSON.parse(withChoices(choices))
+      for (const tier of Object.values(manifest.versions[0].tiers) as { neuralRenderingControls?: unknown; performanceProfilesV2?: unknown }[]) delete tier.neuralRenderingControls
+      return JSON.stringify(manifest)
+    }
+    expect(() => parseManifest(noControls(PASS_HINT_CHOICES))).toThrow(ManifestError)
+    expect(() => parseManifest(noControls([group({ minPasses: 2 })]))).toThrow(ManifestError)
+    expect(() => parseManifest(noControls(SETTING_CHOICES))).not.toThrow()
   })
 
   it('stays readable when the choices are an empty list', () => {
@@ -50,6 +71,13 @@ describe('setting choices in the manifest', () => {
     ['a gpu pattern that is not a regular expression', [group({ gpuNamePatterns: ['['] })]],
     ['empty gpu patterns', [group({ gpuNamePatterns: [] })]],
     ['needsFrameGeneration that is not a boolean', [group({ needsFrameGeneration: 'yes' })]],
+    ['minPasses of 1', [group({ minPasses: 1 })]],
+    ['minPasses that is not a number', [group({ minPasses: '2' })]],
+    ['a placement that is not an object', [group({ placement: 'neural-rendering' })]],
+    ['a placement somewhere unknown', [group({ placement: { in: 'frame-generation' } })]],
+    ['a placement group over several lines', [group({ placement: { in: 'neural-rendering', group: 'A\nB' } })]],
+    ['a placement group that is far too long', [group({ placement: { in: 'neural-rendering', group: 'x'.repeat(81) } })]],
+    ['a placement note that is far too long', [group({ placement: { in: 'neural-rendering', note: 'x'.repeat(241) } })]],
     ['a setting in a config the tier does not own', [group({ options: [option('a'), option('b', { settings: [setting('Test', 'Key', '1', 'Other.ini')] })] })]],
     ['a duplicate group id', [group(), group()]],
     ['options that write different keys', [group({ options: [option('a'), option('b', { settings: [setting('Test', 'Other', 'b')] })] })]],

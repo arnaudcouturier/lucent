@@ -114,6 +114,12 @@ const settingUiFree = (core: Core) => {
   core.selectSettingChoice('ui-mode', 'ui-free')
   core.selectSettingChoice('dlssg-preset', 'a')
 }
+/** Three passes, so all three hints show, with the second pass on Preset 2 and the third inheriting pass 1. */
+const hintPicks = (core: Core) => {
+  core.setNeuralRendering({ passes: 3 })
+  core.selectSettingChoice('nr-hint-pass-2', 'preset-2')
+  core.selectSettingChoice('nr-hint-pass-3', 'auto')
+}
 const multipleLaunchers = async () => {
   const platform = createFakePlatform(machine(MACHINES.steam, xivLauncher(steamGameFolder('D:\\SteamLibrary'))))
   await platform.writeText(`${await platform.envFolder('LocalAppData')}\\XIVLauncher\\current\\XIVLauncher.exe`, 'XIVLauncher')
@@ -500,6 +506,9 @@ const STATES: GalleryState[] = [
   { key: 'settings-open', label: 'Graphics · UI mode Off, Preset C (HDR Off)', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', settingPicks) },
   { key: 'settings-ui-free', label: 'Graphics · UI-free, Preset A (HDR Off)', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', settingUiFree) },
   { key: 'settings-rtx30', label: 'Graphics · RTX 30 has neither choice', setup: choicesStep(MACHINES.settings60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
+  { key: 'hints-two-passes', label: 'Graphics · Pass preset hints, RTX 4090 (2 passes by default)', setup: choicesStep(MACHINES.hints240Hdr, graphicsCard('NVIDIA GeForce RTX 4090')) },
+  { key: 'hints-three-passes', label: 'Graphics · Pass preset hints, 3 passes, Pass 2 on Preset 2', setup: choicesStep(MACHINES.hints240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', hintPicks) },
+  { key: 'hints-one-pass', label: 'Graphics · Pass preset hints, RTX 3080 (1 pass)', setup: choicesStep(MACHINES.hints60Sdr, graphicsCard('NVIDIA GeForce RTX 3080')) },
   { key: 'settings-review', label: 'Review · UI mode and DLSS-G preset', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'review', settingPicks) },
   { key: 'settings-done', label: 'Done · UI mode and DLSS-G preset', setup: choicesStep(MACHINES.settings240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'done', settingPicks) },
   { key: 'choices-experimental', label: 'Profile · Experimental picks (4×, Scene HDR)', setup: choicesStep(MACHINES.choices240Hdr, graphicsCard('NVIDIA GeForce RTX 4090'), 'profile', experimentalPicks) },

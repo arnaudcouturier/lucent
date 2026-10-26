@@ -1,5 +1,5 @@
 // Config files: what a content version's baseline holds for each one, and the update rule that decides what an update does with it.
-import type { ConfigPath, ConfigUpdateRule } from '../shared/manifest'
+import type { ConfigKeySetting, ConfigPath, ConfigUpdateRule } from '../shared/manifest'
 import { readIni } from './ini'
 import { joinPath } from './paths'
 import { fileKey, type Plan } from './planner'
@@ -8,6 +8,18 @@ import { expandUserFolders } from './userFolders'
 
 /** `keep` when the content gives the file no rule. */
 export const updateRule = (config: ConfigPath): ConfigUpdateRule => config.update ?? 'keep'
+
+const sameKeySetting = (a: ConfigKeySetting, b: ConfigKeySetting) =>
+  [a.section, a.key, a.value, a.ifPath ?? ''].join('\0').toLowerCase() === [b.section, b.key, b.value, b.ifPath ?? ''].join('\0').toLowerCase()
+
+/**
+ * The `setKeys` an update applies to a config: the ones the new version carries that the deployed version did not. A recipe
+ * copied forward keeps its list, and a key is set once, so the player's later choice is not overwritten by every update.
+ */
+export function newConfigKeys(config: ConfigPath, deployed: ConfigPath[]): ConfigKeySetting[] {
+  const before = deployed.find((c) => fileKey(c.path) === fileKey(config.path))?.setKeys ?? []
+  return (config.setKeys ?? []).filter((setting) => !before.some((b) => sameKeySetting(b, setting)))
+}
 
 /** The cached asset each config is copied from, following the plan's renames and deletions; a config no step copies has none. */
 export function configBaselineAssets(plan: Plan): string[] {
@@ -58,13 +70,18 @@ export async function configBaselines(platform: Platform, cache: string, plan: P
 const sentenceList = (names: string[]) => names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 
 /** The changelog lines about config files: the ones an update adds keys to or replaces. A file the deployment doesn't have yet is simply added, so it isn't mentioned. */
-export function configUpdateNotes(configs: ConfigPath[], deployedFiles: Iterable<string>): string[] {
+export function configUpdateNotes(configs: ConfigPath[], deployedFiles: Iterable<string>, deployedConfigs: ConfigPath[] = []): string[] {
   const deployed = new Set([...deployedFiles].map(fileKey))
   const named = (rule: ConfigUpdateRule) => configs.filter((config) => updateRule(config) === rule && deployed.has(fileKey(config.path))).map((config) => config.path)
   const adds = named('addMissingKeys')
   const replaces = named('replace')
+  // Only the keys set whatever their value are named; one that waits for a value (`ifPath`) may not apply to this player.
+  const sets = configs.filter((config) => updateRule(config) !== 'replace' && deployed.has(fileKey(config.path)))
+    .map((config) => ({ path: config.path, keys: [...new Set(newConfigKeys(config, deployedConfigs).filter((s) => s.ifPath === undefined).map((s) => s.key))] }))
+    .filter((set) => set.keys.length)
   return [
     ...(adds.length ? [`Adds missing keys to ${sentenceList(adds)}. Your values stay.`] : []),
+    ...sets.map((set) => `Sets ${sentenceList(set.keys)} in ${set.path} to the tested ${set.keys.length === 1 ? 'value' : 'values'}. Your other settings stay.`),
     ...(replaces.length ? [`Replaces ${sentenceList(replaces)} with the tested setup. Lucent backs up your ${replaces.length === 1 ? 'copy' : 'copies'} first.`] : []),
   ]
 }

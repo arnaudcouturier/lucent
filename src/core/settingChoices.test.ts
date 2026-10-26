@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SETTING_CHOICES } from '../platform/contentFixture'
 import { optionBlock, resolveSettingChoices, settingChoiceSettings, settingChoiceSummary, shownSettingChoices, type ChoiceContext } from './settingChoices'
 
-const rtx4090: ChoiceContext = { gpuName: 'NVIDIA GeForce RTX 4090', frameGenerationMode: '2x', hdrMode: 'off' }
+const rtx4090: ChoiceContext = { gpuName: 'NVIDIA GeForce RTX 4090', frameGenerationMode: '2x', hdrMode: 'off', passes: 1 }
 const [ui, preset] = SETTING_CHOICES
 
 describe('resolving the setting choices', () => {

@@ -417,3 +417,185 @@ it('does not leave a “(my edits)” copy behind when the update fails partway'
   expect(await platform.readText(`${GAME}\\reshade-presets\\Example.ini`)).toBe('My tweaks')
   expect((await readDeployment(platform, ROOT))?.contentVersion).toBe('2026.10.12')
 })
+
+// setKeys: an update sets the listed keys in a config the player has and leaves the rest of the file alone.
+const SETTINGS = '; My notes\n[GENERAL]\nPresetPath=reshade-presets/Mine.ini\nSkipLoadingDisabledEffects=1\nNoDebugInfo=1\n[INPUT]\nKeyOverlay=36,0,0,0\n[OVERLAY]\nShowForceLoadEffectsButton=1\n'
+const SET_BOTH = [{ section: 'GENERAL', key: 'SkipLoadingDisabledEffects', value: '0' }, { section: 'GENERAL', key: 'NoDebugInfo', value: '0' }]
+const FOUR_K = '.\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable 4K.ini'
+const STABLE = '.\\reshade-presets\\Alive NEXT WIP\\Alive NEXT Stable.ini'
+type KeySettings = NonNullable<ContentVersion['tiers'][string]['ownedConfigs'][number]['setKeys']>
+
+/** The next version with `setKeys` on its ReShade.ini entry (and the given update rule). */
+function nextWithKeys(m: Machine, setKeys: KeySettings, rule?: ConfigUpdateRule) {
+  const content = structuredClone(NEXT_CONTENT)
+  for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') { config.setKeys = setKeys; if (rule) config.update = rule }
+  publishVariant(m, content)
+  return content
+}
+
+it('setKeys under keep sets only the listed keys, announces them, and leaves the rest of the file byte for byte', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, SETTINGS)
+  nextWithKeys(m, SET_BOTH)
+  const core = await reopen(platform)
+  expect(statusCard(core.getState())).toMatchObject({ kind: 'update', changelog: [...NEXT_CONTENT.changelog, 'Sets SkipLoadingDisabledEffects and NoDebugInfo in ReShade.ini to the tested values. Your other settings stay.'] })
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(SETTINGS.replace('SkipLoadingDisabledEffects=1', 'SkipLoadingDisabledEffects=0').replace('NoDebugInfo=1', 'NoDebugInfo=0'))
+  // The journal backed up the player's file first, and nothing is drift.
+  expect(await platform.readText(`${(await dataPaths(platform, ROOT)).backups}\\${await sha256(SETTINGS)}`)).toBe(SETTINGS)
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+  const lines = (await core.readLog(LUCENT_LOG))!.map((line) => line.text)
+  expect(lines).toContain('Config ReShade.ini: other settings kept as they are')
+  expect(lines).toContain('Config ReShade.ini: set GENERAL/SkipLoadingDisabledEffects, GENERAL/NoDebugInfo')
+})
+
+it('setKeys adds a key the file lacks and leaves a file that already holds the values alone', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, TUNED)
+  nextWithKeys(m, [{ section: 'GENERAL', key: 'NoDebugInfo', value: '0' }])
+  const core = await reopen(platform)
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('; My notes\n[GENERAL]\nPresetPath=reshade-presets/Mine.ini\nNoDebugInfo=0\n[INPUT]\nKeyOverlay=36,0,0,0\n')
+
+  const second = await deployed()
+  await second.platform.writeText(`${GAME}\\ReShade.ini`, '[GENERAL]\nNoDebugInfo=0\n')
+  nextWithKeys(second.m, [{ section: 'GENERAL', key: 'NoDebugInfo', value: '0' }])
+  const again = await reopen(second.platform)
+  await again.update()
+  expect(await second.platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nNoDebugInfo=0\n')
+  expect((await readDeployment(second.platform, ROOT))!.journal.some((entry) => entry.after['ReShade.ini'] === null)).toBe(false)
+})
+
+it('setKeys with addMissingKeys writes the missing keys and the set keys in one write', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, TUNED)
+  const { content, hash } = await replaceShipped(NEXT_CONTENT, 'ReShade.ini', NEW_BASELINE)
+  for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') { config.update = 'addMissingKeys'; config.setKeys = [{ section: 'INPUT', key: 'KeyOverlay', value: '113,0,1,0' }] }
+  publishVariant(m, content, { [hash]: NEW_BASELINE })
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('; My notes\n[GENERAL]\nPresetPath=reshade-presets/Mine.ini\nNewKey=on\n[INPUT]\nKeyOverlay=113,0,1,0\n')
+})
+
+it('setKeys with ifPath moves a selected preset only when it names the removed one, however it is written', async () => {
+  for (const [stored, expected] of [
+    [FOUR_K, STABLE],
+    ['./reshade-presets/alive next wip/ALIVE NEXT STABLE 4K.ini', STABLE],
+    ['.\\reshade-presets\\ipsuShade\\Mine.ini', '.\\reshade-presets\\ipsuShade\\Mine.ini'],
+    ['.\\ReShadePreset.ini', '.\\ReShadePreset.ini'],
+  ]) {
+    const { platform, m } = await deployed()
+    await platform.writeText(`${GAME}\\ReShade.ini`, `[GENERAL]\nPresetPath=${stored}\nStartupPresetPath=${stored}\n`)
+    nextWithKeys(m, [{ section: 'GENERAL', key: 'PresetPath', value: STABLE, ifPath: FOUR_K }, { section: 'GENERAL', key: 'StartupPresetPath', value: STABLE, ifPath: FOUR_K }])
+    const core = await reopen(platform)
+    await core.update()
+    expect(core.getState().error).toBeNull()
+    expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(`[GENERAL]\nPresetPath=${expected}\nStartupPresetPath=${expected}\n`)
+  }
+  // An ifPath key the file lacks is not added.
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, '[GENERAL]\nNoDebugInfo=1\n')
+  nextWithKeys(m, [{ section: 'GENERAL', key: 'PresetPath', value: STABLE, ifPath: FOUR_K }])
+  const core = await reopen(platform)
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe('[GENERAL]\nNoDebugInfo=1\n')
+})
+
+it('setKeys apply once: a version that carries the same keys again leaves the player’s later choice alone', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, SETTINGS)
+  const first = nextWithKeys(m, SET_BOTH)
+  const core = await reopen(platform)
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toContain('SkipLoadingDisabledEffects=0')
+  // The player turns skipping back on; the next version is the recipe copied forward, keys and all.
+  await platform.writeText(`${GAME}\\ReShade.ini`, SETTINGS)
+  const third = { ...structuredClone(first), id: '2026.11.03' }
+  m.remoteText![MANIFEST_URL] = JSON.stringify({ ...NEXT_MANIFEST, versions: [NEXT_MANIFEST.versions[0], first, third] })
+  const later = await reopen(platform)
+  const card = statusCard(later.getState())
+  expect(card).toMatchObject({ kind: 'update', version: '2026.11.03' })
+  expect(JSON.stringify(card)).not.toContain('Sets ')
+  await later.update()
+  expect(later.getState()).toMatchObject({ error: null, deployment: { contentVersion: '2026.11.03' } })
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(SETTINGS)
+})
+
+it('replace ignores setKeys, since the whole baseline is written', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, SETTINGS)
+  const { content, hash } = await replaceShipped(NEXT_CONTENT, 'ReShade.ini', NEW_BASELINE)
+  for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') { config.update = 'replace'; config.setKeys = SET_BOTH }
+  publishVariant(m, content, { [hash]: NEW_BASELINE })
+  const core = await reopen(platform)
+  expect(JSON.stringify(statusCard(core.getState()))).not.toContain('Sets ')
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(NEW_BASELINE)
+})
+
+it('setKeys never writes over a locked config', async () => {
+  const { platform, m } = await deployed()
+  const config = `${GAME}\\ReShade.ini`
+  await platform.writeText(config, SETTINGS)
+  nextWithKeys(m, SET_BOTH)
+  const read = platform.readText.bind(platform)
+  platform.readText = async (path) => {
+    if (path.toLowerCase() === config.toLowerCase()) throw new PlatformError('locked', 'Sharing violation', path)
+    return read(path)
+  }
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toMatch(/file is in use/i)
+  platform.readText = read
+  expect(await platform.readText(config)).toBe(SETTINGS)
+  expect((await readDeployment(platform, ROOT))?.contentVersion).toBe('2026.10.12')
+})
+
+it('setKeys leave a config that isn’t UTF-8 text as it is', async () => {
+  const { platform, m } = await deployed()
+  const utf16 = '[\0G\0E\0N\0E\0R\0A\0L\0]\0'
+  await platform.writeText(`${GAME}\\ReShade.ini`, utf16)
+  nextWithKeys(m, SET_BOTH)
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(utf16)
+})
+
+it.each([['unedited', undefined], ['edited', 'My tweaks']] as const)('an update that drops a preset moves the selected preset off it and sets the ReShade toggles (%s preset)', async (_, edit) => {
+  const { platform, m } = await deployed()
+  const reshade = `${GAME}\\ReShade.ini`
+  const preset = `${GAME}\\reshade-presets\\Example.ini`
+  const player = '[GENERAL]\nPresetPath=.\\reshade-presets\\Example.ini\nStartupPresetPath=\nSkipLoadingDisabledEffects=1\nNoDebugInfo=1\n[INPUT]\nKeyOverlay=36,0,0,0\n'
+  await platform.writeText(reshade, player)
+  if (edit) await platform.writeText(preset, edit)
+  const content = moveExamplePreset(NEXT_CONTENT, null)
+  for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'ReShade.ini') config.setKeys = [
+    ...SET_BOTH,
+    { section: 'GENERAL', key: 'PresetPath', value: '.\\reshade-presets\\Other.ini', ifPath: '.\\reshade-presets\\Example.ini' },
+    { section: 'GENERAL', key: 'StartupPresetPath', value: '.\\reshade-presets\\Other.ini', ifPath: '.\\reshade-presets\\Example.ini' },
+  ]
+  publishVariant(m, content)
+  const core = await reopen(platform)
+  await core.update()
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(reshade)).toBe('[GENERAL]\nPresetPath=.\\reshade-presets\\Other.ini\nStartupPresetPath=\nSkipLoadingDisabledEffects=0\nNoDebugInfo=0\n[INPUT]\nKeyOverlay=36,0,0,0\n')
+  await expect(platform.readText(preset)).rejects.toThrow(/Not found/)
+  const left = (await platform.listFiles(GAME)).filter((path) => path.startsWith('reshade-presets'))
+  expect(left).toEqual(edit ? ['reshade-presets\\example (my edits).ini'] : [])
+  expect(statusCard((await reopen(platform)).getState())).toEqual({ kind: 'healthy' })
+})
+
+it('rolling back after a setKeys update restores the file the player had', async () => {
+  const { platform, m } = await deployed()
+  await platform.writeText(`${GAME}\\ReShade.ini`, SETTINGS)
+  nextWithKeys(m, SET_BOTH)
+  const core = await reopen(platform)
+  await core.update()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toContain('NoDebugInfo=0')
+  await core.applyVersion('2026.10.12')
+  expect(core.getState().error).toBeNull()
+  expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(SETTINGS)
+})

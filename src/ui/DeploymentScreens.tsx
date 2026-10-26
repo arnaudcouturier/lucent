@@ -59,7 +59,7 @@ export function ReviewScreen() {
       {plan.neuralRendering && <div><dt>Neural Rendering</dt><dd>{neuralRenderingSummary(controls, plan.neuralRendering)}{extras.length > 0 && <small>{extras.join(' and ')} on.</small>}</dd></div>}
       {plan.frameGenerationMode && <div><dt>Frame generation</dt><dd>{frameGenerationLabel(plan.frameGenerationMode)}{screen && <small>{frameGenerationDescription(plan.frameGenerationMode, screen.frameCap, screen.refreshHz)}</small>}{plan.mfgUnlocked && <small>Multi-frame unlock on.</small>}</dd></div>}
       {plan.hdrMode && <div><dt>HDR</dt><dd>{hdrLabel(plan.hdrMode)}{hdrNote(plan.hdrMode, !!screen?.hdrSupported)}</dd></div>}
-      {settingChoiceSummary(plan.recipe.settingChoices, plan.settingChoices, { gpuName, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode }).map(({ label, value }) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+      {settingChoiceSummary(plan.recipe.settingChoices, plan.settingChoices, { gpuName, frameGenerationMode: plan.frameGenerationMode, hdrMode: plan.hdrMode, passes: plan.neuralRendering?.passes ?? null }).map(({ label, value }) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
       <div><dt>ReShade</dt><dd>{plan.includeReShade ? <>Included{required ? ' for your tier' : ''}<small>Every preset, none active until you pick one in game.</small></> : <>Left out<small>No shaders or presets.</small></>}</dd></div>
       {!selfInstalled && <div><dt>Start menu</dt><dd>{addToStartMenu ? 'Lucent will be added' : 'Not added'}</dd></div>}
     </dl>
@@ -156,7 +156,7 @@ function ChosenSetup() {
     ...(deployment.neuralRendering ? neuralRenderingExtras(deployment.recipe.neuralRenderingControls ?? null, deployment.neuralRendering) : []),
     deployment.frameGenerationMode && `Frame generation ${frameGenerationLabel(deployment.frameGenerationMode)}`,
     deployment.hdrMode && `HDR ${hdrLabel(deployment.hdrMode)}`,
-    ...settingChoiceSummary(deployment.recipe.settingChoices, deployment.settingChoices, { gpuName: deployment.graphics.name, frameGenerationMode: deployment.frameGenerationMode ?? null, hdrMode: deployment.hdrMode ?? null }).map(({ label, value }) => `${label} ${value}`),
+    ...settingChoiceSummary(deployment.recipe.settingChoices, deployment.settingChoices, { gpuName: deployment.graphics.name, frameGenerationMode: deployment.frameGenerationMode ?? null, hdrMode: deployment.hdrMode ?? null, passes: deployment.neuralRendering?.passes ?? null }).map(({ label, value }) => `${label} ${value}`),
     deployment.includeReShade && 'ReShade',
   ].filter((item): item is string => !!item)
   return <ul className="chosen-setup" aria-label="What Lucent set up">{chosen.map((item) => <li key={item}>{item}</li>)}</ul>

@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen } from './Window'
 import { FlowError } from './DeploymentScreens'
@@ -6,7 +7,7 @@ import { SegmentedControl } from './SegmentedControl'
 import { setupChoices } from '../core/core'
 import { frameGenerationLabel, hdrDescription, hdrLabel } from '../core/choices'
 import { frameGenerationDescription } from '../core/frameGeneration'
-import { shownSettingChoices } from '../core/settingChoices'
+import { shownSettingChoices, type ShownChoice } from '../core/settingChoices'
 import { profileSummaryForHeight } from '../core/profileValues'
 import { presetRenderResolution, residualFgAvailable, residualFgCardMatches, scaleCostPercent, scaleLabel, SUGGESTED_DLAA_SCALE } from '../core/neuralRendering'
 import { NR_PASSES, NR_SCALES, type NrPasses, type NrScale } from '../shared/manifest'
@@ -101,7 +102,53 @@ function NeuralRenderingSection() {
       <ToggleRow label={controls.residualFg.label} description={controls.residualFg.description} experimental={controls.residualFg.experimental}
         checked={choice.residualFg} disabled={disabled} unavailable={residualUnavailable} onChange={(on) => core.setNeuralRendering({ residualFg: on })} />
     </div>
+    <NeuralRenderingChoices />
   </section>
+}
+
+/** The setting choices the tier shows on this step: offered to the card and, where they need it, with frame generation on or enough passes. */
+function useShownChoices(): ShownChoice[] {
+  const [{ settingChoiceGroups, settingChoices, graphics, deployment, frameGenerationMode, hdrMode, neuralRendering }] = useCore()
+  const gpuName = graphics.status === 'found' ? graphics.adapter.name : deployment?.graphics.name ?? ''
+  return shownSettingChoices(settingChoiceGroups, settingChoices, { gpuName, frameGenerationMode, hdrMode, passes: neuralRendering?.passes ?? null })
+}
+
+/** A setting choice's segmented control and the line for the picked option, with why an option can't be picked now. */
+function ChoiceControl({ choice, selected, options }: ShownChoice) {
+  const [{ busy, recoveryRequired }, core] = useCore()
+  const reasons = [...new Set(options.flatMap(({ blocked }) => blocked ? [blocked] : []))]
+  return <>
+    <SegmentedControl ariaLabel={choice.label} value={selected} disabled={busy || recoveryRequired}
+      options={options.map(({ option, blocked }) => ({ id: option.id, label: option.label, experimental: option.experimental, disabled: blocked !== null }))}
+      onChange={(id) => core.selectSettingChoice(choice.id, id)} />
+    <p className="choice-line">{options.find(({ option }) => option.id === selected)?.option.description}{reasons.length > 0 && <small>{reasons.join(' ')}</small>}</p>
+  </>
+}
+
+/** A collapsed heading over blocks the player rarely needs; it keeps its state while the blocks inside come and go. */
+function Disclosure({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  return <div className="nr-block nr-disclosure">
+    <button type="button" className="row-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+      {title}<ChevronDown size={13} strokeWidth={1.75} />
+    </button>
+    <div id={id} hidden={!open}>
+      {note && <p className="choice-line">{note}</p>}
+      {children}
+    </div>
+  </div>
+}
+
+/** The setting choices that sit inside the Neural Rendering card: each a block, those naming a group under that group's collapsed heading. */
+function NeuralRenderingChoices() {
+  const shown = useShownChoices().filter(({ choice }) => choice.placement?.in === 'neural-rendering')
+  const block = (item: ShownChoice) => <div className="nr-block" key={item.choice.id}><h3>{item.choice.label}</h3><ChoiceControl {...item} /></div>
+  return <>{[...new Set(shown.map(({ choice }) => choice.placement?.group))].map((group) => {
+    const members = shown.filter(({ choice }) => choice.placement?.group === group)
+    return group === undefined ? members.map(block)
+      : <Disclosure key={group} title={group} note={members.find(({ choice }) => choice.placement?.note)?.choice.placement?.note}>{members.map(block)}</Disclosure>
+  })}</>
 }
 
 function recommendationName(name: string): string {
@@ -145,17 +192,7 @@ function HdrChoice() {
 
 /** The tier's setting choices (UI mode, DLSS-G preset): a card each, the line for the picked option, and why an option can't be picked now. */
 function SettingChoices() {
-  const [{ settingChoiceGroups, settingChoices, graphics, deployment, frameGenerationMode, hdrMode, busy, recoveryRequired }, core] = useCore()
-  const gpuName = graphics.status === 'found' ? graphics.adapter.name : deployment?.graphics.name ?? ''
-  return <>{shownSettingChoices(settingChoiceGroups, settingChoices, { gpuName, frameGenerationMode, hdrMode }).map(({ choice, selected, options }) => {
-    const reasons = [...new Set(options.flatMap(({ blocked }) => blocked ? [blocked] : []))]
-    return <ChoiceGroup title={choice.label} key={choice.id}>
-      <SegmentedControl ariaLabel={choice.label} value={selected} disabled={busy || recoveryRequired}
-        options={options.map(({ option, blocked }) => ({ id: option.id, label: option.label, experimental: option.experimental, disabled: blocked !== null }))}
-        onChange={(id) => core.selectSettingChoice(choice.id, id)} />
-      <p className="choice-line">{options.find(({ option }) => option.id === selected)?.option.description}{reasons.length > 0 && <small>{reasons.join(' ')}</small>}</p>
-    </ChoiceGroup>
-  })}</>
+  return <>{useShownChoices().filter(({ choice }) => !choice.placement).map((item) => <ChoiceGroup title={item.choice.label} key={item.choice.id}><ChoiceControl {...item} /></ChoiceGroup>)}</>
 }
 
 /** Every first-install choice lives here, so Review only reviews. */

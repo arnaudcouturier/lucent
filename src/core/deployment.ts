@@ -4,8 +4,8 @@ import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './
 import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
-import { addMissingKeys, readIni } from './ini'
-import { configBaselineAssets, configBaselines, configPresent, readConfig, updateRule } from './configs'
+import { addMissingKeys, readIni, setConfigKeys } from './ini'
+import { configBaselineAssets, configBaselines, configPresent, newConfigKeys, readConfig, updateRule } from './configs'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { isGameFolder } from './gameFolder'
@@ -1058,14 +1058,16 @@ export async function updateDeployment(
     } else for (const config of plan.recipe.ownedConfigs) {
       const key = fileKey(config.path)
       const rule = updateRule(config)
+      // Keys this version sets that the deployed one did not; `replace` writes the whole baseline, which already holds them.
+      const keysToSet = rule === 'replace' ? [] : newConfigKeys(config, record.recipe.ownedConfigs)
       const deployed = Object.keys(record.files).some((path) => fileKey(path) === key)
       const diskPath = await platform.resolveGamePath(root, config.path)
       const state = deployed ? await readConfig(platform, diskPath) : { kind: 'missing' as const }
       const stampedPath = Object.keys(record.files).find((path) => fileKey(path) === key)
       if (state.kind === 'locked') {
-        // `keep` never needs to inspect or write the player's file. A replacement or rollback must fail clearly rather
-        // than making a decision from a file another process currently has open.
-        if (rollbackConfigBackups || rule !== 'keep') throw state.error
+        // `keep` never needs to inspect or write the player's file, unless the version sets keys in it. A replacement or
+        // rollback must fail clearly rather than making a decision from a file another process currently has open.
+        if (rollbackConfigBackups || rule !== 'keep' || keysToSet.length) throw state.error
         removeConfigSteps(key)
         if (stampedPath) untouchedConfigs.push(stampedPath)
         notes.push(`${config.path}: locked, kept as it is`)
@@ -1134,12 +1136,15 @@ export async function updateDeployment(
       if (rule === 'replace') { notes.push(`${config.path}: replaced from the new baseline, the previous file is backed up`); continue }
       const baseline = baselines.get(key)
       const merged = rule === 'addMissingKeys' && baseline !== undefined ? addMissingKeys(diskText, baseline) : null
-      notes.push(`${config.path}: ${rule === 'keep' ? 'kept as it is' : merged?.added.length
-        ? `added ${merged.added.length === 1 ? '1 missing key' : `${merged.added.length} missing keys`} (${merged.added.join(', ')})` : 'no missing keys, kept as it is'}`)
+      const forced = keysToSet.length ? setConfigKeys(merged?.text ?? diskText, await Promise.all(keysToSet.map(async (s) => ({ ...s, value: await expandUserFolders(platform, s.value) })))) : null
+      notes.push(`${config.path}: ${rule === 'keep' ? (forced?.changed.length ? 'other settings kept as they are' : 'kept as it is') : merged?.added.length
+        ? `added ${merged.added.length === 1 ? '1 missing key' : `${merged.added.length} missing keys`} (${merged.added.join(', ')})` : forced?.changed.length ? 'no missing keys' : 'no missing keys, kept as it is'}`)
+      if (forced?.changed.length) notes.push(`${config.path}: set ${forced.changed.join(', ')}`)
       // The config's own steps go, and so does the staging file a rename brings to it.
       const first = removeConfigSteps(key)
-      if (merged?.added.length) {
-        steps.splice(first, 0, { kind: 'write', path: config.path, text: merged.text })
+      const text = forced?.changed.length ? forced.text : merged?.added.length ? merged.text : null
+      if (text !== null) {
+        steps.splice(first, 0, { kind: 'write', path: config.path, text })
         expectedFiles = [...expectedFiles, { path: config.path, sha256: null }]
       } else keptConfigs.push(config.path)
     }

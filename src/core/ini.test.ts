@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { addMissingKeys, readIni } from './ini'
+import { addMissingKeys, readIni, setConfigKeys } from './ini'
 
 it.each([
   '\uFEFF; OptiScaler\r\n[DlssNr]\r\n  Passes = 2  \r\nEnabled=true\r\n',
@@ -56,6 +56,27 @@ it('addMissingKeys: keeps the layout and comments on disk, and adds a missing se
 it('addMissingKeys: matches names without regard to case, and leaves a file with nothing missing as it is', () => {
   const disk = '[dlssnr]\npasses=5\nMyKey=hello\n'
   expect(addMissingKeys(disk, '[DlssNr]\nPasses=2\n')).toEqual({ text: disk, added: [] })
+})
+
+it('setConfigKeys: sets the listed keys and keeps every other byte, including BOM and line endings', () => {
+  const disk = '﻿; mine\r\n[GENERAL]\r\nNoDebugInfo = 1\r\nPresetPath=.\\reshade-presets\\A.ini\r\n[OVERLAY]\r\nShowFPS=2\r\n'
+  expect(setConfigKeys(disk, [{ section: 'GENERAL', key: 'NoDebugInfo', value: '0' }, { section: 'OVERLAY', key: 'ShowForceLoadEffectsButton', value: '1' }])).toEqual({
+    text: '﻿; mine\r\n[GENERAL]\r\nNoDebugInfo = 0\r\nPresetPath=.\\reshade-presets\\A.ini\r\n[OVERLAY]\r\nShowFPS=2\r\nShowForceLoadEffectsButton=1\r\n',
+    changed: ['GENERAL/NoDebugInfo', 'OVERLAY/ShowForceLoadEffectsButton'],
+  })
+})
+
+it('setConfigKeys: changes nothing, and reports nothing, when the file already holds the values', () => {
+  const disk = '[GENERAL]\nNoDebugInfo=0\n'
+  expect(setConfigKeys(disk, [{ section: 'general', key: 'nodebuginfo', value: '0' }])).toEqual({ text: disk, changed: [] })
+})
+
+it('setConfigKeys: ifPath compares the current value as a path and never adds a key', () => {
+  const next = { section: 'GENERAL', key: 'PresetPath', value: '.\\B.ini', ifPath: '.\\reshade-presets\\Old.ini' }
+  expect(setConfigKeys('[GENERAL]\nPresetPath=./Reshade-Presets/OLD.ini\n', [next]).text).toBe('[GENERAL]\nPresetPath=.\\B.ini\n')
+  expect(setConfigKeys('[GENERAL]\nPresetPath=reshade-presets\\Old.ini\n', [next]).changed).toEqual(['GENERAL/PresetPath'])
+  expect(setConfigKeys('[GENERAL]\nPresetPath=.\\reshade-presets\\Other.ini\n', [next]).changed).toEqual([])
+  expect(setConfigKeys('[GENERAL]\nNoDebugInfo=1\n', [next])).toEqual({ text: '[GENERAL]\nNoDebugInfo=1\n', changed: [] })
 })
 
 it('changes only the requested value, preserving whitespace, comments, BOM and line endings', () => {

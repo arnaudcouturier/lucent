@@ -81,6 +81,29 @@ export function readIni(text: string) {
   }
 }
 
+/** A path as an INI value compares: slashes either way, case and a leading `.\` ignored. */
+const samePath = (a: string, b: string) => {
+  const plain = (value: string) => value.trim().replace(/\//g, '\\').replace(/^\.\\/, '').toLowerCase()
+  return plain(a) === plain(b)
+}
+
+/**
+ * A content version's `setKeys` for a config the player has: each key is set to the content's value, or, with `ifPath`,
+ * only when its current value is that path. Every other key, the layout and the comments stay as the disk has them.
+ */
+export function setConfigKeys(diskText: string, settings: { section: string; key: string; value: string; ifPath?: string }[]): { text: string; changed: string[] } {
+  const disk = readIni(diskText)
+  const changed: string[] = []
+  for (const { section, key, value, ifPath } of settings) {
+    const current = disk.get(section, key)
+    if (ifPath !== undefined && (current === undefined || !samePath(current, ifPath))) continue
+    if (current === value) continue
+    disk.set(section, key, value)
+    changed.push(`${section}/${key}`)
+  }
+  return { text: changed.length ? disk.toString() : diskText, changed }
+}
+
 /**
  * The config update rule `addMissingKeys`: every key of the baseline that the disk text lacks is written with the
  * baseline's value, and every other key, the layout and the comments stay as the disk has them.

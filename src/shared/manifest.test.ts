@@ -95,6 +95,27 @@ describe('The shared manifest schema', () => {
     expect(() => parseManifest(JSON.stringify(configRuleManifest([{ path: 'OptiScaler.ini', update: 'merge' }])))).toThrow(ManifestError)
   })
 
+  it('reads the keys an update sets in a config, with an optional ifPath, and drops an empty list', () => {
+    const setKeys = [
+      { section: 'GENERAL', key: 'NoDebugInfo', value: '0' },
+      { section: 'GENERAL', key: 'PresetPath', value: '.\\reshade-presets\\New.ini', ifPath: '.\\reshade-presets\\Old.ini' },
+    ]
+    const parsed = parseManifest(JSON.stringify(configRuleManifest([{ path: 'ReShade.ini', update: 'keep', when: 'reshade', setKeys }, { path: 'Other.ini', setKeys: [] }])))
+    expect(parsed.versions[0].tiers.other.ownedConfigs).toEqual([{ path: 'ReShade.ini', update: 'keep', when: 'reshade', setKeys }, { path: 'Other.ini' }])
+  })
+
+  it.each([
+    ['a value that is not a string', [{ section: 'GENERAL', key: 'NoDebugInfo', value: 0 }]],
+    ['a multi-line value', [{ section: 'GENERAL', key: 'NoDebugInfo', value: '0\n1' }]],
+    ['a bad key', [{ section: 'GENERAL', key: 'No=Debug', value: '0' }]],
+    ['a bad section', [{ section: '[GENERAL]', key: 'NoDebugInfo', value: '0' }]],
+    ['an empty ifPath', [{ section: 'GENERAL', key: 'PresetPath', value: 'x', ifPath: ' ' }]],
+    ['the same key twice', [{ section: 'GENERAL', key: 'NoDebugInfo', value: '0' }, { section: 'general', key: 'nodebuginfo', value: '1' }]],
+    ['a list that is not an array', { section: 'GENERAL', key: 'NoDebugInfo', value: '0' }],
+  ])('rejects setKeys with %s', (_, setKeys) => {
+    expect(() => parseManifest(JSON.stringify(configRuleManifest([{ path: 'ReShade.ini', setKeys }])))).toThrow(ManifestError)
+  })
+
   it('reads the published tier definitions', () => {
     const parsed = parseManifest(JSON.stringify(manifest))
 
