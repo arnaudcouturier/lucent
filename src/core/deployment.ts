@@ -1,13 +1,14 @@
 import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
+import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, UNKNOWN_BUILD_HOOKS, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { addMissingKeys, readIni, setConfigKeys } from './ini'
 import { configBaselineAssets, configBaselines, configPresent, newConfigKeys, readConfig, updateRule } from './configs'
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
+import { NEEDS_NEWER_CONTENT, patchSwitchProblem } from './gamePatch'
 import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
@@ -51,6 +52,12 @@ export interface DeploymentRecord {
   hdrMode?: HdrMode | null
   /** The option each setting choice (the DLSS-G preset, the UI mode) was written with at install or Reset, kept so Reset can offer them again. Absent from records made before the choices existed. */
   settingChoices?: SettingPicks
+  /**
+   * Settings' "After a game patch" switch, as the player last set it: `FfxivUnknownBuildHooks` in OptiScaler.ini is `true` or `false`.
+   * Absent while the player never touched it, which leaves the ini's own `auto` (off). Kept so a Reset, a tier switch and the Repair
+   * of a missing OptiScaler.ini write the baseline and then this value again.
+   */
+  unknownBuildHooks?: boolean
   /** An interrupted change to a complete deployment (a profile change or a repair) undoes only the journal entries from this index onward. */
   changeStart?: number
   /** During a change, the directories it created start at this index of `createdDirectories`; undoing the change removes them. */
@@ -1008,7 +1015,8 @@ export async function updateDeployment(
   const gpuName = graphics?.name ?? record.graphics.name
   const reset = options.reset === true
   const profile = reset ? options.profile ?? record.profile ?? null : selectProfileForUpdate(targetRecipe, record.recipe, record.profile ?? null, gpuName)
-  const selection = reset ? options.selection ?? storedSelection(record, targetRecipe, gpuName, screen) : storedSelection(record, targetRecipe, gpuName, screen)
+  // The switch survives a Reset, whose picks come from the first-install screen: it is not one of the first-install choices.
+  const selection = { ...(reset ? options.selection ?? storedSelection(record, targetRecipe, gpuName, screen) : storedSelection(record, targetRecipe, gpuName, screen)), unknownBuildHooks: record.unknownBuildHooks ?? null }
   const includeReShade = reset ? options.includeReShade ?? record.includeReShade : record.includeReShade
   const plan = planDeployment(content, tier, includeReShade, scan, profile, record.enabled, selection)
   // An original an earlier update put back is the game's again; deploying over it once more (a rollback) is no takeover while it is still that file.
@@ -1525,6 +1533,52 @@ export async function setDeploymentEnabled(platform: Platform, gameFolder: strin
       delete changed.files[deployedPath]
     }
     changed.enabled = enabled
+    changed.journal = record.journal
+    changed.createdDirectories = record.createdDirectories
+    await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
+    return changed
+  } catch (error) {
+    try { await undoDeployment(platform, record) } catch (recoveryError) {
+      throw new DeploymentError(error, true, recoveryError)
+    }
+    throw new DeploymentError(error, false)
+  }
+}
+
+/**
+ * Settings' "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else in
+ * the file, through the journal as any change to a deployed file, and remembers the value in the record so that a Reset, a tier switch
+ * and the Repair of a missing OptiScaler.ini write it again. OptiScaler reads its ini when XIV starts.
+ */
+export async function setUnknownBuildHooks(platform: Platform, gameFolder: string, on: boolean): Promise<DeploymentRecord> {
+  platform = await guardGameWrites(platform, gameFolder)
+  const record = await readDeployment(platform, gameFolder)
+  if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing this setting.')
+  const { file, section, key } = UNKNOWN_BUILD_HOOKS
+  const owned = Object.keys(record.files).find((path) => fileKey(path) === fileKey(file))
+  if (!owned) throw new Error('This setup has no OptiScaler.ini to change.')
+  const paths = await dataPaths(platform, gameFolder)
+  const read = await readConfig(platform, await platform.resolveGamePath(joinPath(gameFolder, 'game'), owned))
+  if (read.kind !== 'readable') throw new Error(read.kind === 'locked' ? failureReason(read.error) : patchSwitchProblem(read))
+  const current = readIni(read.text).get(section, key)
+  if (current === undefined) throw new Error(NEEDS_NEWER_CONTENT)
+  const value = String(on)
+  const changed = structuredClone(record)
+  changed.unknownBuildHooks = on
+  if (current.trim().toLowerCase() === value) {
+    // The ini already says it; only the record needs the player's word, so a Reset writes it again.
+    if (record.unknownBuildHooks !== on) await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
+    return record.unknownBuildHooks === on ? record : changed
+  }
+  // `record` journals the change while it applies; `changed` replaces it once the key is written.
+  record.status = 'applying'
+  record.changeStart = record.journal.length
+  record.createdDirectories ??= []
+  record.changeDirectoryStart = record.createdDirectories.length
+  const save = () => platform.writeText(paths.record, JSON.stringify(record, null, 2))
+  await save()
+  try {
+    await applySteps({ platform, record, save, report: () => {}, owned: new Set(Object.keys(record.files).map(fileKey)) }, [{ kind: 'ini_set', file: owned, section, key, value }])
     changed.journal = record.journal
     changed.createdDirectories = record.createdDirectories
     await platform.writeText(paths.record, JSON.stringify(changed, null, 2))

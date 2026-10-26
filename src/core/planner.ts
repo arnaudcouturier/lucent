@@ -7,6 +7,8 @@ import { resolveSettingChoices, settingChoiceSettings, type SettingPicks } from 
 import { screenDerivedValue, type ScreenValues } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
+/** The key behind Settings' "After a game patch" switch: OptiScaler-FFXIV's search for the game's code addresses, trusted on a game build it doesn't know. */
+export const UNKNOWN_BUILD_HOOKS = { file: 'OptiScaler.ini', section: 'FFXIV', key: 'FfxivUnknownBuildHooks' } as const
 /**
  * Whether a game-folder path is one Lucent can name safely. A file whose name Windows tools can't handle (a trailing dot, a
  * device name, made through `\\?\` or WSL) is a user file that nothing Lucent does ever touches.
@@ -92,6 +94,8 @@ export interface PlanSelection extends ProfilePlanContext {
   hdrMode?: HdrMode | null
   /** The player's picks among the tier's setting choices; one that is unknown or blocked is written as the choice's default. */
   settingChoices?: SettingPicks | null
+  /** The player's "After a game patch" switch: written to OptiScaler.ini as `true` or `false` after the baseline. Omit or null to leave the ini's `auto`. */
+  unknownBuildHooks?: boolean | null
   /** Whether Windows HDR is enabled on XIV's current display. */
   hdrOn?: boolean
   /** XIV's screen: the recipe's screen-derived settings (frame cap, peak brightness) are computed from it when the baseline is written. Omit to keep the content's values. */
@@ -151,6 +155,8 @@ export function planDeployment(
       .filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...mfgUnlockSettings(unlock, mfgUnlocked).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
     ...settingChoiceSettings(recipe.settingChoices, settingChoices).filter((s) => includedConfig(s.file)).map((s) => ({ kind: 'ini_set' as const, ...s })),
+    ...(typeof selection.unknownBuildHooks === 'boolean' && includedConfig(UNKNOWN_BUILD_HOOKS.file)
+      ? [{ kind: 'ini_set' as const, ...UNKNOWN_BUILD_HOOKS, value: String(selection.unknownBuildHooks) }] : []),
     ...screenSettings.filter((s) => includedConfig(s.file)),
   ]
   if (!enabled) contentSteps.push(...recipe.entryFiles.filter(included).map((p): Step => ({ kind: 'rename', from: p.path, to: disabledName(p.path) })))

@@ -86,8 +86,16 @@ for files the game itself generates. Use two real content versions for the updat
   Settings → Apps entry, then uninstall from Settings → Apps with "Restore the game folder" on.
   Confirm Lucent's data folder and installed exe are gone after it exits.
 - [ ] Before installing over an existing setup, open Scan's Show files and confirm the list and the
-  "Backed up to" folder. After installing, confirm that folder holds every listed file, and that Settings → Game folder → Backups
+  "Backed up to" folder. After installing, confirm that folder holds every listed file, and that Settings → Storage → Backups
   shows `Lucent\Backups` and its Open folder button opens it.
+- [ ] In Settings → Storage, Cache and Backups show their sizes. Clear cache removes the cached files (the
+  row then reads Empty and a notice at the top says how much), and Repair, a version change and Reset download
+  what they need again. Clear backups lists each folder with its kind, starts the install copy and Reset copies
+  ticked and the kept originals unticked, and removes only what is ticked. Uninstall afterwards still puts the
+  player’s files back from Lucent’s own backups.
+- [ ] On content 2026.10.30 or newer, Settings → After a game patch shows the switch off. With XIV closed, turn
+  it on: `OptiScaler.ini` gets `FfxivUnknownBuildHooks=true` and no other change; off writes `false`. Reset setup
+  keeps it. While XIV runs the switch is disabled and says why.
 - [ ] Uninstall and compare the game folder against the pre-deployment hash listing. Confirm the
   readable backup folder is gone.
 - [ ] Check the window chrome on Windows 11 and in a Windows 10 22H2 x64 VM: dragging,

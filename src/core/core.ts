@@ -5,8 +5,8 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
-import { disabledName, fileKey, folderChanges, planDeployment, stepWritePaths, type FolderChanges, type Plan, type PlanSelection } from './planner'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, setUnknownBuildHooks as writeUnknownBuildHooks, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { disabledName, fileKey, folderChanges, planDeployment, stepWritePaths, UNKNOWN_BUILD_HOOKS, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
 import { APP_RELEASES_URL, announcedAppUpdate, cleanupOldExe, parseAppReleases, performAppUpdate, type AppUpdate } from './appUpdate'
@@ -28,7 +28,9 @@ import { configUpdateNotes } from './configs'
 import { chosenLauncher, LAUNCH_LABELS, launchOptions, STEAM_GAME_ID, type LaunchKind, type LaunchOption } from './launch'
 import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
-import { fileCount } from './format'
+import { fileCount, sizeLabel } from './format'
+import { readPatchSwitch, type PatchSwitch } from './gamePatch'
+import { clearBackups as clearBackupFolders, clearCache as clearCachedFiles, readStorage, type Cleared, type Storage } from './storage'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
@@ -122,6 +124,10 @@ export interface State {
   appUninstallBackups: { path: string; withRestore: boolean } | null
   /** Settings' Backups row: `Lucent\Backups` while it holds readable copies, otherwise null. Kept current by `refreshBackupsFolder`. */
   backupsFolder: string | null
+  /** Settings' Storage card: what the cache and the readable copies take. Kept current by `refreshStorage`; null until it has read them. */
+  storage: Storage | null
+  /** Settings' "After a game patch" switch, read from the deployed OptiScaler.ini by `refreshPatchSwitch`; null without a deployment. */
+  patchSwitch: PatchSwitch | null
   /** The uninstall window waits while the installed Lucent is open in another window: its exe couldn't go, and it would write its data again. */
   lucentOpenElsewhere: boolean
   profiles: PerformanceProfile[]
@@ -269,6 +275,22 @@ export interface Core {
   openFolder(path: string): Promise<void>
   /** Re-reads whether Lucent's readable copies exist, for Settings' Backups row. Works while Lucent is busy. */
   refreshBackupsFolder(): Promise<void>
+  /** Reads how much the cache and each folder of readable copies take, for Settings' Storage card. Works while Lucent is busy. */
+  refreshStorage(): Promise<void>
+  /**
+   * Removes the content cache. Lucent downloads what it needs again the next time an install, update, version change or repair uses it.
+   * Never touches the journal's backups or the game folder, so XIV may be running. Refused while Lucent is busy or needs recovery.
+   */
+  clearCache(): Promise<void>
+  /** Removes the named folders of readable copies (see `storage.groups`). The journal's own backups, which Uninstall restores from, stay. Refused while Lucent is busy or needs recovery. */
+  clearBackups(folders: string[]): Promise<void>
+  /** Reads the "After a game patch" switch from OptiScaler.ini again. Works while Lucent is busy. */
+  refreshPatchSwitch(): Promise<void>
+  /**
+   * The "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else, through the journal,
+   * and remembers it so Reset, a tier switch and Repair keep it. Takes effect the next time XIV starts; XIV must be closed.
+   */
+  setUnknownBuildHooks(on: boolean): Promise<void>
   /** Reads what the Mods section shows. Waits for the manifest; the section calls it again when the manifest arrives. */
   refreshStarterSet(): Promise<void>
   /** Fetches the named Starter set plugins from their repos and places them in Dalamud. XIV and XIVLauncher must be closed. */
@@ -277,6 +299,7 @@ export interface Core {
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0'
 const OPEN_FOLDER_FAILED = 'Lucent couldn’t open that folder.'
+const CLEAR_WHEN_BUSY = 'Lucent is busy with another change. Try clearing again once it has finished.'
 
 type FirstRunChoices = Pick<State, 'setupMode' | 'resetBackupPath' | 'includeReShade' | 'addToStartMenu' | 'profiles' | 'selectedProfile' | 'recommendedProfile'
   | 'frameGenerationOptions' | 'frameGenerationMode' | 'neuralRenderingControls' | 'neuralRendering' | 'mfgUnlock' | 'mfgUnlocked' | 'hdrOptions' | 'hdrMode' | 'settingChoiceGroups' | 'settingChoices'>
@@ -354,7 +377,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, backupsFolder: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, backupsFolder: null, storage: null, patchSwitch: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -422,6 +445,7 @@ export function createCore(platform: Platform): Core {
     if (request.kind === 'reset') return state.plan?.steps.flatMap(stepWritePaths) ?? []
     const record = await readDeployment(platform, request.gameFolder)
     if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
+    if (request.kind === 'unknown-build-hooks') return [UNKNOWN_BUILD_HOOKS.file]
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
     if (request.kind === 'update' || request.kind === 'tier') {
       const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
@@ -929,6 +953,22 @@ export function createCore(platform: Platform): Core {
     const path = joinPath(await lucentFolder(platform), 'Backups')
     try { return (await platform.listFolders(path)).length ? path : null } catch { return null }
   }
+  let storageReads = 0
+  /**
+   * Settings' Clear on the cache or the readable copies. Neither holds anything a deployment depends on, so XIV may be running; but a
+   * recovery in progress or needed is no time to remove files, and the lease keeps another Lucent process from downloading into the cache.
+   */
+  const clearStorage = async (what: string, clear: () => Promise<Cleared>) => {
+    if (state.recoveryRequired) throw new Error(`Lucent can’t clear ${what} while a change needs recovering. Finish that first.`)
+    set({ busy: true, error: null, notice: null })
+    try {
+      const cleared = await clear()
+      set({ notice: cleared.files ? `Cleared ${sizeLabel(cleared.bytes)} from ${what} (${fileCount(cleared.files)}).` : `There was nothing to clear from ${what}.` })
+    } finally {
+      set({ busy: false })
+      await core.refreshStorage()
+    }
+  }
   /** Review's free-space warning for a plan; a reading that fails warns of nothing, since the warning never holds Install up. */
   const shortOfSpace = async (plan: Plan, gameFolder: string, firstDeployment: boolean) => {
     try {
@@ -1023,6 +1063,43 @@ export function createCore(platform: Platform): Core {
     async refreshBackupsFolder() {
       const folder = await readableBackupsFolder()
       if (folder !== state.backupsFolder) set({ backupsFolder: folder })
+    },
+    async refreshStorage() {
+      const read = ++storageReads
+      try {
+        const [storage, backupsFolder] = await Promise.all([readStorage(platform), readableBackupsFolder()])
+        // A slower read that a newer one has overtaken, or a Clear's own refresh, must not put older sizes back.
+        if (read === storageReads) set({ storage, backupsFolder })
+      } catch (error) { log.write('warning', `Couldn’t read the size of Lucent’s cache and backups: ${message(error)}`) }
+    },
+    async refreshPatchSwitch() {
+      const record = state.deployment
+      let next: PatchSwitch | null = null
+      if (record?.status === 'complete' && state.activity.kind === 'deployment') {
+        next = await readPatchSwitch(platform, record.gameFolder).catch((): PatchSwitch => ({ status: 'unavailable', reason: 'Lucent can’t read OptiScaler.ini.' }))
+      }
+      if (JSON.stringify(next) !== JSON.stringify(state.patchSwitch)) set({ patchSwitch: next })
+    },
+    async setUnknownBuildHooks(on) {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        if (!await prepareWrite({ kind: 'unknown-build-hooks', gameFolder: state.deployment.gameFolder, on })) return
+        await refreshHealth(state.deployment)
+        const deployment = await writeUnknownBuildHooks(platform, state.deployment.gameFolder, on)
+        set({ deployment, notice: on ? 'After a game patch, the features that read the game’s code stay on, from the next time XIV starts.' : 'After a game patch, the features that read the game’s code switch off again, from the next time XIV starts.' })
+      } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
+      finally {
+        await refreshHealthAfter()
+        set({ busy: false })
+        await core.refreshPatchSwitch()
+      }
+    },
+    async clearCache() {
+      await clearStorage('the cache', () => clearCachedFiles(platform))
+    },
+    async clearBackups(folders) {
+      await clearStorage('backup copies', () => clearBackupFolders(platform, folders))
     },
     async refreshStarterSet() {
       const { manifest } = state
@@ -1201,6 +1278,7 @@ export function createCore(platform: Platform): Core {
             await core.review(resume.includeReShade)
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
+          else if (resume.kind === 'unknown-build-hooks') await core.setUnknownBuildHooks(resume.on)
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall(resume.restoreOriginals !== false)
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
@@ -1727,8 +1805,12 @@ export function createCore(platform: Platform): Core {
   // Internal commands call this raw core and stay inside their caller's lease. Only exposed commands acquire
   // one, preventing a second process from mistaking a live journal for an interrupted deployment.
   let operationActive = false
-  const coordinated = <Args extends unknown[]>(command: (...args: Args) => Promise<void>, reloadDeployment = true) => async (...args: Args) => {
-    if (operationActive || state.busy) return
+  const coordinated = <Args extends unknown[]>(command: (...args: Args) => Promise<void>, reloadDeployment = true, whenBusy?: string) => async (...args: Args) => {
+    if (operationActive || state.busy) {
+      // A command whose button gives no other sign says why nothing happened.
+      if (whenBusy && !state.error) set({ error: whenBusy })
+      return
+    }
     operationActive = true
     try {
       await withOperationLock(platform, async () => {
@@ -1758,6 +1840,8 @@ export function createCore(platform: Platform): Core {
     updateApp: coordinated(core.updateApp), skipAppUpdate: coordinated(core.skipAppUpdate), skipUpdate: coordinated(core.skipUpdate),
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),
     copyDiagnostics: coordinated(core.copyDiagnostics), reportBug: coordinated(core.reportBug),
+    setUnknownBuildHooks: coordinated(core.setUnknownBuildHooks),
+    clearCache: coordinated(core.clearCache, false, CLEAR_WHEN_BUSY), clearBackups: coordinated(core.clearBackups, false, CLEAR_WHEN_BUSY),
     uninstall: coordinated(core.uninstall), openAppUninstall: coordinated(core.openAppUninstall, false), uninstallApp: coordinated(core.uninstallApp, false), finishAppUninstall: coordinated(core.finishAppUninstall, false),
   }
 }

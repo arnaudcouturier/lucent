@@ -376,3 +376,93 @@ describe('the UI mode and DLSS-G preset choices', () => {
     expect(review).not.toContain('DLSS-G preset')
   })
 })
+
+describe('Settings’ Storage card', () => {
+  async function storageCore(...extra: Machine[]) {
+    const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT), ...extra)
+    const platform = createFakePlatform(m)
+    const deployed = createCore(platform)
+    await deployed.scan()
+    await deployed.review()
+    await deployed.deploy()
+    deployed.finish()
+    const core = await reopen(platform)
+    await core.refreshStorage()
+    return { platform, core }
+  }
+  // A button's icon is tags only, so the match can't run on from one button into another.
+  const ICON = '(?:<svg[^>]*>(?:<[^>]*>)*?</svg>)?'
+  const buttonsNamed = (markup: string, name: string, attributes = '') => markup.match(new RegExp(`<button[^>]*${attributes}[^>]*>${ICON}${name}</button>`, 'g')) ?? []
+
+  it('shows the cache’s size with a Clear… button, and no Backups row while there are no copies', async () => {
+    const { core } = await storageCore()
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toMatch(/Storage Cache .*\\Lucent\\cache \d+ files? · [\d.]+ [KM]?B\. Content Lucent downloaded, kept so an install, update or repair doesn’t download it again\./)
+    expect(text).not.toContain('Backups')
+    expect(buttonsNamed(renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen))), 'Clear…')).toHaveLength(1)
+  })
+
+  it('shows a Backups row with its folders and size beside the Cache row once Lucent has replaced a file', async () => {
+    const { core } = await storageCore(existingSetup(ROOT, 'reshade'))
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toMatch(/Backups .*\\Lucent\\Backups 1 folder · [\d.]+ [KM]?B\. Copies of the files Lucent replaced/)
+    expect(buttonsNamed(renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen))), 'Clear…')).toHaveLength(2)
+    // The row moved out of Game folder: it sits after the Storage heading, not before it.
+    expect(text.indexOf('Backups')).toBeGreaterThan(text.indexOf('Storage'))
+  })
+
+  it('leaves both Clear… buttons off while Lucent needs recovery or is busy', async () => {
+    const { core } = await storageCore(existingSetup(ROOT, 'reshade'))
+    const markup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
+    expect(buttonsNamed(markup, 'Clear…', 'disabled=""')).toHaveLength(0)
+    const busy = { ...core, getState: () => ({ ...core.getState(), busy: true }) } as Core
+    const busyMarkup = renderToStaticMarkup(createElement(CoreContext.Provider, { value: busy }, createElement(SettingsScreen)))
+    expect(buttonsNamed(busyMarkup, 'Clear…', 'disabled=""')).toHaveLength(2)
+  })
+})
+
+describe('Settings’ After a game patch card', () => {
+  const INI = `${ROOT}\\game\\OptiScaler.ini`
+  async function patchCore(withKey: boolean) {
+    const { platform, m } = await deployedOnRtx()
+    if (withKey) await platform.writeText(INI, `${await platform.readText(INI)}\r\n[FFXIV]\r\nFfxivUnknownBuildHooks = auto\r\n`)
+    const core = await reopen(platform)
+    await core.refreshPatchSwitch()
+    return { core, m }
+  }
+  const markupOf = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
+  const switchInput = (markup: string) => /<input type="checkbox" role="switch"[^>]*>/.exec(markup.slice(markup.indexOf('aria-label="After a game patch"')))![0]
+
+  it('offers the switch with its text, off while the key reads auto', async () => {
+    const { core } = await patchCore(true)
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toContain('After a game patch Keep game-code features running after an XIV patch (experimental) OptiScaler-FFXIV finds the game’s code addresses itself. After a patch, features that read the game’s code stay off unless this is on and every address is found. Takes effect the next time XIV starts.')
+    expect(switchInput(markupOf(core))).not.toMatch(/checked|disabled/)
+  })
+
+  it('shows it on once the key says true', async () => {
+    const { core } = await patchCore(true)
+    await core.setUnknownBuildHooks(true)
+    expect(switchInput(markupOf(core))).toMatch(/checked/)
+  })
+
+  it('is off and says why when the ini predates the setting', async () => {
+    const { core } = await patchCore(false)
+    expect(visibleText(createElement(SettingsScreen), core)).toContain('Update to the newest content first.')
+    expect(switchInput(markupOf(core))).toMatch(/disabled/)
+  })
+
+  it('waits, with the reason, while XIV runs', async () => {
+    const { core, m } = await patchCore(true)
+    m.gameRunning = true
+    await core.refreshGameRunning()
+    expect(visibleText(createElement(SettingsScreen), core)).toContain('XIV is running. Changes wait until you close the game.')
+    expect(switchInput(markupOf(core))).toMatch(/disabled/)
+  })
+
+  it('has no card before the ini has been read', async () => {
+    const { platform } = await deployedOnRtx()
+    const core = await reopen(platform)
+    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('After a game patch')
+  })
+})

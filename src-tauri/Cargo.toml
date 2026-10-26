@@ -1,6 +1,6 @@
 [package]
 name = "lucent"
-version = "1.0.2"
+version = "1.0.3"
 description = "Windows manager for XIV graphics mods: DLSS 5 through OptiScaler, and ReShade with shaders and presets."
 license = "MIT"
 edition = "2021"

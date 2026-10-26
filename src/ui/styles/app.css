@@ -712,6 +712,7 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .uninstall-choices .option-row input { margin-top: 2px; flex: none; }
 .uninstall-choices:disabled .option-row { cursor: default; opacity: 0.6; }
 .confirm .uninstall-note { margin-top: var(--space-3); font-size: var(--text-label); color: var(--ink-3); }
+.uninstall-choices small.is-caution { color: var(--caution); }
 .confirm-actions { margin-top: var(--space-5); display: flex; justify-content: flex-end; gap: var(--space-2); }
 .btn.is-danger { background: var(--danger); color: var(--on-accent); font-weight: 600; box-shadow: var(--ring-danger); }
 .btn.is-danger:hover:not(:disabled) { background: var(--danger-hover); box-shadow: var(--ring-danger); }
@@ -991,6 +992,7 @@ input[role='switch']:disabled { opacity: 0.45; cursor: default; }
 .settings-danger strong { font-weight: 500; }
 .settings-group.is-danger > h2 { color: var(--danger); }
 .settings-reason { margin: 0 0 var(--space-3); color: var(--ink-2); font-size: var(--text-label); }
+.option-row small.settings-reason { margin: var(--space-1) 0 0; color: var(--caution); }
 .settings-group.is-danger .card { box-shadow: var(--danger-edge), var(--ring-card); }
 .settings-group.is-danger .card + .card { margin-top: var(--space-3); }
 .btn.is-danger-outline { background: transparent; color: var(--danger); box-shadow: var(--danger-ring-outline); }

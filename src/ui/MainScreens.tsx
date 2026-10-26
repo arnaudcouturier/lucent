@@ -1,7 +1,7 @@
 // The main screen's sections once there is a deployment: Home, Keys, Versions, Logs, Settings and Help. The rail switches
 // between them; every action the player needs is in plain sight in one of them.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, FolderPen, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, BookOpen, Bug, ChevronDown, ClipboardCopy, Download, Eraser, FolderPen, LoaderCircle, Play, RefreshCw, RotateCcw, ScanSearch, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useCore } from './useCore'
 import { Screen, useSection } from './Window'
 import { EnabledRow, FlowError, StatusCard, UpdateCard } from './DeploymentScreens'
@@ -16,6 +16,8 @@ import { SOURCE_LABEL } from './ScanScreen'
 import { gameActionsAvailable } from '../core/gameAccess'
 import { GAME_EXECUTABLE } from '../core/gameFolder'
 import { replacedOriginals } from '../core/deployment'
+import { fileCount, sizeLabel } from '../core/format'
+import { startsTicked, type BackupKind } from '../core/storage'
 import { GUIDE_URL } from '../core/hotkeys'
 import { LAUNCH_LABELS, type LaunchKind } from '../core/launch'
 import { secondaryUpdates, type UpdateCardState } from '../core/statusCard'
@@ -123,27 +125,37 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
 
 export function SettingsScreen({ openReset = false }: { openReset?: boolean } = {}) {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath, backupsFolder } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath, backupsFolder, storage, patchSwitch } = state
   const [confirming, setConfirming] = useState(false)
   const [resetConfirming, setResetConfirming] = useState(false)
+  const [clearing, setClearing] = useState<'cache' | 'backups' | null>(null)
   const [now, setNow] = useState(Date.now())
   // The dialogs are unmounted rather than closed, so the browser doesn't give focus back to the button that opened one.
   const opener = useRef<HTMLElement | null>(null)
-  const dialogOpen = confirming || resetConfirming
+  const dialogOpen = confirming || resetConfirming || clearing !== null
   const wasOpen = useRef(false)
+  // What a Clear or a switch lower down answers is shown at the top of the page; bring it into view so it isn't missed.
+  const showAnswer = () => document.querySelector('.callout.is-notice, .health-card.is-failed')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   useEffect(() => {
-    if (wasOpen.current && !dialogOpen) returnFocus(opener.current)
+    if (wasOpen.current && !dialogOpen) {
+      returnFocus(opener.current)
+      // Focus returning to the button that opened the dialog scrolls to it, so the answer scrolls after that.
+      showAnswer()
+    }
     wasOpen.current = dialogOpen
   }, [dialogOpen])
   useEffect(() => {
     if (openReset && deployment && resetBackupPath) setResetConfirming(true)
   }, [openReset, deployment, resetBackupPath])
-  // An install, Reset or Uninstall adds or removes the copies; reading again once the work stops (busy) and the record changes picks that up.
-  useEffect(() => { void core.refreshBackupsFolder() }, [core, deployment, busy])
+  // An install, update, Reset or Uninstall adds or removes cache files and copies; reading again once the work stops (busy) and the record changes picks that up.
+  useEffect(() => { void core.refreshStorage() }, [core, deployment, busy])
+  // The ini is the switch's truth: a Repair, Reset or update, or the player in a text editor, changes it.
+  useEffect(() => { void core.refreshPatchSwitch() }, [core, deployment, busy])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
+  useEffect(() => { if (state.notice || state.error) showAnswer() }, [state.notice, state.error])
   const originals = deployment ? replacedOriginals(deployment) : []
   const waiting = whyGameActionsWait(state)
   return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
@@ -190,17 +202,38 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.changeGameFolder()}><FolderPen size={14} strokeWidth={1.75} />Change…</button>
         <button className="btn" disabled={busy || recoveryRequired} onClick={() => void core.checkFiles()}><ScanSearch size={14} strokeWidth={1.75} />Scan</button>
       </div>
-      {backupsFolder && <div className="card settings-folder">
-        <div>
-          <strong>Backups</strong>
-          <FolderPath path={backupsFolder} />
-          <small>Copies of the files Lucent replaced, each under its own path. Uninstall doesn’t need them.</small>
-        </div>
-      </div>}
       {state.rejectedFolder && <p className="callout" role="alert">
         <TriangleAlert size={14} strokeWidth={1.75} />
         <span><Path path={state.rejectedFolder} /> doesn’t hold the game. Pick the folder that contains <span className="mono nowrap">{GAME_EXECUTABLE}</span>.</span>
       </p>}
+    </SettingsGroup>}
+    {deployment && patchSwitch && <SettingsGroup title="After a game patch">
+      <label className="card option-row settings-switch">
+        <span><strong>Keep game-code features running after an XIV patch (experimental)</strong>
+          <small>OptiScaler-FFXIV finds the game’s code addresses itself. After a patch, features that read the game’s code stay off unless this is on and every address is found. Takes effect the next time XIV starts.</small>
+          {patchSwitch.status === 'unavailable' ? <small className="settings-reason" role="status">{patchSwitch.reason}</small>
+            : waiting && <small className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</small>}</span>
+        <input type="checkbox" role="switch" checked={patchSwitch.status === 'ready' && patchSwitch.on} disabled={patchSwitch.status !== 'ready' || !gameActionsAvailable(state)}
+          onChange={(e) => void core.setUnknownBuildHooks(e.target.checked)} />
+      </label>
+    </SettingsGroup>}
+    {storage && <SettingsGroup title="Storage">
+      <div className="card settings-folder">
+        <div>
+          <strong>Cache</strong>
+          {storage.cache.files ? <FolderPath path={storage.cache.path} /> : <Path path={storage.cache.path} />}
+          <small>{storage.cache.files ? `${fileCount(storage.cache.files)} · ${sizeLabel(storage.cache.bytes)}. ` : 'Empty. '}Content Lucent downloaded, kept so an install, update or repair doesn’t download it again.</small>
+        </div>
+        <button className="btn" disabled={busy || recoveryRequired || !storage.cache.files} onClick={(e) => { opener.current = e.currentTarget; setClearing('cache') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
+      </div>
+      {backupsFolder && <div className="card settings-folder">
+        <div>
+          <strong>Backups</strong>
+          <FolderPath path={backupsFolder} />
+          <small>{storage.backups.groups.length ? `${storage.backups.groups.length === 1 ? '1 folder' : `${storage.backups.groups.length} folders`} · ${sizeLabel(storage.backups.groups.reduce((sum, group) => sum + group.bytes, 0))}. ` : ''}Copies of the files Lucent replaced, each under its own path. Uninstall doesn’t need them.</small>
+        </div>
+        <button className="btn" disabled={busy || recoveryRequired || !storage.backups.groups.length} onClick={(e) => { opener.current = e.currentTarget; setClearing('backups') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
+      </div>}
     </SettingsGroup>}
     {deployment && <SettingsGroup title="Danger zone" tone="danger">
       {waiting && <p className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</p>}
@@ -215,9 +248,76 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <button className="btn is-danger-outline" disabled={!gameActionsAvailable(state)} onClick={(e) => { opener.current = e.currentTarget; setConfirming(true) }}><Trash2 size={14} strokeWidth={1.75} />Uninstall…</button>
       </div>
     </SettingsGroup>}
+    {clearing === 'cache' && <ClearCacheDialog onClose={() => setClearing(null)} />}
+    {clearing === 'backups' && <ClearBackupsDialog onClose={() => setClearing(null)} />}
     {confirming && <UninstallDialog originals={originals} onClose={() => setConfirming(false)} />}
     {resetConfirming && resetBackupPath && <ResetDialog backupPath={resetBackupPath} onClose={() => setResetConfirming(false)} />}
   </Screen>
+}
+
+function ClearCacheDialog({ onClose }: { onClose: () => void }) {
+  const [state, core] = useCore()
+  const { busy, recoveryRequired, storage } = state
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => { ref.current?.showModal() }, [])
+  const clear = async () => {
+    await core.clearCache()
+    onClose()
+  }
+  return (
+    <dialog ref={ref} className="confirm" aria-labelledby="clear-cache-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
+      <h2 id="clear-cache-title">Clear the cache?</h2>
+      <p>This removes {storage ? `${fileCount(storage.cache.files)} (${sizeLabel(storage.cache.bytes)})` : 'the files'} Lucent downloaded. It downloads what it needs again the next time you install, update, change version or repair, so it needs your connection then.</p>
+      <p className="uninstall-note">Nothing in your game folder changes, and Uninstall doesn’t use the cache.</p>
+      <footer className="confirm-actions">
+        <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn is-primary" disabled={busy || recoveryRequired} onClick={() => void clear()}>
+          {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Eraser size={14} strokeWidth={1.75} />}{busy ? 'Clearing…' : 'Clear cache'}
+        </button>
+      </footer>
+    </dialog>
+  )
+}
+
+const BACKUP_KIND: Record<BackupKind, string> = {
+  install: 'The files Lucent replaced in your game folder. Uninstall puts them back from Lucent’s own backups.',
+  reset: 'What a Reset set aside of your config files and edits. Lucent’s own backups hold the same files.',
+  kept: 'The only copies of files Lucent replaced and an Uninstall left out, or of a game folder that is gone.',
+  other: 'A folder none of Lucent’s installs names.',
+}
+function ClearBackupsDialog({ onClose }: { onClose: () => void }) {
+  const [state, core] = useCore()
+  const { busy, recoveryRequired } = state
+  const groups = state.storage?.backups.groups ?? []
+  const ref = useRef<HTMLDialogElement>(null)
+  const [ticked, setTicked] = useState(() => new Set(groups.filter((group) => startsTicked(group.kind)).map((group) => group.folder)))
+  useEffect(() => { ref.current?.showModal() }, [])
+  const chosen = groups.filter((group) => ticked.has(group.folder))
+  const clear = async () => {
+    await core.clearBackups(chosen.map((group) => group.folder))
+    onClose()
+  }
+  const toggle = (folder: string, on: boolean) => setTicked((current) => { const next = new Set(current); if (on) next.add(folder); else next.delete(folder); return next })
+  return (
+    <dialog ref={ref} className="confirm" aria-labelledby="clear-backups-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
+      <h2 id="clear-backups-title">Clear backup copies?</h2>
+      <p>Tick the folders to remove. Lucent keeps its own backups of the files it changed, which Uninstall restores from, whatever you clear here.</p>
+      <fieldset className="uninstall-choices" disabled={busy} aria-label="Folders of backup copies to remove">
+        {groups.map((group) => <label key={group.folder} className={`card option-row${ticked.has(group.folder) ? ' is-selected' : ''}`}>
+          <input type="checkbox" checked={ticked.has(group.folder)} onChange={(e) => toggle(group.folder, e.target.checked)} />
+          <span><strong>{group.folder}</strong>
+            <small>{sizeLabel(group.bytes)} · {fileCount(group.files)}. {BACKUP_KIND[group.kind]}</small>
+            {group.kind === 'kept' && <small className="is-caution">Once removed, these files can’t be put back.</small>}</span>
+        </label>)}
+      </fieldset>
+      <footer className="confirm-actions">
+        <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn is-primary" disabled={busy || recoveryRequired || !chosen.length} onClick={() => void clear()}>
+          {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Eraser size={14} strokeWidth={1.75} />}{busy ? 'Clearing…' : chosen.length ? `Clear ${sizeLabel(chosen.reduce((sum, group) => sum + group.bytes, 0))}` : 'Clear'}
+        </button>
+      </footer>
+    </dialog>
+  )
 }
 
 function ResetDialog({ backupPath, onClose }: { backupPath: string; onClose: () => void }) {
