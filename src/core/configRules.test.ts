@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createCore } from './core'
 import { createFakePlatform, type FakePlatform, type Machine } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
@@ -598,4 +598,38 @@ it('rolling back after a setKeys update restores the file the player had', async
   await core.applyVersion('2026.10.12')
   expect(core.getState().error).toBeNull()
   expect(await platform.readText(`${GAME}\\ReShade.ini`)).toBe(SETTINGS)
+})
+
+// Content 2026.10.29 turns Automatic ReShade scene depth on: OptiScaler.ini adds missing keys, and a setKeys entry with
+// ifPath `auto` switches the key on for a setup that took 2026.10.28 (where it shipped at `auto`) without touching a value the player set.
+describe('OptiScaler.ini with addMissingKeys and a setKeys entry that waits for auto', () => {
+  const BASELINE = '[FFXIV]\nPreviewNR=false\nAutomaticReShadeDepth=true\n'
+  const WAIT_FOR_AUTO = [{ section: 'FFXIV', key: 'AutomaticReShadeDepth', value: 'true', ifPath: 'auto' }]
+  // The plan's baseline also carries the install's own keys, so the player's file holds them too, as a real one does.
+  const player = (ffxiv: string) => `[FFXIV]\n${ffxiv}\n[Logging]\nLogToFile=false\n\n[DlssNr]\nPasses=2\nSpatialCompression=false\nResidualFG=false\n`
+  async function updateWith(disk: string) {
+    const { platform, m } = await deployed()
+    await platform.writeText(`${GAME}\\OptiScaler.ini`, disk)
+    const { content, hash } = await replaceShipped(NEXT_CONTENT, 'OptiScaler.ini', BASELINE)
+    for (const config of content.tiers['rtx-20-30-40'].ownedConfigs) if (config.path === 'OptiScaler.ini') { config.update = 'addMissingKeys'; config.setKeys = WAIT_FOR_AUTO }
+    publishVariant(m, content, { [hash]: BASELINE })
+    const core = await reopen(platform)
+    await core.update()
+    expect(core.getState().error).toBeNull()
+    return platform.readText(`${GAME}\\OptiScaler.ini`)
+  }
+
+  it('adds the key switched on for a setup that never had it (2026.10.27), leaving the player’s other values', async () => {
+    expect(await updateWith(player('PreviewNR=true'))).toBe(player('PreviewNR=true\nAutomaticReShadeDepth=true'))
+  })
+
+  it('switches the key on for a setup that took 2026.10.28 and still has it at auto, whatever its case or spacing', async () => {
+    expect(await updateWith(player('PreviewNR=true\nAutomaticReShadeDepth=auto'))).toBe(player('PreviewNR=true\nAutomaticReShadeDepth=true'))
+    expect(await updateWith(player('AutomaticReShadeDepth = AUTO\nPreviewNR=true'))).toBe(player('AutomaticReShadeDepth = true\nPreviewNR=true'))
+  })
+
+  it.each(['false', 'true'])('leaves a value the player set (%s) alone and does not rewrite the file', async (value) => {
+    const disk = player(`AutomaticReShadeDepth=${value}\nPreviewNR=true`)
+    expect(await updateWith(disk)).toBe(disk)
+  })
 })

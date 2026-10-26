@@ -41,6 +41,11 @@ interface ForkRecipe {
    * it an update-only change, applied when the key's current value is that path, and the install writes nothing for it.
    */
   reshadeSettings?: { section: string; key: string; value: string; onUpdate?: boolean; ifPath?: string }[]
+  /**
+   * Optional OptiScaler.ini keys an update sets in the player's file (the config's `setKeys`), after the keys it adds. The base ini's own value comes from `iniOverrides`.
+   * `ifPath` sets a key only while its current value equals it (compared as a path, which also works for a plain value such as `auto`), so a value the player set stays.
+   */
+  optiscalerUpdateKeys?: { section: string; key: string; value: string; ifPath?: string }[]
   /** Optional game-folder paths of ReShade files this version stops shipping: the base's copy steps and shipped-preset entries for them are left out. Each must name a copy step in the base. */
   dropReshadeFiles?: string[]
   /** Optional folders the mods fill while the game runs, which Uninstall removes with everything in them (relative to the game folder). */
@@ -225,9 +230,12 @@ async function main() {
   const reshadeUpdateKeys: ConfigKeySetting[] = (recipe.reshadeSettings ?? []).filter((s) => s.onUpdate || s.ifPath !== undefined)
     .map((s) => ({ section: s.section, key: s.key, value: s.value, ...(s.ifPath === undefined ? {} : { ifPath: s.ifPath }) }))
   if (reshadeUpdateKeys.length && !baseTier.ownedConfigs.some((config) => config.path === 'ReShade.ini')) throw new Error('The base owns no ReShade.ini to set keys in on update.')
+  const optiscalerUpdateKeys: ConfigKeySetting[] = (recipe.optiscalerUpdateKeys ?? []).map((s) => ({ section: s.section, key: s.key, value: s.value, ...(s.ifPath === undefined ? {} : { ifPath: s.ifPath }) }))
+  if (optiscalerUpdateKeys.length && !baseTier.ownedConfigs.some((config) => config.path === 'OptiScaler.ini')) throw new Error('The base owns no OptiScaler.ini to set keys in on update.')
   const tier = (id: string, nrComponent: { component: string }, base: PublishTier): PublishTier => ({
     ...base,
-    ownedConfigs: base.ownedConfigs.map((config) => config.path === 'ReShade.ini' && reshadeUpdateKeys.length ? { ...config, setKeys: reshadeUpdateKeys } : config),
+    ownedConfigs: base.ownedConfigs.map((config) => config.path === 'ReShade.ini' && reshadeUpdateKeys.length ? { ...config, setKeys: reshadeUpdateKeys }
+      : config.path === 'OptiScaler.ini' && optiscalerUpdateKeys.length ? { ...config, setKeys: optiscalerUpdateKeys } : config),
     shippedPresets: base.shippedPresets.filter((preset) => !gone.has(preset.path.toLowerCase())),
     generatedFiles: [...(base.generatedFiles ?? []), ...(recipe.generatedFolders ?? []).map((path) => ({ path }))],
     ...(recipe.settingChoices ? { settingChoices: recipe.settingChoices } : {}),
