@@ -9,6 +9,7 @@ interface Recipe {
   channel: string
   changelog: string[]
   iniOverrides: { section: string; key: string; value: string }[]
+  fork?: { tag: string; zipSha256: string }
   optiscalerUpdateKeys?: { section: string; key: string; value: string; ifPath?: string }[]
 }
 const recipes = readdirSync(CANDIDATES).sort().flatMap((id) => {
@@ -33,6 +34,25 @@ describe('the latest content candidate', () => {
     expect(latest.changelog.join(' ')).toMatch(/Automatic ReShade scene depth, which Lucent turns on by default/)
     expect(latest.changelog.join(' ')).toMatch(/Alive NEXT Stable 4K/)
     expect(latest.changelog.join(' ')).not.toMatch(/switched off; nothing changes unless you turn it on/)
+  })
+
+  it('is built on OptiScaler-FFXIV v0.3.0 from 2026.10.30, with the new patch-day keys left off', () => {
+    expect(latest.id >= '2026.10.30').toBe(true)
+    expect(latest.fork?.tag).toBe('ffxiv-2026.10.26-d9b62110')
+    expect(latest.fork?.zipSha256).toBe('190ca55056136ddc46b36ea8ecf89c98601df7c9a3916cb3e442b290d99c2427')
+    // The keys ship at the package's own `auto`, which is off: no override may switch one on.
+    for (const key of ['FfxivUnknownBuildHooks', 'FfxivForceUnknownBuild', 'FfxivLegacyGameBuild']) expect(override(latest, key)).toBeUndefined()
+    // Nor may the update check be switched on: the shipped ini keeps `auto`, which is off from v0.3.0.
+    expect(latest.iniOverrides.some((o) => o.key === 'CheckForUpdate')).toBe(false)
+  })
+
+  it('tells a player on an earlier 2026.10 content about v0.3.0, the pattern search and the update check', () => {
+    const text = latest.changelog.join(' ')
+    expect(text).toMatch(/OptiScaler-FFXIV is updated to v0\.3\.0/)
+    expect(text).toMatch(/pattern search/)
+    expect(text).toMatch(/FfxivUnknownBuildHooks=true/)
+    expect(text).toMatch(/update check/)
+    expect(latest.changelog.some((line) => /Automatic ReShade scene depth, which Lucent turns on by default/.test(line))).toBe(true)
   })
 
   it('keeps the character preview Neural Rendering off, as 2026.10.28 does', () => {
