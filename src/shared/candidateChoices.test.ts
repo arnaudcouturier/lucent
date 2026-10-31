@@ -28,8 +28,8 @@ describe('the setting choices of the content candidates', () => {
     expect(() => parseManifest(asManifest(recipe.settingChoices))).not.toThrow()
   })
 
-  it('offers the DLSS model, UI mode, DLSS-G preset, the character preview and the three pass preset hints, in that order, from the latest candidate', () => {
-    expect(latest.settingChoices.map((choice) => choice.id)).toEqual(['dlss-model', 'ui-mode', 'dlssg-preset', 'preview-nr', 'nr-hint-pass-1', 'nr-hint-pass-2', 'nr-hint-pass-3'])
+  it('offers the DLSS model, UI mode, DLSS-G preset, the character preview, the frame rate governor and the three pass preset hints, in that order, from the latest candidate', () => {
+    expect(latest.settingChoices.map((choice) => choice.id)).toEqual(['dlss-model', 'ui-mode', 'dlssg-preset', 'preview-nr', 'nr-governor', 'nr-hint-pass-1', 'nr-hint-pass-2', 'nr-hint-pass-3'])
   })
 
   it('writes the preset hints the content shipped before by default, so nothing changes until a player picks', () => {
@@ -55,6 +55,35 @@ describe('the setting choices of the content candidates', () => {
     expect(latest.settingChoices.findIndex((choice) => choice.id === 'preview-nr')).toBeLessThan(latest.settingChoices.findIndex((choice) => choice.id === 'nr-hint-pass-1'))
   })
 
+  it('leaves the Neural Rendering frame rate governor off by default, and writes Hold frame rate as true', () => {
+    const governor = latest.settingChoices.find((choice) => choice.id === 'nr-governor')!
+    expect(governor.defaultOption).toBe('off')
+    expect(governor.options.map((option) => option.id)).toEqual(['off', 'hold'])
+    expect(governor.options.filter((option) => option.experimental).map((option) => option.id)).toEqual(['hold'])
+    const written = (picks?: Record<string, string>) => keys(latest.settingChoices, resolveSettingChoices(latest.settingChoices, picks, ctx('NVIDIA GeForce RTX 4090')))['DlssNr.Governor']
+    expect(written()).toBe('false')
+    expect(written({ 'nr-governor': 'hold' })).toBe('true')
+    expect(written({ 'nr-governor': 'off' })).toBe('false')
+    // It lowers its own model resolution only, so the case it leaves alone has to be in the text.
+    expect(governor.options.find((option) => option.id === 'hold')!.description).toMatch(/Spatial compression or the fork’s automatic multiplier/)
+    // A plain block in the Neural Rendering card, ahead of the hints' collapsed group so that group stays last.
+    expect(governor.placement).toEqual({ in: 'neural-rendering' })
+    expect(governor.minPasses).toBeUndefined()
+    expect(latest.settingChoices.findIndex((choice) => choice.id === 'nr-governor')).toBeGreaterThan(latest.settingChoices.findIndex((choice) => choice.id === 'preview-nr'))
+    expect(latest.settingChoices.findIndex((choice) => choice.id === 'nr-governor')).toBeLessThan(latest.settingChoices.findIndex((choice) => choice.id === 'nr-hint-pass-1'))
+  })
+
+  it('says UI-free’s micro-stutter was removed by the fork’s default probe interval, keeps Recomposition with preset Auto as the recommendation, and keeps it Experimental', () => {
+    const uiMode = latest.settingChoices.find((choice) => choice.id === 'ui-mode')!
+    const uiFree = uiMode.options.find((option) => option.id === 'ui-free')!
+    expect(uiFree.description).toMatch(/micro-stutter/)
+    expect(uiFree.description).toMatch(/Recomposition with DLSS-G preset Auto stays the recommended setup/)
+    // The number and the way back, so a player can undo the new default.
+    expect(uiFree.description).toMatch(/probe interval of 8/)
+    expect(uiFree.description).toMatch(/setting it to 1 brings the stutter back/)
+    expect(uiFree.experimental).toBe(true)
+  })
+
   it('maps the hint options to the values the fork reads: 0 to 3, and auto for a later pass to inherit pass 1', () => {
     const value = (id: string, option: string) => keys(latest.settingChoices, resolveSettingChoices(latest.settingChoices, { [id]: option }, ctx('NVIDIA GeForce RTX 4090')))
     expect(['default', 'preset-1', 'preset-2', 'preset-3'].map((option) => value('nr-hint-pass-1', option)['DlssNr.Preset'])).toEqual(['0', '1', '2', '3'])
@@ -69,7 +98,7 @@ describe('the setting choices of the content candidates', () => {
     expect(hints.map((choice) => [choice.minPasses ?? null, choice.placement?.in])).toEqual([[null, 'neural-rendering'], [2, 'neural-rendering'], [3, 'neural-rendering']])
     expect(new Set(hints.map((choice) => choice.placement?.group)).size).toBe(1)
     expect(hints[0].placement?.group).toMatch(/effect unverified/)
-    expect(latest.settingChoices.filter((choice) => !choice.id.startsWith('nr-hint-') && choice.id !== 'preview-nr').every((choice) => !choice.placement)).toBe(true)
+    expect(latest.settingChoices.filter((choice) => !choice.id.startsWith('nr-hint-') && choice.id !== 'preview-nr' && choice.id !== 'nr-governor').every((choice) => !choice.placement)).toBe(true)
   })
 
   it('writes Preset M by default, which is what content has shipped for every mode', () => {
@@ -100,12 +129,12 @@ describe('the setting choices of the content candidates', () => {
     expect(resolveSettingChoices(latest.settingChoices, undefined, ctx('NVIDIA GeForce RTX 4090'))['dlss-model']).toBe('m')
   })
 
-  it('shows the DLSS model, the character preview and the Pass 1 hint to every NVIDIA card, with frame generation on or off, and the UI mode and DLSS-G preset only where DLSS frame generation runs', () => {
+  it('shows the DLSS model, the character preview, the frame rate governor and the Pass 1 hint to every NVIDIA card, with frame generation on or off, and the UI mode and DLSS-G preset only where DLSS frame generation runs', () => {
     const ids = (gpuName: string, mode: '2x' | 'off', passes = 1) => shownSettingChoices(latest.settingChoices, undefined, ctx(gpuName, mode, passes)).map((c) => c.choice.id)
-    expect(ids('NVIDIA GeForce RTX 4090', '2x')).toEqual(['dlss-model', 'ui-mode', 'dlssg-preset', 'preview-nr', 'nr-hint-pass-1'])
-    expect(ids('NVIDIA GeForce RTX 4090', 'off')).toEqual(['dlss-model', 'preview-nr', 'nr-hint-pass-1'])
-    expect(ids('NVIDIA GeForce RTX 3080', '2x')).toEqual(['dlss-model', 'preview-nr', 'nr-hint-pass-1'])
-    expect(ids('NVIDIA GeForce RTX 2080 Ti', 'off')).toEqual(['dlss-model', 'preview-nr', 'nr-hint-pass-1'])
+    expect(ids('NVIDIA GeForce RTX 4090', '2x')).toEqual(['dlss-model', 'ui-mode', 'dlssg-preset', 'preview-nr', 'nr-governor', 'nr-hint-pass-1'])
+    expect(ids('NVIDIA GeForce RTX 4090', 'off')).toEqual(['dlss-model', 'preview-nr', 'nr-governor', 'nr-hint-pass-1'])
+    expect(ids('NVIDIA GeForce RTX 3080', '2x')).toEqual(['dlss-model', 'preview-nr', 'nr-governor', 'nr-hint-pass-1'])
+    expect(ids('NVIDIA GeForce RTX 2080 Ti', 'off')).toEqual(['dlss-model', 'preview-nr', 'nr-governor', 'nr-hint-pass-1'])
   })
 
   it('shows the Pass 2 hint from two passes and the Pass 3 hint from three, on every NVIDIA card', () => {
