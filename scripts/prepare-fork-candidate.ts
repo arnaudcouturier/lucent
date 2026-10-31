@@ -16,6 +16,7 @@ import { runCommand } from './command'
 import { prepareOutputFolder } from './candidate-output'
 import { mergeIni, type IniKey, type IniOverride } from './candidate-ini'
 import { applyReshadeStyle, type EmberPalette } from './ember-style'
+import { forkSchemaReport, iniKeyDelta } from './fork-schema'
 import { publishContent, type PublishInput } from './publish-content'
 
 interface Hashed { sha256: string }
@@ -102,12 +103,15 @@ async function main() {
   const { values } = parseArgs({ options: {
     base: { type: 'string' }, recipe: { type: 'string' }, 'fork-zip': { type: 'string' }, 'streamline-zip': { type: 'string' },
     'nr-folder': { type: 'string' }, 'tuned-ini': { type: 'string' }, output: { type: 'string' }, manifest: { type: 'string', default: 'manifest.json' },
+    'previous-fork-ini': { type: 'string' },
   } })
   const [basePath, recipePath, forkZip, streamlineZip, nrFolder, tunedIniPath, outputRoot, manifestPath] =
     (['base', 'recipe', 'fork-zip', 'streamline-zip', 'nr-folder', 'tuned-ini', 'output', 'manifest'] as const).map((name) => {
       if (!values[name]) throw new Error(`Missing --${name}.`)
       return resolve(values[name]!)
     })
+  const previousIni = values['previous-fork-ini']
+  const previousIniPath = previousIni ? resolve(previousIni) : null
   const recipe = JSON.parse(await readFile(recipePath, 'utf8')) as ForkRecipe
   const input = JSON.parse((await readFile(basePath, 'utf8')).replace(/^\uFEFF/, '')) as PublishInput
   if (input.id !== recipe.basedOnContent) throw new Error(`Expected the input for ${recipe.basedOnContent}; found ${input.id}.`)
@@ -124,6 +128,7 @@ async function main() {
     basePath, recipePath, forkZip, streamlineZip, nrFolder, tunedIniPath, manifestPath,
     ...baseSources.flatMap((path) => [resolve(dirname(basePath), path), resolve(path)]),
     ...(recipe.reshadeStyle ? [resolve(dirname(recipePath), recipe.reshadeStyle.palette)] : []),
+    ...(previousIniPath ? [previousIniPath] : []),
   ])
   const sources = join(outputRoot, 'sources')
   await mkdir(sources, { recursive: true })
@@ -135,6 +140,10 @@ async function main() {
   for (const [, hash, path] of sums) await verified(join(forkRoot, path), hash, `${path} in the fork package`)
   await verified(join(forkRoot, 'winmm.dll'), recipe.fork.winmmSha256, 'winmm.dll in the fork package')
   await verified(join(forkRoot, 'OptiScaler.ini'), recipe.fork.iniSha256, 'OptiScaler.ini in the fork package')
+  const forkSchema = await forkSchemaReport(forkRoot, sums.map(([, , path]) => path), recipe, await readFile(join(forkRoot, 'OptiScaler.ini'), 'utf8'))
+  const forkIniDelta = previousIniPath && previousIni
+    ? { previous: previousIni, ...iniKeyDelta(await readFile(previousIniPath, 'utf8'), await readFile(join(forkRoot, 'OptiScaler.ini'), 'utf8')) }
+    : null
   const licences = (await files(forkRoot, 'Licenses')).map((path) => path.slice('Licenses/'.length))
 
   // The Streamline SDK: only the reviewed files, placed at their game-folder paths.
@@ -271,6 +280,8 @@ async function main() {
     streamline: { tag: recipe.streamline.tag, zipSha256: recipe.streamline.zipSha256, files: recipe.streamline.files },
     neuralRendering: recipe.neuralRendering,
     savedIni: { sha256: recipe.tunedIni.sha256, carried: merge.carried, leftToTheInstall: merge.skipped, overridden: merge.overridden, lost: merge.lost },
+    forkSchema,
+    forkIniDelta,
     droppedFromPrevious: dropped,
     droppedReshadeFiles: recipe.dropReshadeFiles ?? [],
     carriedLicences: carried,
@@ -280,6 +291,10 @@ async function main() {
   }, null, 2)}\n`, 'utf8')
   console.log(`Prepared local dry-run candidate ${recipe.id} at ${outputRoot}`)
   console.log(`Ini: ${merge.carried.length} saved values carried, ${merge.skipped.length} left to the install or the recipe, ${merge.overridden.length} overrides, ${merge.lost.length} saved values lost with keys the fork lacks.`)
+  console.log(forkSchema === null
+    ? `Settings schema: none in the fork package, so the recipe's ini writes were not checked against it.`
+    : `Settings schema ${forkSchema.release || '(no release stamp)'}: ${forkSchema.checked} writes checked, ${forkSchema.notInSchema.length} keys outside the schema, ${forkSchema.notLive.length} that apply only at start or after a restart.`)
+  if (forkIniDelta) console.log(`Fork ini against the previous fork's: ${forkIniDelta.added.length} keys added, ${forkIniDelta.removed.length} removed.`)
   console.log(`Dropped from ${recipe.basedOnContent}: ${dropped.length} files.`)
 }
 

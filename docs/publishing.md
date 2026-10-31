@@ -131,6 +131,8 @@ and source attribution.
 Links to repository roots or ordinary development branches do not satisfy this check. The
 source links are recorded in both the manifest and release notes.
 
+From fork v0.4.0 the package has `settings-schema.json`. When the package's `SHA256SUMS.txt` lists it, `prepare-fork-candidate` checks every OptiScaler.ini key the recipe writes (setting choices, `iniOverrides`, `optiscalerUpdateKeys`) against it and stops on a retired key, an alias, a key missing from the fork's ini, or a value outside the key's type, values or range. Keys outside the schema (upstream OptiScaler's) are only checked for existence. The result goes to `provenance.json` as `forkSchema`. With `--previous-fork-ini <the previous candidate's sources/optiscaler-ffxiv/OptiScaler.ini>` it also lists the keys the fork added and removed (`forkIniDelta`). Lucent does not deploy the file.
+
 ## Publication and failures
 
 Content date IDs are immutable. A date already in the manifest or an existing content release,

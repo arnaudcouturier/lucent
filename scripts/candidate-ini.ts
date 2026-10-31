@@ -22,7 +22,7 @@ const EMPTY = ''
 
 interface Entry { section: string; key: string; value: string }
 
-function entries(text: string): Entry[] {
+export function entries(text: string): Entry[] {
   const found: Entry[] = []
   let section = ''
   for (const line of text.split(/\r?\n/)) {
