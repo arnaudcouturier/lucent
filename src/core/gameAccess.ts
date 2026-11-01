@@ -64,6 +64,8 @@ export type GameWriteRequest = { gameFolder: string } & (
   | { kind: 'tier'; tier: string; contentVersion: string }
   | { kind: 'enabled'; enabled: boolean }
   | { kind: 'unknown-build-hooks'; on: boolean }
+  | { kind: 'fg-recorder'; on: boolean }
+  | { kind: 'clear-recordings' }
 )
 
 const validNeuralRendering = (value: NeuralRenderingChoice) => !!value && typeof value === 'object'
@@ -104,7 +106,7 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
   const request = value?.request
   const hasSid = typeof value?.userSid === 'string' && /^S-1-\d+(?:-\d+)+$/.test(value.userSid)
   if ((value?.schemaVersion !== 1 && value?.schemaVersion !== 2) || (value.schemaVersion === 2 && !hasSid) || (value.folders !== undefined && !validFolders(value.folders)) || !request || typeof request.gameFolder !== 'string'
-    || !['deploy', 'reset', 'repair', 'uninstall', 'recover', 'update', 'tier', 'enabled', 'unknown-build-hooks'].includes(request.kind)
+    || !['deploy', 'reset', 'repair', 'uninstall', 'recover', 'update', 'tier', 'enabled', 'unknown-build-hooks', 'fg-recorder', 'clear-recordings'].includes(request.kind)
     || ((request.kind === 'deploy' || request.kind === 'reset' || request.kind === 'update' || request.kind === 'tier') && typeof request.contentVersion !== 'string')
     || ((request.kind === 'reset' || request.kind === 'tier') && typeof request.tier !== 'string')
     || ((request.kind === 'deploy' || request.kind === 'reset') && (typeof request.includeReShade !== 'boolean' || (request.profile !== null && !(PROFILE_IDS as readonly string[]).includes(request.profile))
@@ -115,7 +117,8 @@ export async function takeElevationResume(platform: Platform): Promise<{ localAp
       || (request.neuralRendering !== undefined && request.neuralRendering !== null && !validNeuralRendering(request.neuralRendering))))
     || (request.kind === 'uninstall' && request.restoreOriginals !== undefined && typeof request.restoreOriginals !== 'boolean')
     || (request.kind === 'enabled' && typeof request.enabled !== 'boolean')
-    || (request.kind === 'unknown-build-hooks' && typeof request.on !== 'boolean')) throw new Error('The administrator resume request is invalid.')
+    || (request.kind === 'unknown-build-hooks' && typeof request.on !== 'boolean')
+    || (request.kind === 'fg-recorder' && typeof request.on !== 'boolean')) throw new Error('The administrator resume request is invalid.')
   if (request.kind === 'deploy' || request.kind === 'reset') {
     if (!Array.isArray(request.reviewedPaths) || request.reviewedPaths.some((path) => typeof path !== 'string')) throw new Error('The administrator resume request is invalid.')
     request.reviewedPaths.forEach(assertGamePath)

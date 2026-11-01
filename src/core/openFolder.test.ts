@@ -34,6 +34,25 @@ describe('Open folder', () => {
     expect(core.getState().error).toBeNull()
   })
 
+  it('opens the recorder’s folder, and refuses a game folder inside it', async () => {
+    const { platform, core } = await deployedOnA()
+    await platform.writeText(`${A}\\game\\fg-recordings\\fg-rec-20261031-090000-500-222.jsonl`, 'rec')
+    await core.openFolder(`${A}\\game\\fg-recordings`)
+    expect(platform.openedFolders).toEqual([`${A}\\game\\fg-recordings`])
+    for (const path of [`${A}\\game\\fg-recordings\\..\\sub`, `${A}\\game\\OptiScaler`]) await core.openFolder(path)
+    expect(platform.openedFolders).toHaveLength(1)
+    expect(core.getState().notice).toBeNull()
+  })
+
+  it('opens the recorder’s folder of a deployed copy after Change… moved to another one', async () => {
+    const { platform, core } = await deployedOnA()
+    await platform.writeText(`${A}\\game\\fg-recordings\\fg-rec-20261031-090000-500-222.jsonl`, 'rec')
+    platform.answerPicker(B)
+    await core.changeGameFolder()
+    await core.openFolder(`${A}\\game\\fg-recordings`)
+    expect(platform.openedFolders).toEqual([`${A}\\game\\fg-recordings`])
+  })
+
   it('opens a game folder with a deployment after Change… moved to another copy, and the copy it moved to', async () => {
     const { platform, core } = await deployedOnA()
     platform.answerPicker(B)

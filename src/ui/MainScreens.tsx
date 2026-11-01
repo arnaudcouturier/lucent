@@ -125,10 +125,10 @@ const LAUNCH_OPTION: Record<LaunchKind, { title: string; text: string }> = {
 
 export function SettingsScreen({ openReset = false }: { openReset?: boolean } = {}) {
   const [state, core] = useCore()
-  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath, backupsFolder, storage, patchSwitch } = state
+  const { launchOptions, launcher, channel, xivLauncher, gameFolder, deployment, busy, recoveryRequired, activity, updateCheck, resetBackupPath, backupsFolder, storage, patchSwitch, recorder } = state
   const [confirming, setConfirming] = useState(false)
   const [resetConfirming, setResetConfirming] = useState(false)
-  const [clearing, setClearing] = useState<'cache' | 'backups' | null>(null)
+  const [clearing, setClearing] = useState<'cache' | 'backups' | 'recordings' | null>(null)
   const [now, setNow] = useState(Date.now())
   // The dialogs are unmounted rather than closed, so the browser doesn't give focus back to the button that opened one.
   const opener = useRef<HTMLElement | null>(null)
@@ -151,6 +151,8 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
   useEffect(() => { void core.refreshStorage() }, [core, deployment, busy])
   // The ini is the switch's truth: a Repair, Reset or update, or the player in a text editor, changes it.
   useEffect(() => { void core.refreshPatchSwitch() }, [core, deployment, busy])
+  // Recordings grow while XIV runs, so the row is read again once the game closes.
+  useEffect(() => { void core.refreshRecorder() }, [core, deployment, busy, state.gameRunning])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(timer)
@@ -158,8 +160,9 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
   useEffect(() => { if (state.notice || state.error) showAnswer() }, [state.notice, state.error])
   const originals = deployment ? replacedOriginals(deployment) : []
   const waiting = whyGameActionsWait(state)
-  return <Screen title="Settings" sub="How Lucent starts XIV, which versions it offers, and the game folder it looks after.">
+  return <Screen title="Settings" sub="How Lucent starts and updates XIV’s mods, the game folder it looks after, and what it keeps on this PC.">
     <FlowError />
+    {deployment && waiting && <p className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</p>}
     {launchOptions.length === 1 && <SettingsGroup title="Launch XIV with">
       <div className="card option-row">
         <span><strong>{LAUNCH_OPTION[launchOptions[0].kind].title}</strong><small>{LAUNCH_OPTION[launchOptions[0].kind].text} It’s the only launcher Lucent found for this game folder.</small></span>
@@ -172,6 +175,12 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
           <span><strong>{LAUNCH_OPTION[option.kind].title}</strong><small>{LAUNCH_OPTION[option.kind].text}</small></span>
         </label>)}
       </fieldset>
+    </SettingsGroup>}
+    {xivLauncher.status === 'found' && <SettingsGroup title="XIVLauncher">
+      <label className="card option-row settings-switch">
+        <span><strong>Auto-repair</strong><small>Checks Lucent’s files when XIV starts, and repairs them after it closes.</small></span>
+        <input type="checkbox" role="switch" checked={xivLauncher.autoRepair} disabled={busy} onChange={(e) => void core.setAutoRepair(e.target.checked)} />
+      </label>
     </SettingsGroup>}
     <SettingsGroup title="Updates">
       {deployment && activity.kind === 'deployment' && <div className="card option-row settings-check">
@@ -187,12 +196,6 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <input type="checkbox" role="switch" checked={channel === 'beta'} disabled={busy} onChange={(e) => void core.setChannel(e.target.checked ? 'beta' : 'stable')} />
       </label>
     </SettingsGroup>
-    {xivLauncher.status === 'found' && <SettingsGroup title="XIVLauncher">
-      <label className="card option-row settings-switch">
-        <span><strong>Auto-repair</strong><small>Checks Lucent’s files when XIV starts, and repairs them after it closes.</small></span>
-        <input type="checkbox" role="switch" checked={xivLauncher.autoRepair} disabled={busy} onChange={(e) => void core.setAutoRepair(e.target.checked)} />
-      </label>
-    </SettingsGroup>}
     {gameFolder.status === 'found' && <SettingsGroup title="Game folder">
       <div className="card settings-folder">
         <div>
@@ -207,15 +210,31 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <span><Path path={state.rejectedFolder} /> doesn’t hold the game. Pick the folder that contains <span className="mono nowrap">{GAME_EXECUTABLE}</span>.</span>
       </p>}
     </SettingsGroup>}
-    {deployment && patchSwitch && <SettingsGroup title="After a game patch">
+    {deployment && patchSwitch && <SettingsGroup title="Game patches">
       <label className="card option-row settings-switch">
-        <span><strong>Keep game-code features running after an XIV patch (experimental)</strong>
+        <span><strong>Keep game-code features running after an XIV patch<span className="segmented-choice-experimental">Experimental</span></strong>
           <small>OptiScaler-FFXIV finds the game’s code addresses itself. After a patch, features that read the game’s code stay off unless this is on and every address is found. Takes effect the next time XIV starts.</small>
-          {patchSwitch.status === 'unavailable' ? <small className="settings-reason" role="status">{patchSwitch.reason}</small>
-            : waiting && <small className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</small>}</span>
+          {patchSwitch.status === 'unavailable' && <small className="settings-reason" role="status">{patchSwitch.reason}</small>}</span>
         <input type="checkbox" role="switch" checked={patchSwitch.status === 'ready' && patchSwitch.on} disabled={patchSwitch.status !== 'ready' || !gameActionsAvailable(state)}
           onChange={(e) => void core.setUnknownBuildHooks(e.target.checked)} />
       </label>
+    </SettingsGroup>}
+    {deployment && recorder && <SettingsGroup title="Troubleshooting">
+      <label className="card option-row settings-switch">
+        <span><strong>Record frame generation</strong>
+          <small>Writes what frame generation does to fg-recordings in the game folder, for a bug report. It records only while frame generation runs, up to 144 MB a play session, and keeps the last five sessions. To flag a moment, set a mark key in the OptiScaler overlay’s Keybinds. Takes effect the next time XIV starts.</small>
+          {recorder.status === 'unavailable' && <small className="settings-reason" role="status">{recorder.reason}</small>}</span>
+        <input type="checkbox" role="switch" checked={recorder.status === 'ready' && recorder.on} disabled={recorder.status !== 'ready' || !gameActionsAvailable(state)}
+          onChange={(e) => void core.setFgRecorder(e.target.checked)} />
+      </label>
+      {recorder.recordings && <div className="card settings-folder">
+        <div>
+          <strong>Recordings</strong>
+          <FolderPath path={recorder.recordings.path} />
+          <small>{recorder.recordings.unreadable ? 'Lucent can’t read this folder, so it can’t show its size or clear it. ' : recorder.recordings.sessions ? `${sessionCount(recorder.recordings.sessions, false)} · ${sizeLabel(recorder.recordings.bytes)}. ` : 'No recordings. '}Uninstall removes them.</small>
+        </div>
+        <button className="btn" disabled={!gameActionsAvailable(state) || !recorder.recordings.sessions || !!recorder.recordings.unreadable} onClick={(e) => { opener.current = e.currentTarget; setClearing('recordings') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
+      </div>}
     </SettingsGroup>}
     {storage && <SettingsGroup title="Storage">
       <div className="card settings-folder">
@@ -236,10 +255,9 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
       </div>}
     </SettingsGroup>}
     {deployment && <SettingsGroup title="Danger zone" tone="danger">
-      {waiting && <p className="settings-reason" role="status">{GAME_WAITING[waiting].title}. {GAME_WAITING[waiting].text}</p>}
       <div className="card settings-danger">
         <span><strong>Reset setup</strong><small>Offers the first-install choices again and writes the tested setup.</small></span>
-        <button className="btn is-primary" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={(e) => { opener.current = e.currentTarget; setResetConfirming(true) }}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
+        <button className="btn" disabled={!gameActionsAvailable(state) || !resetBackupPath} onClick={(e) => { opener.current = e.currentTarget; setResetConfirming(true) }}><RotateCcw size={14} strokeWidth={1.75} />Reset setup…</button>
       </div>
       <div className="card settings-danger">
         <span><strong>Uninstall from this game</strong><small>{originals.length
@@ -250,6 +268,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
     </SettingsGroup>}
     {clearing === 'cache' && <ClearCacheDialog onClose={() => setClearing(null)} />}
     {clearing === 'backups' && <ClearBackupsDialog onClose={() => setClearing(null)} />}
+    {clearing === 'recordings' && <ClearRecordingsDialog onClose={() => setClearing(null)} />}
     {confirming && <UninstallDialog originals={originals} onClose={() => setConfirming(false)} />}
     {resetConfirming && resetBackupPath && <ResetDialog backupPath={resetBackupPath} onClose={() => setResetConfirming(false)} />}
   </Screen>
@@ -273,6 +292,31 @@ function ClearCacheDialog({ onClose }: { onClose: () => void }) {
         <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
         <button className="btn is-primary" disabled={busy || recoveryRequired} onClick={() => void clear()}>
           {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Eraser size={14} strokeWidth={1.75} />}{busy ? 'Clearing…' : 'Clear cache'}
+        </button>
+      </footer>
+    </dialog>
+  )
+}
+
+export function ClearRecordingsDialog({ onClose }: { onClose: () => void }) {
+  const [state, core] = useCore()
+  const { busy, recoveryRequired, recorder } = state
+  const recordings = recorder?.recordings ?? null
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => { ref.current?.showModal() }, [])
+  const clear = async () => {
+    await core.clearRecordings()
+    onClose()
+  }
+  return (
+    <dialog ref={ref} className="confirm" aria-labelledby="clear-recordings-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
+      <h2 id="clear-recordings-title">{recordings ? `Delete ${sessionCount(recordings.sessions)} (${sizeLabel(recordings.bytes)})?` : 'Delete the recordings?'}</h2>
+      <p>This removes the frame generation recordings in <span className="nowrap">fg-recordings</span>. Any other file in that folder stays.</p>
+      <p className="uninstall-note">Nothing else in your game folder changes.</p>
+      <footer className="confirm-actions">
+        <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="btn is-primary" disabled={busy || recoveryRequired} onClick={() => void clear()}>
+          {busy ? <LoaderCircle size={14} strokeWidth={1.75} className="spin" /> : <Eraser size={14} strokeWidth={1.75} />}{busy ? 'Clearing…' : 'Clear recordings'}
         </button>
       </footer>
     </dialog>
@@ -431,6 +475,8 @@ function relativeCheckTime(checkedAt: string, now: number) {
   const days = Math.floor(hours / 24)
   return `${days} ${days === 1 ? 'day' : 'days'} ago`
 }
+
+const sessionCount = (count: number, recording = true) => `${count.toLocaleString('en')} ${recording ? 'recording ' : ''}session${count === 1 ? '' : 's'}`
 
 function HelpScreen() {
   const [{ busy }, core] = useCore()

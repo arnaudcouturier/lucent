@@ -9,13 +9,14 @@ import { existingSetup, fixtureContentHost, graphicsCard, MACHINES, machine, nex
 import { CoreContext } from './useCore'
 import { DoneScreen, Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
 import { ProfileScreen } from './Profiles'
-import { SettingsScreen } from './MainScreens'
+import { ClearRecordingsDialog, SettingsScreen } from './MainScreens'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
 import { UninstallWindow } from './UninstallWindow'
 import { Rail } from './Rail'
 import { SectionContext, type Section } from './Window'
 import { whyGameActionsWait } from './gameWaiting'
+import { sizeLabel } from '../core/format'
 import { statusCard } from '../core/statusCard'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -433,7 +434,7 @@ describe('Settings’ Storage card', () => {
   })
 })
 
-describe('Settings’ After a game patch card', () => {
+describe('Settings’ Game patches card', () => {
   const INI = `${ROOT}\\game\\OptiScaler.ini`
   async function patchCore(withKey: boolean) {
     const { platform, m } = await deployedOnRtx()
@@ -443,12 +444,14 @@ describe('Settings’ After a game patch card', () => {
     return { core, m }
   }
   const markupOf = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
-  const switchInput = (markup: string) => /<input type="checkbox" role="switch"[^>]*>/.exec(markup.slice(markup.indexOf('aria-label="After a game patch"')))![0]
+  const switchInput = (markup: string) => /<input type="checkbox" role="switch"[^>]*>/.exec(markup.slice(markup.indexOf('aria-label="Game patches"')))![0]
 
-  it('offers the switch with its text, off while the key reads auto', async () => {
+  it('offers the switch with its text and the Experimental tag, off while the key reads auto', async () => {
     const { core } = await patchCore(true)
     const text = visibleText(createElement(SettingsScreen), core)
-    expect(text).toContain('After a game patch Keep game-code features running after an XIV patch (experimental) OptiScaler-FFXIV finds the game’s code addresses itself. After a patch, features that read the game’s code stay off unless this is on and every address is found. Takes effect the next time XIV starts.')
+    expect(text).toContain('Game patches Keep game-code features running after an XIV patch Experimental OptiScaler-FFXIV finds the game’s code addresses itself. After a patch, features that read the game’s code stay off unless this is on and every address is found. Takes effect the next time XIV starts.')
+    expect(text).not.toContain('(experimental)')
+    expect(markupOf(core)).toContain('<strong>Keep game-code features running after an XIV patch<span class="segmented-choice-experimental">Experimental</span></strong>')
     expect(switchInput(markupOf(core))).not.toMatch(/checked|disabled/)
   })
 
@@ -464,17 +467,197 @@ describe('Settings’ After a game patch card', () => {
     expect(switchInput(markupOf(core))).toMatch(/disabled/)
   })
 
-  it('waits, with the reason, while XIV runs', async () => {
+  it('waits, with the reason once at the top of the page, while XIV runs', async () => {
     const { core, m } = await patchCore(true)
     m.gameRunning = true
     await core.refreshGameRunning()
-    expect(visibleText(createElement(SettingsScreen), core)).toContain('XIV is running. Changes wait until you close the game.')
+    const text = visibleText(createElement(SettingsScreen), core)
+    // One line, above every group, in place of the copy this card and the Danger zone used to carry.
+    expect(text.split('XIV is running. Changes wait until you close the game.')).toHaveLength(2)
+    expect(text.indexOf('XIV is running. Changes wait until you close the game.')).toBeLessThan(text.indexOf('Launch XIV with'))
     expect(switchInput(markupOf(core))).toMatch(/disabled/)
   })
 
   it('has no card before the ini has been read', async () => {
     const { platform } = await deployedOnRtx()
     const core = await reopen(platform)
-    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('After a game patch')
+    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('Game patches')
+  })
+})
+
+describe('Settings’ Troubleshooting group', () => {
+  const INI = `${ROOT}\\game\\OptiScaler.ini`
+  const FOLDER = `${ROOT}\\game\\fg-recordings`
+  // Two sessions, the first rotated once: 60 bytes in all.
+  const SESSIONS = {
+    'fg-rec-20261030-180000-000-111.jsonl': 'a'.repeat(10),
+    'fg-rec-20261030-180000-000-111.jsonl.1': 'b'.repeat(20),
+    'fg-rec-20261031-090000-500-222.jsonl': 'c'.repeat(30),
+  }
+  const TOTAL = sizeLabel(60)
+  async function recorderCore({ key = true, files = {}, folder = false }: { key?: boolean; files?: Record<string, string>; folder?: boolean } = {}) {
+    const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT), folder ? { directories: [FOLDER] } : {})
+    const platform = createFakePlatform(m)
+    const deployed = createCore(platform)
+    await deployed.scan()
+    await deployed.review()
+    await deployed.deploy()
+    deployed.finish()
+    // Content 2026.10.31 ships the key at its own `auto`, off; the fixture's OptiScaler.ini has no such line.
+    if (key) await platform.writeText(INI, `${await platform.readText(INI)}\r\n[FramePacing]\r\nFgRecorder = auto\r\n`)
+    for (const [name, text] of Object.entries(files)) await platform.writeText(`${FOLDER}\\${name}`, text)
+    const core = await reopen(platform)
+    await core.refreshRecorder()
+    return { platform, core, m }
+  }
+  const markupOf = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
+  const group = (markup: string) => markup.slice(markup.indexOf('aria-label="Troubleshooting"'))
+  const groupText = (core: Core) => group(markupOf(core)).replace(/<wbr\/>/g, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  const switchInput = (markup: string) => /<input type="checkbox" role="switch"[^>]*>/.exec(group(markup))![0]
+  const clearButton = (markup: string) => (/<button([^>]*)>(?:<svg[^>]*>(?:<[^>]*>)*?<\/svg>)?Clear…<\/button>/.exec(group(markup)))
+
+  it('offers the switch with its description, off and ready on content that ships the key', async () => {
+    const { core } = await recorderCore()
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toContain('Troubleshooting Record frame generation Writes what frame generation does to fg-recordings in the game folder, for a bug report. It records only while frame generation runs, up to 144 MB a play session, and keeps the last five sessions. To flag a moment, set a mark key in the OptiScaler overlay’s Keybinds. Takes effect the next time XIV starts.')
+    expect(switchInput(markupOf(core))).not.toMatch(/checked|disabled/)
+  })
+
+  it('shows it on once the key says true', async () => {
+    const { core } = await recorderCore()
+    await core.setFgRecorder(true)
+    expect(switchInput(markupOf(core))).toMatch(/checked/)
+  })
+
+  it('is off and says why when the ini predates the setting', async () => {
+    const { core } = await recorderCore({ key: false })
+    expect(groupText(core)).toContain('Update to the newest content first.')
+    expect(switchInput(markupOf(core))).toMatch(/disabled/)
+  })
+
+  it('greys out the switch and Clear…, with the reason once at the top of the page, while XIV runs', async () => {
+    const { core, m } = await recorderCore({ files: SESSIONS })
+    m.gameRunning = true
+    await core.refreshGameRunning()
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text.split('XIV is running. Changes wait until you close the game.')).toHaveLength(2)
+    expect(text.indexOf('XIV is running. Changes wait until you close the game.')).toBeLessThan(text.indexOf('Launch XIV with'))
+    expect(switchInput(markupOf(core))).toMatch(/disabled/)
+    expect(clearButton(markupOf(core))![1]).toMatch(/disabled/)
+  })
+
+  it('has no Recordings row while the folder isn’t there', async () => {
+    const { core } = await recorderCore()
+    expect(group(markupOf(core))).not.toContain('Recordings')
+  })
+
+  it('shows the recordings with their sessions and size, and Clear… ready', async () => {
+    const { core } = await recorderCore({ files: SESSIONS })
+    expect(visibleText(createElement(SettingsScreen), core)).toContain(`Recordings C:\\Games\\XIV\\game\\fg-recordings 2 sessions · ${TOTAL}. Uninstall removes them. Clear…`)
+    expect(clearButton(markupOf(core))![1]).not.toMatch(/disabled/)
+  })
+
+  it('counts one session in the singular', async () => {
+    const { core } = await recorderCore({ files: { 'fg-rec-20261031-090000-500-222.jsonl': 'c'.repeat(30) } })
+    expect(visibleText(createElement(SettingsScreen), core)).toContain(`Recordings C:\\Games\\XIV\\game\\fg-recordings 1 session · ${sizeLabel(30)}. Uninstall removes them.`)
+  })
+
+  it('says a folder without the recorder’s files has no recordings, and leaves Clear… off', async () => {
+    const { core } = await recorderCore({ folder: true })
+    expect(visibleText(createElement(SettingsScreen), core)).toContain('Recordings C:\\Games\\XIV\\game\\fg-recordings No recordings. Uninstall removes them. Clear…')
+    expect(clearButton(markupOf(core))![1]).toMatch(/disabled/)
+  })
+
+  it('says No recordings, not Empty, when Clear left the player’s own file in the folder', async () => {
+    const { core } = await recorderCore({ files: { ...SESSIONS, 'notes.txt': 'player' } })
+    await core.clearRecordings()
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toContain('fg-recordings No recordings. Uninstall removes them.')
+    expect(text).not.toContain('Empty. Uninstall removes them.')
+  })
+
+  describe('the Clear recordings dialog', () => {
+    const dialogText = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ClearRecordingsDialog, { onClose: () => {} })))
+      .replace(/<\/?span[^>]*>/g, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    const confirm = (core: Core) => /<button class="btn is-primary"[^>]*>/.exec(renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ClearRecordingsDialog, { onClose: () => {} }))))![0]
+
+    it('names the sessions and their size, says what stays, and offers Clear recordings', async () => {
+      const { core } = await recorderCore({ files: SESSIONS })
+      expect(dialogText(core)).toBe(`Delete 2 recording sessions (${TOTAL})? This removes the frame generation recordings in fg-recordings. Any other file in that folder stays. Nothing else in your game folder changes. Cancel Clear recordings`)
+      expect(confirm(core)).not.toMatch(/disabled/)
+    })
+
+    it('counts one session in the singular', async () => {
+      const { core } = await recorderCore({ files: { 'fg-rec-20261031-090000-500-222.jsonl': 'c'.repeat(30) } })
+      expect(dialogText(core)).toMatch(new RegExp(`^Delete 1 recording session \\(${sizeLabel(30)}\\)\\?`))
+    })
+
+    it('greys out Clear recordings while Lucent is busy or a change needs recovering', async () => {
+      const { core } = await recorderCore({ files: SESSIONS })
+      for (const patch of [{ busy: true }, { recoveryRequired: true }]) {
+        const state = { ...core.getState(), ...patch }
+        const stuck = { ...core, getState: () => state }
+        expect(confirm(stuck)).toMatch(/disabled/)
+      }
+      const busy = { ...core.getState(), busy: true }
+      expect(dialogText({ ...core, getState: () => busy })).toContain('Clearing…')
+    })
+  })
+
+  it('clears the recordings, says how much it cleared, and takes the row away once the folder is gone', async () => {
+    const { core } = await recorderCore({ files: SESSIONS })
+    // The dialog's title is built from the row's own count and size: `Delete 2 recording sessions (60 B)?`.
+    expect(visibleText(createElement(SettingsScreen), core)).toContain(`2 sessions · ${TOTAL}`)
+    await core.clearRecordings()
+    expect(core.getState()).toMatchObject({ error: null, busy: false })
+    expect(visibleText(createElement(SettingsScreen), core)).toContain(`Cleared ${TOTAL} of recordings (3 files).`)
+    expect(group(markupOf(core))).not.toContain('Recordings')
+  })
+
+  it('is not on Settings before Lucent has deployed', async () => {
+    const core = createCore(createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT))))
+    await core.scan()
+    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('Troubleshooting')
+  })
+
+  it('says nothing about waiting before Lucent has deployed, where nothing on the page waits for the game', async () => {
+    const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT))
+    const core = createCore(createFakePlatform(m))
+    await core.scan()
+    m.gameRunning = true
+    await core.refreshGameRunning()
+    expect(core.getState().gameRunning).toBe(true)
+    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('XIV is running')
+  })
+})
+
+describe('Settings, the page', () => {
+  const markupOf = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(SettingsScreen)))
+  async function fullPage() {
+    const { platform } = await deployedOnRtx()
+    const core = await reopen(platform)
+    await core.refreshStorage()
+    await core.refreshPatchSwitch()
+    await core.refreshRecorder()
+    return core
+  }
+
+  it('runs from launching XIV to the Danger zone, each group once', async () => {
+    const markup = markupOf(await fullPage())
+    const labels = [...markup.matchAll(/<section class="settings-group[^"]*" aria-label="([^"]+)"/g)].map((match) => match[1])
+    expect(labels).toEqual(['Launch XIV with', 'XIVLauncher', 'Updates', 'Game folder', 'Game patches', 'Troubleshooting', 'Storage', 'Danger zone'])
+  })
+
+  it('says what it covers', async () => {
+    expect(visibleText(createElement(SettingsScreen), await fullPage())).toContain('How Lucent starts and updates XIV’s mods, the game folder it looks after, and what it keeps on this PC.')
+  })
+
+  it('offers Reset setup as a plain button, not a primary one', async () => {
+    const markup = markupOf(await fullPage())
+    const reset = /<button[^>]*>(?:<svg[^>]*>(?:<[^>]*>)*?<\/svg>)?Reset setup…<\/button>/.exec(markup)?.[0] ?? ''
+    expect(reset).toMatch(/^<button class="btn"/)
+    expect(reset).not.toContain('is-primary')
+    const uninstall = /<button[^>]*>(?:<svg[^>]*>(?:<[^>]*>)*?<\/svg>)?Uninstall…<\/button>/.exec(markup)?.[0] ?? ''
+    expect(uninstall).toMatch(/^<button class="btn is-danger-outline"/)
   })
 })

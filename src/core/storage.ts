@@ -40,13 +40,13 @@ const CACHE_FILE = /^(?:[a-f0-9]{64}|\.tmp[^\\/]*)$/i
 /** The folder name a Reset gives its copy: `<game folder name> - Reset <ISO time with . and : as ->`. */
 const RESET_COPY = / - Reset \d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}$/i
 
-interface Listed { relative: string; path: string; bytes: number }
+export interface Listed { relative: string; path: string; bytes: number }
 
 /**
  * The listed files that are safe to remove from `root`: each one is checked to stay under it. A name with `..`, an empty
  * part or a stream or wildcard character never reaches the Rust delete, which removes any path it is given.
  */
-async function listed(platform: Platform, root: string, accept: (relative: string) => boolean): Promise<Listed[]> {
+export async function listed(platform: Platform, root: string, accept: (relative: string) => boolean): Promise<Listed[]> {
   // A folder that was never made has nothing; the real port refuses to list one.
   if (!await maybeStat(platform, root)) return []
   const prefix = `${fileKey(root)}/`
@@ -60,7 +60,7 @@ async function listed(platform: Platform, root: string, accept: (relative: strin
   return found.flatMap((file, i) => stats[i]?.kind === 'file' ? [{ ...file, bytes: stats[i]!.size }] : [])
 }
 
-const total = (files: Listed[]): Cleared => ({ files: files.length, bytes: files.reduce((sum, file) => sum + file.bytes, 0) })
+export const total = (files: Listed[]): Cleared => ({ files: files.length, bytes: files.reduce((sum, file) => sum + file.bytes, 0) })
 
 const topFolder = (relative: string) => relative.split('\\')[0]
 
@@ -110,7 +110,7 @@ export async function readStorage(platform: Platform): Promise<Storage> {
 }
 
 /** Removes the folders left empty by the files just removed, and the `extra` ones if empty too, deepest first. */
-async function removeEmptyFolders(platform: Platform, root: string, files: Listed[], extra: string[] = []) {
+export async function removeEmptyFolders(platform: Platform, root: string, files: Listed[], extra: string[] = []) {
   const folders = new Set(files.flatMap((file) => {
     const parts = file.relative.split('\\')
     return parts.slice(0, -1).map((_, i) => joinPath(root, ...parts.slice(0, i + 1)))
