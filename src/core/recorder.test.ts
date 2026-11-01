@@ -458,6 +458,26 @@ describe('clearing from Settings', () => {
     expect(core.getState().notice).toBe('There were no recordings to clear.')
   })
 
+  it('keeps a newer reading when an older, slower one finishes after it', async () => {
+    const { platform, core } = await deployed()
+    const readText = platform.readText
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let first = true
+    platform.readText = async (path, ...rest) => {
+      if (first && path.toLowerCase() === INI.toLowerCase()) { first = false; const text = await readText(path, ...rest); await held; return text }
+      return readText(path, ...rest)
+    }
+    const slow = core.refreshRecorder()
+    await platform.writeText(INI, (await readText(INI)).replace(KEY, 'FgRecorder = true'))
+    await core.refreshRecorder()
+    expect(core.getState().recorder).toMatchObject({ status: 'ready', on: true })
+    release()
+    await slow
+    platform.readText = readText
+    expect(core.getState().recorder).toMatchObject({ status: 'ready', on: true })
+  })
+
   it('is nothing without a deployment', async () => {
     const core = createCore(createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT), xivLauncher(ROOT))))
     await core.scan()
