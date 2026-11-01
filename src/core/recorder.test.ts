@@ -1,5 +1,5 @@
 // Settings' Troubleshooting group: the FG recorder switch in the deployed OptiScaler.ini, the recordings OptiScaler-FFXIV writes
-// beside its DLL, and clearing them. Unlike the "After a game patch" switch it is never remembered, so a Reset, a tier switch and
+// beside its DLL, and clearing them. Unlike the Game patches switch it is never remembered, so a Reset, a tier switch and
 // Repair write the tested setup's own `auto`, off, again.
 import { describe, expect, it } from 'vitest'
 import { createCore } from './core'
@@ -34,6 +34,7 @@ const STRAYS = {
   'fg-rec-20261031-090000-500-222.jsonl.01': 'e'.repeat(400),
   'fg-rec-20261031-090000-500-222.jsonl.9': 'f'.repeat(400),
   'fg-rec-2026-1031.jsonl': 'g'.repeat(400),
+  'fg-rec-20261031-090000-500-.jsonl': 'j'.repeat(400),
   'notes.txt': 'h'.repeat(400),
   'old\\fg-rec-20261031-100000-000-333.jsonl': 'i'.repeat(400),
 }
@@ -142,6 +143,25 @@ describe('reading the recordings', () => {
     expect(recordings!.newest).toEqual({ name: 'fg-rec-20261031-090000-500-999', files: 1, bytes: 2 })
   })
 
+  it('keeps the switch and marks only the row unreadable when the folder is a junction Lucent won’t follow', async () => {
+    const platform = createFakePlatform(machine(vanillaGame(ROOT), { files: { [INI]: '[FramePacing]\r\nFgRecorder = true\r\n' } }))
+    const resolve = platform.resolveGamePath
+    platform.resolveGamePath = async (root, relative) => {
+      if (relative === RECORDINGS_FOLDER) throw new PlatformError('access-denied', 'A game-folder path contains a junction or symbolic link.')
+      return resolve(root, relative)
+    }
+    expect(await readRecorder(platform, ROOT)).toEqual({
+      status: 'ready', on: true, recordings: { path: FOLDER, sessions: 0, files: 0, bytes: 0, newest: null, unreadable: true },
+    })
+  })
+
+  it('is nothing when a file has the folder’s name', async () => {
+    const platform = createFakePlatform(machine(vanillaGame(ROOT), { files: { [FOLDER]: 'not a folder' } }))
+    expect(await readRecordings(platform, ROOT)).toBeNull()
+    await expect(clearRecordings(platform, ROOT)).resolves.toEqual({ files: 0, bytes: 0 })
+    expect(await platform.readText(FOLDER)).toBe('not a folder')
+  })
+
   it('reads an empty folder as no sessions', async () => {
     expect(await readRecordings(recordingsPlatform({}, { directories: [FOLDER] }), ROOT)).toEqual({ path: FOLDER, sessions: 0, files: 0, bytes: 0, newest: null })
   })
@@ -218,9 +238,15 @@ describe('turning it on and off', () => {
     await platform.writeText(INI, (await platform.readText(INI)).replace(KEY, 'FgRecorder = true'))
     const recordPath = (await dataPaths(platform, ROOT)).record
     const before = await platform.readText(recordPath)
+    const writeText = platform.writeText
+    const written: string[] = []
+    platform.writeText = (path, text) => { written.push(path); return writeText(path, text) }
     await core.setFgRecorder(true)
+    platform.writeText = writeText
     expect(core.getState()).toMatchObject({ error: null, recorder: { status: 'ready', on: true } })
     expect(await platform.readText(recordPath)).toBe(before)
+    // Not even the same record again: the switch is not remembered, so there is nothing to save.
+    expect(written.filter((path) => path.toLowerCase() === recordPath.toLowerCase())).toEqual([])
     expect(await platform.readText(INI)).toMatch(/^FgRecorder\s*=\s*true$/m)
   })
 
@@ -252,6 +278,26 @@ describe('turning it on and off', () => {
     platform.readText = read
     expect(core.getState().error).toMatch(/in use/i)
     expect(await platform.readText(INI)).toBe(before)
+  })
+
+  it('undoes a write that fails after the journal saved its backup, leaving the ini and a complete record as they were and no recovery to do', async () => {
+    const { platform, core } = await deployed()
+    const before = await platform.readText(INI)
+    const recordPath = (await dataPaths(platform, ROOT)).record
+    const journal = JSON.parse(await platform.readText(recordPath)).journal
+    const writeText = platform.writeText
+    // The port writes a temporary file and renames it over the ini, so a failed write leaves the old ini whole.
+    platform.writeText = async (path, text, ...rest) => {
+      if (path.toLowerCase() === INI.toLowerCase()) throw new PlatformError('disk-full', 'The disk is full.', path)
+      return writeText(path, text, ...rest)
+    }
+    await core.setFgRecorder(true)
+    platform.writeText = writeText
+    expect(core.getState()).toMatchObject({ error: 'There isn’t enough free disk space. Free some space and try again. Lucent restored the game folder to how it was before.', recoveryRequired: false })
+    expect(await platform.readText(INI)).toBe(before)
+    const record = JSON.parse(await platform.readText(recordPath))
+    expect(record.status).toBe('complete')
+    expect(record.journal).toEqual(journal)
   })
 })
 
@@ -378,6 +424,18 @@ describe('while Lucent and the game folder have other claims', () => {
     await resumed.scan()
     expect(resumed.getState().error).toBeNull()
     await expect(platform.stat(FOLDER)).rejects.toThrow(/Not found/)
+  })
+})
+
+describe('clearing from Settings, when only the recordings folder needs administrator access', () => {
+  it('asks for it, because the folder itself is what Clear writes to', async () => {
+    const { platform, core, m } = await deployed()
+    await platform.writeText(`${FOLDER}\\fg-rec-20261031-090000-500-222.jsonl`, 'rec')
+    await core.refreshRecorder()
+    m.readOnlyDirectories = [FOLDER]
+    await core.clearRecordings()
+    expect(platform.elevationRequests).toHaveLength(1)
+    expect(await platform.readText(`${FOLDER}\\fg-rec-20261031-090000-500-222.jsonl`)).toBe('rec')
   })
 })
 

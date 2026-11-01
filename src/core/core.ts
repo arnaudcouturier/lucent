@@ -127,7 +127,7 @@ export interface State {
   backupsFolder: string | null
   /** Settings' Storage card: what the cache and the readable copies take. Kept current by `refreshStorage`; null until it has read them. */
   storage: Storage | null
-  /** Settings' "After a game patch" switch, read from the deployed OptiScaler.ini by `refreshPatchSwitch`; null without a deployment. */
+  /** Settings' Game patches switch, read from the deployed OptiScaler.ini by `refreshPatchSwitch`; null without a deployment. */
   patchSwitch: PatchSwitch | null
   /** Settings' Troubleshooting group: the recorder switch and the recordings, read by `refreshRecorder`; null without a deployment. */
   recorder: Recorder | null
@@ -287,10 +287,10 @@ export interface Core {
   clearCache(): Promise<void>
   /** Removes the named folders of readable copies (see `storage.groups`). The journal's own backups, which Uninstall restores from, stay. Refused while Lucent is busy or needs recovery. */
   clearBackups(folders: string[], shown?: BackupGroup[]): Promise<void>
-  /** Reads the "After a game patch" switch from OptiScaler.ini again. Works while Lucent is busy. */
+  /** Reads the Game patches switch from OptiScaler.ini again. Works while Lucent is busy. */
   refreshPatchSwitch(): Promise<void>
   /**
-   * The "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else, through the journal,
+   * The Game patches switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else, through the journal,
    * and remembers it so Reset, a tier switch and Repair keep it. Takes effect the next time XIV starts; XIV must be closed.
    */
   setUnknownBuildHooks(on: boolean): Promise<void>
@@ -298,7 +298,7 @@ export interface Core {
   refreshRecorder(): Promise<void>
   /**
    * The Troubleshooting switch: sets `[FramePacing] FgRecorder` in OptiScaler.ini to `true` or `false` and nothing else, through the journal.
-   * Unlike the "After a game patch" switch it is not remembered, so a Reset and a tier switch write the tested setup's value, off, again.
+   * Unlike the Game patches switch it is not remembered, so a Reset and a tier switch write the tested setup's value, off, again.
    * Takes effect the next time XIV starts; XIV must be closed.
    */
   setFgRecorder(on: boolean): Promise<void>
@@ -969,6 +969,7 @@ export function createCore(platform: Platform): Core {
     try { return (await platform.listFolders(path)).length ? path : null } catch { return null }
   }
   let storageReads = 0
+  let recorderReads = 0
   /**
    * Settings' Clear on the cache or the readable copies. Neither holds anything a deployment depends on, so XIV may be running; but a
    * recovery in progress or needed is no time to remove files, and the lease keeps another Lucent process from downloading into the cache.
@@ -1105,12 +1106,14 @@ export function createCore(platform: Platform): Core {
       if (JSON.stringify(next) !== JSON.stringify(state.patchSwitch)) set({ patchSwitch: next })
     },
     async refreshRecorder() {
+      const read = ++recorderReads
       const record = state.deployment
       let next: Recorder | null = null
       if (record?.status === 'complete' && state.activity.kind === 'deployment') {
         next = await readRecorder(platform, record.gameFolder).catch((): Recorder => ({ status: 'unavailable', reason: 'Lucent can’t read OptiScaler.ini.', recordings: null }))
       }
-      if (JSON.stringify(next) !== JSON.stringify(state.recorder)) set({ recorder: next })
+      // A slower read that a newer one has overtaken, such as the one a switch or a Clear starts afterwards, must not put the old state back.
+      if (read === recorderReads && JSON.stringify(next) !== JSON.stringify(state.recorder)) set({ recorder: next })
     },
     async setUnknownBuildHooks(on) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return

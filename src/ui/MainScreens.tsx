@@ -231,7 +231,7 @@ export function SettingsScreen({ openReset = false }: { openReset?: boolean } = 
         <div>
           <strong>Recordings</strong>
           <FolderPath path={recorder.recordings.path} />
-          <small>{recorder.recordings.unreadable ? 'Lucent can’t read this folder, so it can’t show its size or clear it. ' : recorder.recordings.sessions ? `${sessionCount(recorder.recordings.sessions, false)} · ${sizeLabel(recorder.recordings.bytes)}. ` : 'Empty. '}Uninstall removes them.</small>
+          <small>{recorder.recordings.unreadable ? 'Lucent can’t read this folder, so it can’t show its size or clear it. ' : recorder.recordings.sessions ? `${sessionCount(recorder.recordings.sessions, false)} · ${sizeLabel(recorder.recordings.bytes)}. ` : 'No recordings. '}Uninstall removes them.</small>
         </div>
         <button className="btn" disabled={!gameActionsAvailable(state) || !recorder.recordings.sessions || !!recorder.recordings.unreadable} onClick={(e) => { opener.current = e.currentTarget; setClearing('recordings') }}><Eraser size={14} strokeWidth={1.75} />Clear…</button>
       </div>}
@@ -298,7 +298,7 @@ function ClearCacheDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
-function ClearRecordingsDialog({ onClose }: { onClose: () => void }) {
+export function ClearRecordingsDialog({ onClose }: { onClose: () => void }) {
   const [state, core] = useCore()
   const { busy, recoveryRequired, recorder } = state
   const recordings = recorder?.recordings ?? null
@@ -311,7 +311,7 @@ function ClearRecordingsDialog({ onClose }: { onClose: () => void }) {
   return (
     <dialog ref={ref} className="confirm" aria-labelledby="clear-recordings-title" onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}>
       <h2 id="clear-recordings-title">{recordings ? `Delete ${sessionCount(recordings.sessions)} (${sizeLabel(recordings.bytes)})?` : 'Delete the recordings?'}</h2>
-      <p>This removes the frame generation recordings in fg-recordings. Any other file in that folder stays.</p>
+      <p>This removes the frame generation recordings in <span className="nowrap">fg-recordings</span>. Any other file in that folder stays.</p>
       <p className="uninstall-note">Nothing else in your game folder changes.</p>
       <footer className="confirm-actions">
         <button className="btn is-ghost" disabled={busy} onClick={onClose}>Cancel</button>

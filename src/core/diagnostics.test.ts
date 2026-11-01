@@ -198,7 +198,7 @@ it('copies the recorder’s line right after the auto-repair line', async () => 
 })
 
 describe('the recorder’s diagnostics line', () => {
-  const recordings = (patch: Partial<Recordings> = {}): Recordings => ({ path: `${GAME}\fg-recordings`, sessions: 0, files: 0, bytes: 0, newest: null, ...patch })
+  const recordings = (patch: Partial<Recordings> = {}): Recordings => ({ path: `${GAME}\\fg-recordings`, sessions: 0, files: 0, bytes: 0, newest: null, ...patch })
   const newest = { name: 'fg-rec-20261031-201500-123-4567', files: 9, bytes: 140 * 1024 ** 2 }
 
   it('says whether the switch is on, off or missing from this content', () => {

@@ -9,11 +9,14 @@ import { maybeStat } from './deployment'
 import { NEEDS_NEWER_CONTENT, patchSwitchProblem } from './gamePatch'
 import { guardGameWrites } from './gameAccess'
 import { listed, removeEmptyFolders, total, type Cleared, type Listed } from './storage'
+import { FG_RECORDER, RECORDINGS_FOLDER } from './planner'
 
-export const FG_RECORDER = { file: 'OptiScaler.ini', section: 'FramePacing', key: 'FgRecorder' } as const
-export const RECORDINGS_FOLDER = 'fg-recordings'
-/** The names the recorder writes and later deletes itself; group 1 is the session, groups 2 to 4 its time stamp. */
-export const RECORDING_FILE = /^(fg-rec-(\d{8})-(\d{6})-(\d{3})-\d+)\.jsonl(?:\.[1-8])?$/
+export { FG_RECORDER, RECORDINGS_FOLDER }
+/**
+ * The names the recorder writes and later deletes itself; group 1 is the session. Its time stamp has a fixed width and comes first,
+ * so a plain string comparison of two sessions orders them by time, and by process id when the stamps are the same.
+ */
+export const RECORDING_FILE = /^(fg-rec-\d{8}-\d{6}-\d{3}-\d+)\.jsonl(?:\.[1-8])?$/
 
 export interface Recordings {
   path: string
@@ -27,30 +30,28 @@ export type Recorder = ({ status: 'ready'; on: boolean } | { status: 'unavailabl
 
 /** What the recorder has written so far, session by session; null when the folder isn't there. */
 export async function readRecordings(platform: Platform, gameFolder: string): Promise<Recordings | null> {
-  const path = await platform.resolveGamePath(joinPath(gameFolder, 'game'), RECORDINGS_FOLDER)
+  let path = joinPath(gameFolder, 'game', RECORDINGS_FOLDER)
+  // A junction or link where the folder should be is refused; it costs the row its size, not the switch above it.
+  try { path = await platform.resolveGamePath(joinPath(gameFolder, 'game'), RECORDINGS_FOLDER) }
+  catch { return { path, sessions: 0, files: 0, bytes: 0, newest: null, unreadable: true } }
   const stat = await maybeStat(platform, path)
   if (stat?.kind !== 'dir') return null
   let files: Listed[]
   try { files = await listed(platform, path, (relative) => RECORDING_FILE.test(relative)) }
   catch { return { path, sessions: 0, files: 0, bytes: 0, newest: null, unreadable: true } }
   // A session is one game run: the name it was given, then every rotation that grew from it.
-  const sessions = new Map<string, { stamp: string; files: number; bytes: number }>()
+  const sessions = new Map<string, { files: number; bytes: number }>()
   for (const file of files) {
-    const match = RECORDING_FILE.exec(file.relative)!
-    const session = sessions.get(match[1]) ?? { stamp: match[2] + match[3] + match[4], files: 0, bytes: 0 }
+    const name = RECORDING_FILE.exec(file.relative)![1]
+    const session = sessions.get(name) ?? { files: 0, bytes: 0 }
     session.files++
     session.bytes += file.bytes
-    sessions.set(match[1], session)
+    sessions.set(name, session)
   }
-  let newest: { name: string; stamp: string; files: number; bytes: number } | null = null
-  for (const [name, session] of sessions) {
-    if (!newest || session.stamp > newest.stamp || (session.stamp === newest.stamp && name > newest.name)) newest = { name, ...session }
-  }
+  let newest: Recordings['newest'] = null
+  for (const [name, session] of sessions) if (!newest || name > newest.name) newest = { name, ...session }
   const recorded = total(files)
-  return {
-    path, sessions: sessions.size, files: recorded.files, bytes: recorded.bytes,
-    newest: newest ? { name: newest.name, files: newest.files, bytes: newest.bytes } : null,
-  }
+  return { path, sessions: sessions.size, files: recorded.files, bytes: recorded.bytes, newest }
 }
 
 /** The switch as OptiScaler.ini says now, with the recordings the fork has written beside it. */

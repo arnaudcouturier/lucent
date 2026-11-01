@@ -9,7 +9,7 @@ import { existingSetup, fixtureContentHost, graphicsCard, MACHINES, machine, nex
 import { CoreContext } from './useCore'
 import { DoneScreen, Keys, ReviewScreen, StatusCard } from './DeploymentScreens'
 import { ProfileScreen } from './Profiles'
-import { SettingsScreen } from './MainScreens'
+import { ClearRecordingsDialog, SettingsScreen } from './MainScreens'
 import { VersionsScreen } from './VersionsScreen'
 import { LogsScreen } from './LogsScreen'
 import { UninstallWindow } from './UninstallWindow'
@@ -557,10 +557,51 @@ describe('Settings’ Troubleshooting group', () => {
     expect(clearButton(markupOf(core))![1]).not.toMatch(/disabled/)
   })
 
-  it('says an empty folder keeps nothing, and leaves Clear… off', async () => {
+  it('counts one session in the singular', async () => {
+    const { core } = await recorderCore({ files: { 'fg-rec-20261031-090000-500-222.jsonl': 'c'.repeat(30) } })
+    expect(visibleText(createElement(SettingsScreen), core)).toContain(`Recordings C:\\Games\\XIV\\game\\fg-recordings 1 session · ${sizeLabel(30)}. Uninstall removes them.`)
+  })
+
+  it('says a folder without the recorder’s files has no recordings, and leaves Clear… off', async () => {
     const { core } = await recorderCore({ folder: true })
-    expect(visibleText(createElement(SettingsScreen), core)).toContain('Recordings C:\\Games\\XIV\\game\\fg-recordings Empty. Uninstall removes them. Clear…')
+    expect(visibleText(createElement(SettingsScreen), core)).toContain('Recordings C:\\Games\\XIV\\game\\fg-recordings No recordings. Uninstall removes them. Clear…')
     expect(clearButton(markupOf(core))![1]).toMatch(/disabled/)
+  })
+
+  it('says No recordings, not Empty, when Clear left the player’s own file in the folder', async () => {
+    const { core } = await recorderCore({ files: { ...SESSIONS, 'notes.txt': 'player' } })
+    await core.clearRecordings()
+    const text = visibleText(createElement(SettingsScreen), core)
+    expect(text).toContain('fg-recordings No recordings. Uninstall removes them.')
+    expect(text).not.toContain('Empty. Uninstall removes them.')
+  })
+
+  describe('the Clear recordings dialog', () => {
+    const dialogText = (core: Core) => renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ClearRecordingsDialog, { onClose: () => {} })))
+      .replace(/<\/?span[^>]*>/g, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    const confirm = (core: Core) => /<button class="btn is-primary"[^>]*>/.exec(renderToStaticMarkup(createElement(CoreContext.Provider, { value: core }, createElement(ClearRecordingsDialog, { onClose: () => {} }))))![0]
+
+    it('names the sessions and their size, says what stays, and offers Clear recordings', async () => {
+      const { core } = await recorderCore({ files: SESSIONS })
+      expect(dialogText(core)).toBe(`Delete 2 recording sessions (${TOTAL})? This removes the frame generation recordings in fg-recordings. Any other file in that folder stays. Nothing else in your game folder changes. Cancel Clear recordings`)
+      expect(confirm(core)).not.toMatch(/disabled/)
+    })
+
+    it('counts one session in the singular', async () => {
+      const { core } = await recorderCore({ files: { 'fg-rec-20261031-090000-500-222.jsonl': 'c'.repeat(30) } })
+      expect(dialogText(core)).toMatch(new RegExp(`^Delete 1 recording session \\(${sizeLabel(30)}\\)\\?`))
+    })
+
+    it('greys out Clear recordings while Lucent is busy or a change needs recovering', async () => {
+      const { core } = await recorderCore({ files: SESSIONS })
+      for (const patch of [{ busy: true }, { recoveryRequired: true }]) {
+        const state = { ...core.getState(), ...patch }
+        const stuck = { ...core, getState: () => state }
+        expect(confirm(stuck)).toMatch(/disabled/)
+      }
+      const busy = { ...core.getState(), busy: true }
+      expect(dialogText({ ...core, getState: () => busy })).toContain('Clearing…')
+    })
   })
 
   it('clears the recordings, says how much it cleared, and takes the row away once the folder is gone', async () => {
@@ -577,6 +618,16 @@ describe('Settings’ Troubleshooting group', () => {
     const core = createCore(createFakePlatform(machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT))))
     await core.scan()
     expect(visibleText(createElement(SettingsScreen), core)).not.toContain('Troubleshooting')
+  })
+
+  it('says nothing about waiting before Lucent has deployed, where nothing on the page waits for the game', async () => {
+    const m = machine(fixtureContentHost(), graphicsCard(), vanillaGame(ROOT))
+    const core = createCore(createFakePlatform(m))
+    await core.scan()
+    m.gameRunning = true
+    await core.refreshGameRunning()
+    expect(core.getState().gameRunning).toBe(true)
+    expect(visibleText(createElement(SettingsScreen), core)).not.toContain('XIV is running')
   })
 })
 

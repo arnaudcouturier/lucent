@@ -1,4 +1,4 @@
-// Settings' "After a game patch" switch: `[FFXIV] FfxivUnknownBuildHooks` in the deployed OptiScaler.ini, set in place through the
+// Settings' Game patches switch: `[FFXIV] FfxivUnknownBuildHooks` in the deployed OptiScaler.ini, set in place through the
 // journal, remembered in the record, and written again wherever a baseline replaces the ini.
 import { describe, expect, it } from 'vitest'
 import { createCore } from './core'

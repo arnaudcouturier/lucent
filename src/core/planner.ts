@@ -7,8 +7,11 @@ import { resolveSettingChoices, settingChoiceSettings, type SettingPicks } from 
 import { screenDerivedValue, type ScreenValues } from './screen'
 
 export const fileKey = (path: string) => path.replace(/\\/g, '/').toLowerCase()
-/** The key behind Settings' "After a game patch" switch: OptiScaler-FFXIV's search for the game's code addresses, trusted on a game build it doesn't know. */
+/** The key behind Settings' Game patches switch: OptiScaler-FFXIV's search for the game's code addresses, trusted on a game build it doesn't know. */
 export const UNKNOWN_BUILD_HOOKS = { file: 'OptiScaler.ini', section: 'FFXIV', key: 'FfxivUnknownBuildHooks' } as const
+/** The key behind Settings' Troubleshooting switch: OptiScaler-FFXIV's frame generation recorder, writing to `RECORDINGS_FOLDER` beside its DLL. */
+export const FG_RECORDER = { file: 'OptiScaler.ini', section: 'FramePacing', key: 'FgRecorder' } as const
+export const RECORDINGS_FOLDER = 'fg-recordings'
 /**
  * Whether a game-folder path is one Lucent can name safely. A file whose name Windows tools can't handle (a trailing dot, a
  * device name, made through `\\?\` or WSL) is a user file that nothing Lucent does ever touches.
@@ -94,7 +97,7 @@ export interface PlanSelection extends ProfilePlanContext {
   hdrMode?: HdrMode | null
   /** The player's picks among the tier's setting choices; one that is unknown or blocked is written as the choice's default. */
   settingChoices?: SettingPicks | null
-  /** The player's "After a game patch" switch: written to OptiScaler.ini as `true` or `false` after the baseline. Omit or null to leave the ini's `auto`. */
+  /** The player's Game patches switch: written to OptiScaler.ini as `true` or `false` after the baseline. Omit or null to leave the ini's `auto`. */
   unknownBuildHooks?: boolean | null
   /** Whether Windows HDR is enabled on XIV's current display. */
   hdrOn?: boolean

@@ -1,7 +1,7 @@
 import { assertGamePath, FRAME_GENERATION_IDS, HDR_MODES, validateManifest, type ContentFile, type ContentVersion, type ExistingSetupSignature, type FrameGenerationId, type HdrMode, type NeuralRenderingChoice, type ProfileId, type Tier } from '../shared/manifest'
 import { type ContentSource } from './manifest'
 import { PlatformError, type FileStat, type GpuAdapter, type Platform } from './platform'
-import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, UNKNOWN_BUILD_HOOKS, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
+import { disabledName, fileKey, isSafeGamePath, planDeployment, stepWritePaths, FG_RECORDER, UNKNOWN_BUILD_HOOKS, type DeploymentScan, type Plan, type PlanSelection, type PlanStep } from './planner'
 import { detectExistingSetups, type ExistingSetup } from './existingSetup'
 import { joinPath, normalizePath, parentPath } from './paths'
 import { addMissingKeys, readIni, setConfigKeys } from './ini'
@@ -9,7 +9,6 @@ import { configBaselineAssets, configBaselines, configPresent, newConfigKeys, re
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { NEEDS_NEWER_CONTENT, patchSwitchProblem } from './gamePatch'
-import { FG_RECORDER } from './recorder'
 import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
@@ -54,7 +53,7 @@ export interface DeploymentRecord {
   /** The option each setting choice (the DLSS-G preset, the UI mode) was written with at install or Reset, kept so Reset can offer them again. Absent from records made before the choices existed. */
   settingChoices?: SettingPicks
   /**
-   * Settings' "After a game patch" switch, as the player last set it: `FfxivUnknownBuildHooks` in OptiScaler.ini is `true` or `false`.
+   * Settings' Game patches switch, as the player last set it: `FfxivUnknownBuildHooks` in OptiScaler.ini is `true` or `false`.
    * Absent while the player never touched it, which leaves the ini's own `auto` (off). Kept so a Reset, a tier switch and the Repair
    * of a missing OptiScaler.ini write the baseline and then this value again.
    */
@@ -1625,7 +1624,7 @@ async function setIniSwitch(platform: Platform, gameFolder: string, target: { fi
 }
 
 /**
- * Settings' "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else in
+ * Settings' Game patches switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else in
  * the file, through the journal as any change to a deployed file, and remembers the value in the record so that a Reset, a tier switch
  * and the Repair of a missing OptiScaler.ini write it again. OptiScaler reads its ini when XIV starts.
  */
@@ -1635,7 +1634,7 @@ export async function setUnknownBuildHooks(platform: Platform, gameFolder: strin
 
 /**
  * Settings' Troubleshooting switch: sets `[FramePacing] FgRecorder` in OptiScaler.ini to `true` or `false` and nothing else in the file,
- * through the journal as any change to a deployed file. Unlike the After a game patch switch it is not remembered: a Reset writes the
+ * through the journal as any change to a deployed file. Unlike the Game patches switch it is not remembered: a Reset writes the
  * tested setup's value, off, again. OptiScaler-FFXIV reads it while XIV runs, but Lucent writes only while XIV is closed.
  */
 export async function setFgRecorder(platform: Platform, gameFolder: string, on: boolean): Promise<DeploymentRecord> {

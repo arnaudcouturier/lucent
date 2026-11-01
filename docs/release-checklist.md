@@ -10,7 +10,8 @@ and describe the available features in the release notes.
 
 - [ ] Update `package.json` and `src-tauri/Cargo.toml` to the same app version, and refresh
   `package-lock.json` (`npm install --package-lock-only`) and `src-tauri/Cargo.lock`
-  (`cargo check --manifest-path src-tauri/Cargo.toml`). Tauri reads its version from `package.json`.
+  (`cargo check --manifest-path src-tauri/Cargo.toml`). Tauri reads its version from `package.json`. The site's
+  window picture names it too (`mock-foot` in `site/index.html`).
 - [ ] Use `X.Y.Z` for Stable or `X.Y.Z-beta.N` for Beta (for example, `0.2.0-beta.1`).
 - [ ] Run `npm ci`, `npm run typecheck`, `npm test` and
   `npm run test:rust -- --locked`.

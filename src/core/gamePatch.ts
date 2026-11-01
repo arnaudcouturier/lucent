@@ -1,4 +1,4 @@
-// Settings' "After a game patch" switch: OptiScaler-FFXIV (v0.3.0 on) finds the game's code addresses by searching the executable, and
+// Settings' Game patches switch: OptiScaler-FFXIV (v0.3.0 on) finds the game's code addresses by searching the executable, and
 // after an XIV patch runs the features that read or hook the game's code only when `[FFXIV] FfxivUnknownBuildHooks` is `true`.
 // The key has no control in OptiScaler's menu; this reads it, and `setUnknownBuildHooks` (deployment.ts) writes it.
 import type { Platform } from './platform'
