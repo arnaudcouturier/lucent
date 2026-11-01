@@ -5,7 +5,7 @@ import { checkPickedFolder, findGameFolder, isGameFolder, type GameFolder } from
 import { loadManifest, type ManifestState } from './manifest'
 import { matchTier, scanGraphics, type GraphicsState } from './graphics'
 import { removeXivLauncherAddons, scanXivLauncher, setAutoRepair, type XivLauncherState } from './xivLauncher'
-import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, setUnknownBuildHooks as writeUnknownBuildHooks, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
+import { assertReviewedTakeovers, backupFolderName, replacedOriginals, dataPaths, deployContent, deploymentRecords, DeploymentError, failureReason, lostDeployment, maybeStat, migrateDeployment, migrationNote, presetsInTheWay, readableBackupPath, readDeployment, recoverDeployments, repairDeployment, restoreAutoHdrPreference, scanDeployment, setDeploymentEnabled, setFgRecorder as writeFgRecorder, setUnknownBuildHooks as writeUnknownBuildHooks, undoDeployment, UnreviewedFilesError, uninstallDeployment, updateDeployment, type DeploymentProgress, type DeploymentRecord } from './deployment'
 import { disabledName, fileKey, folderChanges, planDeployment, stepWritePaths, UNKNOWN_BUILD_HOOKS, type FolderChanges, type Plan, type PlanSelection } from './planner'
 import { checkHealth, type Drift } from './health'
 import { announcedContent, needsNewerApp, onChannel, type Channel } from './updates'
@@ -30,6 +30,7 @@ import { withOperationLock } from './operation'
 import { gameRelative, loggedPort, loggedProgress, openActivityLog, parseLog, readLogTail, scanLines, trimActivityLog, type LogLine, type LogSource } from './log'
 import { fileCount, sizeLabel } from './format'
 import { readPatchSwitch, type PatchSwitch } from './gamePatch'
+import { clearRecordings as clearRecordingFiles, FG_RECORDER, readRecorder, RECORDINGS_FOLDER, type Recorder } from './recorder'
 import { clearBackups as clearBackupFolders, clearCache as clearCachedFiles, readStorage, type BackupGroup, type Cleared, type Storage } from './storage'
 import { readResolvedScreen, type ResolvedScreen } from './screen'
 import { choiceOptions, frameGenerationChoice, hdrChoice, storedSelection } from './choices'
@@ -128,6 +129,8 @@ export interface State {
   storage: Storage | null
   /** Settings' "After a game patch" switch, read from the deployed OptiScaler.ini by `refreshPatchSwitch`; null without a deployment. */
   patchSwitch: PatchSwitch | null
+  /** Settings' Troubleshooting group: the recorder switch and the recordings, read by `refreshRecorder`; null without a deployment. */
+  recorder: Recorder | null
   /** The uninstall window waits while the installed Lucent is open in another window: its exe couldn't go, and it would write its data again. */
   lucentOpenElsewhere: boolean
   profiles: PerformanceProfile[]
@@ -291,6 +294,16 @@ export interface Core {
    * and remembers it so Reset, a tier switch and Repair keep it. Takes effect the next time XIV starts; XIV must be closed.
    */
   setUnknownBuildHooks(on: boolean): Promise<void>
+  /** Reads the recorder switch and the recordings from the game folder again. Works while Lucent is busy. */
+  refreshRecorder(): Promise<void>
+  /**
+   * The Troubleshooting switch: sets `[FramePacing] FgRecorder` in OptiScaler.ini to `true` or `false` and nothing else, through the journal.
+   * Unlike the "After a game patch" switch it is not remembered, so a Reset and a tier switch write the tested setup's value, off, again.
+   * Takes effect the next time XIV starts; XIV must be closed.
+   */
+  setFgRecorder(on: boolean): Promise<void>
+  /** Removes the recorder's own files from `game\fg-recordings`, and the folder once it is empty. XIV must be closed. */
+  clearRecordings(): Promise<void>
   /** Reads what the Mods section shows. Waits for the manifest; the section calls it again when the manifest arrives. */
   refreshStarterSet(): Promise<void>
   /** Fetches the named Starter set plugins from their repos and places them in Dalamud. XIV and XIVLauncher must be closed. */
@@ -377,7 +390,7 @@ export function createCore(platform: Platform): Core {
   let state: State = {
     activity: { kind: 'scan' }, gameRunning: null, appUpdate: null, appUpdateProgress: null, updateCheck: { status: 'idle', checkedAt: null, error: null, outcome: null }, channel: 'stable', gameFolder: { status: 'idle' }, rejectedFolder: null,
     graphics: { status: 'idle' }, manifest: { status: 'idle' }, xivLauncher: { status: 'idle' },
-    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, backupsFolder: null, storage: null, patchSwitch: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
+    plan: null, existingSetups: [], folderChanges: null, deployment: null, versions: [], deploymentProgress: null, selfInstalled: false, appUninstalled: false, appUninstallBackups: null, backupsFolder: null, storage: null, patchSwitch: null, recorder: null, lucentOpenElsewhere: false, ...firstRunChoices(), busy: false, error: null, notice: null, recoveryRequired: false, screen: null, hotkeys: [], keybinds: null, launchOptions: [], launcher: null, launching: false, starterSet: { status: 'idle' }, dataFolder: null, spaceWarning: null,
   }
   const listeners = new Set<() => void>()
   const set = (patch: Partial<State>) => {
@@ -446,6 +459,8 @@ export function createCore(platform: Platform): Core {
     const record = await readDeployment(platform, request.gameFolder)
     if (!record) throw new Error('The deployment is no longer available. Run Scan again.')
     if (request.kind === 'unknown-build-hooks') return [UNKNOWN_BUILD_HOOKS.file]
+    if (request.kind === 'fg-recorder') return [FG_RECORDER.file]
+    if (request.kind === 'clear-recordings') return [RECORDINGS_FOLDER]
     if (request.kind === 'enabled') return record.recipe.entryFiles.filter((p) => p.when !== 'reshade' || record.includeReShade).flatMap((p) => [p.path, disabledName(p.path)])
     if (request.kind === 'update' || request.kind === 'tier') {
       const target = request.kind === 'update' ? versionSource(record, request.contentVersion) : tierSwitchTarget(record)
@@ -984,14 +999,16 @@ export function createCore(platform: Platform): Core {
    */
   const showsFolder = async (path: string) => {
     const key = (folder: string) => normalizePath(folder).toLowerCase()
+    /** The recorder's own folder beside the DLL, which Settings' Troubleshooting group shows. */
+    const recordingsFolder = (gameFolder: string) => key(joinPath(gameFolder, 'game', RECORDINGS_FOLDER))
     // `normalizePath` keeps `.` and `..`, which would walk out of the data folder past a prefix check.
     if (!path || path.split(/[\\/]/).some((part) => part === '.' || part === '..')) return false
     const folder = key(path)
     const data = key(await lucentFolder(platform))
     if (folder === data || folder.startsWith(`${data}\\`)) return true
-    if ('path' in state.gameFolder && key(state.gameFolder.path) === folder) return true
+    if ('path' in state.gameFolder && (key(state.gameFolder.path) === folder || recordingsFolder(state.gameFolder.path) === folder)) return true
     try {
-      for await (const record of deploymentRecords(platform)) if (key(record.gameFolder) === folder) return true
+      for await (const record of deploymentRecords(platform)) if (key(record.gameFolder) === folder || recordingsFolder(record.gameFolder) === folder) return true
     } catch { /* A record that can't be read names no folder. */ }
     return false
   }
@@ -1087,6 +1104,14 @@ export function createCore(platform: Platform): Core {
       }
       if (JSON.stringify(next) !== JSON.stringify(state.patchSwitch)) set({ patchSwitch: next })
     },
+    async refreshRecorder() {
+      const record = state.deployment
+      let next: Recorder | null = null
+      if (record?.status === 'complete' && state.activity.kind === 'deployment') {
+        next = await readRecorder(platform, record.gameFolder).catch((): Recorder => ({ status: 'unavailable', reason: 'Lucent can’t read OptiScaler.ini.', recordings: null }))
+      }
+      if (JSON.stringify(next) !== JSON.stringify(state.recorder)) set({ recorder: next })
+    },
     async setUnknownBuildHooks(on) {
       if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
       set({ busy: true, error: null, notice: null })
@@ -1100,6 +1125,35 @@ export function createCore(platform: Platform): Core {
         await refreshHealthAfter()
         set({ busy: false })
         await core.refreshPatchSwitch()
+      }
+    },
+    async setFgRecorder(on) {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      set({ busy: true, error: null, notice: null })
+      try {
+        if (!await prepareWrite({ kind: 'fg-recorder', gameFolder: state.deployment.gameFolder, on })) return
+        await refreshHealth(state.deployment)
+        const deployment = await writeFgRecorder(platform, state.deployment.gameFolder, on)
+        set({ deployment, notice: on ? 'OptiScaler-FFXIV records frame generation from the next time XIV starts, into fg-recordings in the game folder.' : 'OptiScaler-FFXIV stops recording frame generation from the next time XIV starts.' })
+      } catch (error) { set({ error: message(error), recoveryRequired: error instanceof DeploymentError && error.recoveryRequired }) }
+      finally {
+        await refreshHealthAfter()
+        set({ busy: false })
+        await core.refreshRecorder()
+      }
+    },
+    async clearRecordings() {
+      if (state.busy || state.recoveryRequired || state.activity.kind !== 'deployment' || !state.deployment) return
+      const { gameFolder } = state.deployment
+      set({ busy: true, error: null, notice: null })
+      try {
+        if (!await prepareWrite({ kind: 'clear-recordings', gameFolder })) return
+        const cleared = await clearRecordingFiles(platform, gameFolder)
+        set({ notice: cleared.files ? `Cleared ${sizeLabel(cleared.bytes)} of recordings (${fileCount(cleared.files)}).` : 'There were no recordings to clear.' })
+      } catch (error) { set({ error: message(error) }) }
+      finally {
+        set({ busy: false })
+        await core.refreshRecorder()
       }
     },
     async clearCache() {
@@ -1287,6 +1341,8 @@ export function createCore(platform: Platform): Core {
             if (!state.error) await core.deploy()
           } else if (resume.kind === 'enabled') await core.setEnabled(resume.enabled)
           else if (resume.kind === 'unknown-build-hooks') await core.setUnknownBuildHooks(resume.on)
+          else if (resume.kind === 'fg-recorder') await core.setFgRecorder(resume.on)
+          else if (resume.kind === 'clear-recordings') await core.clearRecordings()
           else if (resume.kind === 'repair') await core.repair()
           else if (resume.kind === 'uninstall') await core.uninstall(resume.restoreOriginals !== false)
           else if (resume.kind === 'update') await core.applyVersion(resume.contentVersion)
@@ -1850,6 +1906,7 @@ export function createCore(platform: Platform): Core {
     setAutoRepair: coordinated(core.setAutoRepair), setChannel: coordinated(core.setChannel), setLauncher: coordinated(core.setLauncher), launchGame: coordinated(core.launchGame),
     copyDiagnostics: coordinated(core.copyDiagnostics), reportBug: coordinated(core.reportBug),
     setUnknownBuildHooks: coordinated(core.setUnknownBuildHooks),
+    setFgRecorder: coordinated(core.setFgRecorder), clearRecordings: coordinated(core.clearRecordings),
     clearCache: coordinated(core.clearCache, false, CLEAR_WHEN_BUSY), clearBackups: coordinated(core.clearBackups, false, CLEAR_WHEN_BUSY),
     uninstall: coordinated(core.uninstall), openAppUninstall: coordinated(core.openAppUninstall, false), uninstallApp: coordinated(core.uninstallApp, false), finishAppUninstall: coordinated(core.finishAppUninstall, false),
   }

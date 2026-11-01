@@ -4,6 +4,7 @@ import { createFakePlatform, type FakePlatform, type Machine } from '../platform
 import { fixtureContentHost, graphicsCard, machine, nextContentHost, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { statusCard } from './statusCard'
 import { dataPaths, readDeployment } from './deployment'
+import { takeElevationResume } from './gameAccess'
 import { PlatformError } from './platform'
 import { MANIFEST_URL } from './manifest'
 
@@ -356,6 +357,21 @@ it('continues rollback after elevation without repeating the administrator reque
   expect(resumed.getState().deployment?.contentVersion).toBe('2026.10.12')
   expect(await platform.readText(`${GAME}\\winmm.dll`)).toBe('OptiScaler')
   expect(platform.elevationRequests).toHaveLength(1)
+})
+
+const resumeWith = (request: unknown) => {
+  const resume = 'C:\\Users\\Player\\AppData\\Local\\Lucent\\resume-123e4567-e89b-12d3-a456-426614174000.json'
+  return createFakePlatform({ elevated: true, userSid: 'S-1-5-21-100-200-300-1001', elevationResumePath: resume, files: { [resume]: JSON.stringify({ schemaVersion: 2, userSid: 'S-1-5-21-100-200-300-1001', request }) } })
+}
+
+it('takes the recorder switch and a clear of the recordings back from an elevated request', async () => {
+  await expect(takeElevationResume(resumeWith({ kind: 'fg-recorder', gameFolder: ROOT, on: true }))).resolves.toMatchObject({ request: { kind: 'fg-recorder', gameFolder: ROOT, on: true } })
+  await expect(takeElevationResume(resumeWith({ kind: 'clear-recordings', gameFolder: ROOT }))).resolves.toMatchObject({ request: { kind: 'clear-recordings', gameFolder: ROOT } })
+})
+
+it('rejects a recorder request whose switch is not a boolean', async () => {
+  await expect(takeElevationResume(resumeWith({ kind: 'fg-recorder', gameFolder: ROOT, on: 'yes' }))).rejects.toThrow(/administrator resume request is invalid/)
+  await expect(takeElevationResume(resumeWith({ kind: 'fg-recorder', gameFolder: ROOT }))).rejects.toThrow(/administrator resume request is invalid/)
 })
 
 it('refuses Repair and Reset while the deployment needs a newer Lucent than the one open, and writes nothing', async () => {

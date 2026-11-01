@@ -630,6 +630,7 @@ li.tree-row { padding-left: calc(var(--space-3) + 18px + var(--depth) * 16px); }
 .segmented-choice-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
 .segmented-choice-option:has(input:disabled) { opacity: 0.45; cursor: default; }
 .segmented-choice-experimental { color: var(--caution-ink); font-size: 10px; line-height: 1; font-weight: 500; }
+.settings-switch strong .segmented-choice-experimental { margin-left: var(--space-2); }
 /* Neural Rendering: one card of labelled blocks, each a control and the line that says what it does. */
 .neural-rendering { padding: var(--space-4); }
 .neural-rendering > h2 { margin-bottom: var(--space-3); }

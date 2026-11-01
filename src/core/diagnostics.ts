@@ -5,11 +5,13 @@ import { joinPath } from './paths'
 import { checkHealth, type Drift } from './health'
 import type { DeploymentRecord } from './deployment'
 import { fileKey } from './planner'
-import { fileCount } from './format'
+import { fileCount, sizeLabel } from './format'
 import { LAUNCH_LABELS } from './launch'
 import { frameGenerationLabel, hdrLabel } from './choices'
 import { settingChoiceSummary } from './settingChoices'
 import { profilesForRecipe } from './profileValues'
+import { NEEDS_NEWER_CONTENT } from './gamePatch'
+import { readRecorder, type Recorder } from './recorder'
 
 const TIER_STATUS = { stable: 'Stable', experimental: 'Experimental', 'community-verified': 'Community-verified' }
 
@@ -32,6 +34,7 @@ export function bugReportUrl(state: State): string {
   url.searchParams.set('body', [
     '## What happened?', '', 'Describe the problem and what you expected to happen.', '',
     '## Steps to reproduce', '', '1. ', '',
+    'If the problem is with frame generation, turn on Settings → Troubleshooting → Record frame generation, play until it happens, then zip the newest fg-rec files and attach them.', '',
     '## Diagnostics', '', 'Paste the diagnostics from your clipboard between the lines below.', '',
     '```text', '(paste diagnostics here)', '```',
   ].join('\n'))
@@ -72,6 +75,19 @@ function autoRepair(state: State): string {
   return xivLauncher.status === 'unavailable' ? `Unavailable (${xivLauncher.message})` : 'Not checked'
 }
 
+/** The recorder's diagnostics line: the switch, then the recordings when the folder is there. */
+export function recorderLine(recorder: Recorder): string {
+  const status = recorder.status === 'ready' ? `FG recorder: ${recorder.on ? 'on' : 'off'}`
+    : recorder.reason === NEEDS_NEWER_CONTENT ? 'FG recorder: not in this content'
+    : `FG recorder: unavailable (${recorder.reason})`
+  const { recordings } = recorder
+  if (!recordings) return status
+  if (recordings.unreadable) return `${status} · recordings unreadable`
+  if (!recordings.sessions) return `${status} · no recordings`
+  const newest = recordings.newest!
+  return `${status} · ${recordings.sessions === 1 ? '1 session' : `${recordings.sessions} sessions`} · newest ${newest.name} (${fileCount(newest.files)}, ${sizeLabel(newest.bytes)})`
+}
+
 /** Builds the text the player can paste when asking for help. Machine access stays at the Platform port. */
 export async function collectDiagnostics(platform: Platform, state: State, appVersion: string, channel: Channel): Promise<string> {
   const record = state.deployment
@@ -79,6 +95,9 @@ export async function collectDiagnostics(platform: Platform, state: State, appVe
   const windows = await platform.getWindowsVersion().catch(() => 'Unavailable')
   const folder = record?.gameFolder ?? (state.gameFolder.status === 'found' ? state.gameFolder.path : null)
   const gameVersion = folder ? await platform.readText(joinPath(folder, 'game', 'ffxivgame.ver')).then((text) => text.trim() || null).catch(() => null) : null
+  const recorder = record?.status === 'complete'
+    ? recorderLine(await readRecorder(platform, record.gameFolder).catch((): Recorder => ({ status: 'unavailable', reason: 'Lucent can’t read OptiScaler.ini.', recordings: null })))
+    : null
   let health = record ? 'Not checked' : 'No deployment'
   let drift: Drift | null = null
   if (state.recoveryRequired) health = 'Recovery required'
@@ -105,6 +124,7 @@ export async function collectDiagnostics(platform: Platform, state: State, appVe
     ...(record ? [`First-install choices: ${storedChoices(record)}`] : []),
     `Launch XIV with: ${state.launcher ? LAUNCH_LABELS[state.launcher] : 'None found'}`,
     `XIVLauncher auto-repair: ${autoRepair(state)}`,
+    ...(recorder ? [recorder] : []),
     `Health check: ${health}`,
     ...(drift ? [`Drift: ${listed(drift.files, MAX_LISTED_DRIFT, (count) => `and ${count.toLocaleString('en')} more`)}`] : []),
     '',

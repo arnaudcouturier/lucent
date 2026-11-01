@@ -93,9 +93,14 @@ for files the game itself generates. Use two real content versions for the updat
   what they need again. Clear backups lists each folder with its kind, starts the install copy
   ticked and a Reset copy, the kept originals and any other folder unticked, and removes only what is ticked. Uninstall afterwards still puts the
   player’s files back from Lucent’s own backups.
-- [ ] On content 2026.10.30 or newer, Settings → After a game patch shows the switch off. With XIV closed, turn
+- [ ] On content 2026.10.30 or newer, Settings → Game patches shows the switch off. With XIV closed, turn
   it on: `OptiScaler.ini` gets `FfxivUnknownBuildHooks=true` and no other change; off writes `false`. Reset setup
   keeps it. While XIV runs the switch is disabled and says why.
+- [ ] On content 2026.10.31 or newer, Settings → Troubleshooting shows Record frame generation off and no
+  Recordings row. With XIV closed, turn it on: `OptiScaler.ini` gets `FgRecorder=true` and no other change; off
+  writes `false`. Reset setup turns it off again. Play with frame generation on, then close XIV: the Recordings
+  row shows one session and its size, Open folder shows it, and Clear… removes it. While XIV runs the switch and
+  Clear… are disabled and the top of Settings says why.
 - [ ] Uninstall and compare the game folder against the pre-deployment hash listing. Confirm the
   readable backup folder is gone.
 - [ ] Check the window chrome on Windows 11 and in a Windows 10 22H2 x64 VM: dragging,

@@ -1,10 +1,13 @@
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createCore } from './core'
 import { PlatformError } from './platform'
 import { createFakePlatform } from '../platform/fake'
 import { fixtureContentHost, graphicsCard, machine, vanillaGame, xivLauncher } from '../platform/fixtures'
 import { PROFILE_MANIFEST } from '../platform/contentFixture'
 import { collectDiagnostics } from './diagnostics'
+import { recorderLine } from './diagnostics'
+import type { Recordings } from './recorder'
+import { NEEDS_NEWER_CONTENT } from './gamePatch'
 import { dataPaths, readDeployment } from './deployment'
 
 const ROOT = 'C:\\Games\\XIV'
@@ -184,6 +187,43 @@ it('can copy a report with explicit unavailable fields before a deployment exist
   expect(platform.clipboard).toContain('Windows: Unavailable')
   expect(platform.clipboard).toContain('Health check: No deployment')
   expect(platform.clipboard).not.toContain('OptiScaler log')
+})
+
+it('copies the recorder’s line right after the auto-repair line', async () => {
+  const { platform, core } = await deployed()
+  await core.copyDiagnostics()
+  const lines = platform.clipboard!.split('\n')
+  const at = lines.findIndex((line) => line.startsWith('XIVLauncher auto-repair:'))
+  expect(lines[at + 1]).toBe('FG recorder: not in this content')
+})
+
+describe('the recorder’s diagnostics line', () => {
+  const recordings = (patch: Partial<Recordings> = {}): Recordings => ({ path: `${GAME}\fg-recordings`, sessions: 0, files: 0, bytes: 0, newest: null, ...patch })
+  const newest = { name: 'fg-rec-20261031-201500-123-4567', files: 9, bytes: 140 * 1024 ** 2 }
+
+  it('says whether the switch is on, off or missing from this content', () => {
+    expect(recorderLine({ status: 'ready', on: true, recordings: null })).toBe('FG recorder: on')
+    expect(recorderLine({ status: 'ready', on: false, recordings: null })).toBe('FG recorder: off')
+    expect(recorderLine({ status: 'unavailable', reason: NEEDS_NEWER_CONTENT, recordings: null })).toBe('FG recorder: not in this content')
+    expect(recorderLine({ status: 'unavailable', reason: 'OptiScaler.ini is missing. Repair puts it back.', recordings: null }))
+      .toBe('FG recorder: unavailable (OptiScaler.ini is missing. Repair puts it back.)')
+  })
+
+  it('adds the sessions when the folder is there, and what it holds when it isn’t', () => {
+    expect(recorderLine({ status: 'ready', on: true, recordings: recordings({ sessions: 3, files: 9, bytes: newest.bytes, newest }) }))
+      .toBe('FG recorder: on · 3 sessions · newest fg-rec-20261031-201500-123-4567 (9 files, 140.0 MB)')
+    expect(recorderLine({ status: 'ready', on: false, recordings: recordings({ sessions: 1, files: 1, bytes: 5, newest: { ...newest, files: 1, bytes: 5 } }) }))
+      .toBe('FG recorder: off · 1 session · newest fg-rec-20261031-201500-123-4567 (1 file, 5 B)')
+    expect(recorderLine({ status: 'ready', on: true, recordings: recordings() })).toBe('FG recorder: on · no recordings')
+    expect(recorderLine({ status: 'ready', on: true, recordings: recordings({ unreadable: true }) })).toBe('FG recorder: on · recordings unreadable')
+  })
+})
+
+it('asks for the newest recording files in the bug template, just before the diagnostics', async () => {
+  const { platform, core } = await deployed()
+  await core.reportBug()
+  const body = new URL(platform.openedUrls[0]).searchParams.get('body')
+  expect(body).toContain('1. \n\nIf the problem is with frame generation, turn on Settings → Troubleshooting → Record frame generation, play until it happens, then zip the newest fg-rec files and attach them.\n\n## Diagnostics')
 })
 
 it('keeps the deployed tier in the report title when the manifest no longer describes it', async () => {

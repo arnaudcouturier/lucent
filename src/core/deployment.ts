@@ -9,6 +9,7 @@ import { configBaselineAssets, configBaselines, configPresent, newConfigKeys, re
 import { cacheSnapshot, type CachedVersion } from './versions'
 import { guardGameWrites, requireGameStopped } from './gameAccess'
 import { NEEDS_NEWER_CONTENT, patchSwitchProblem } from './gamePatch'
+import { FG_RECORDER } from './recorder'
 import { isGameFolder } from './gameFolder'
 import type { ResolvedScreen } from './screen'
 import { frameGenerationOptionsForGpu } from './frameGeneration'
@@ -1578,15 +1579,14 @@ export async function setDeploymentEnabled(platform: Platform, gameFolder: strin
 }
 
 /**
- * Settings' "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else in
- * the file, through the journal as any change to a deployed file, and remembers the value in the record so that a Reset, a tier switch
- * and the Repair of a missing OptiScaler.ini write it again. OptiScaler reads its ini when XIV starts.
+ * Writes one key of a deployed config through the journal, as any change to a deployed file. `remember` keeps the player's word in the
+ * record, so a Reset, a tier switch and the Repair of a missing OptiScaler.ini write it again; without it the ini's own value is the baseline.
  */
-export async function setUnknownBuildHooks(platform: Platform, gameFolder: string, on: boolean): Promise<DeploymentRecord> {
+async function setIniSwitch(platform: Platform, gameFolder: string, target: { file: string; section: string; key: string }, on: boolean, remember: boolean): Promise<DeploymentRecord> {
   platform = await guardGameWrites(platform, gameFolder)
   const record = await readDeployment(platform, gameFolder)
   if (!record || record.status !== 'complete') throw new Error('Recover the deployment before changing this setting.')
-  const { file, section, key } = UNKNOWN_BUILD_HOOKS
+  const { file, section, key } = target
   const owned = Object.keys(record.files).find((path) => fileKey(path) === fileKey(file))
   if (!owned) throw new Error('This setup has no OptiScaler.ini to change.')
   const paths = await dataPaths(platform, gameFolder)
@@ -1596,9 +1596,10 @@ export async function setUnknownBuildHooks(platform: Platform, gameFolder: strin
   if (current === undefined) throw new Error(NEEDS_NEWER_CONTENT)
   const value = String(on)
   const changed = structuredClone(record)
-  changed.unknownBuildHooks = on
+  if (remember) changed.unknownBuildHooks = on
   if (current.trim().toLowerCase() === value) {
-    // The ini already says it; only the record needs the player's word, so a Reset writes it again.
+    // The ini already says it. Only a remembered switch needs the player's word in the record, so a Reset writes it again.
+    if (!remember) return record
     if (record.unknownBuildHooks !== on) await platform.writeText(paths.record, JSON.stringify(changed, null, 2))
     return record.unknownBuildHooks === on ? record : changed
   }
@@ -1621,4 +1622,22 @@ export async function setUnknownBuildHooks(platform: Platform, gameFolder: strin
     }
     throw new DeploymentError(error, false)
   }
+}
+
+/**
+ * Settings' "After a game patch" switch: sets `[FFXIV] FfxivUnknownBuildHooks` in OptiScaler.ini to `true` or `false` and nothing else in
+ * the file, through the journal as any change to a deployed file, and remembers the value in the record so that a Reset, a tier switch
+ * and the Repair of a missing OptiScaler.ini write it again. OptiScaler reads its ini when XIV starts.
+ */
+export async function setUnknownBuildHooks(platform: Platform, gameFolder: string, on: boolean): Promise<DeploymentRecord> {
+  return setIniSwitch(platform, gameFolder, UNKNOWN_BUILD_HOOKS, on, true)
+}
+
+/**
+ * Settings' Troubleshooting switch: sets `[FramePacing] FgRecorder` in OptiScaler.ini to `true` or `false` and nothing else in the file,
+ * through the journal as any change to a deployed file. Unlike the After a game patch switch it is not remembered: a Reset writes the
+ * tested setup's value, off, again. OptiScaler-FFXIV reads it while XIV runs, but Lucent writes only while XIV is closed.
+ */
+export async function setFgRecorder(platform: Platform, gameFolder: string, on: boolean): Promise<DeploymentRecord> {
+  return setIniSwitch(platform, gameFolder, FG_RECORDER, on, false)
 }
